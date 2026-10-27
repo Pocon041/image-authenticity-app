@@ -227,7 +227,7 @@ export class RoutedAnalysisService implements AnalysisService {
       createdAt: new Date().toISOString(),
       elapsedMs: result.elapsedMs,
       title: 'RITA 定位已完成',
-      summary: `已处理「${originalName}」，得到 ${result.result.regionCount} 个模型标记区域。${config.decisionThreshold === null ? '尚未验证整图阈值，综合判断保留为证据不足。' : '整图判断使用本机配置阈值，该阈值仍需质量验证。'}`,
+      summary: `已处理「${originalName}」，${result.result.regionCount > 0 ? `模型标记了 ${result.result.regionCount} 个可疑区域` : '模型本次未标记可疑区域'}。${config.decisionThreshold === null ? '图像级分类未启用：尚未验证整图判断阈值。这不否定上面的定位输出。' : '图像级分类使用本机配置阈值，该阈值仍需质量验证。'}`,
       sections: [
         {
           title: '像素定位',

@@ -41,11 +41,19 @@ function ReportContent({ report }: { report: AnalysisReport }) {
             src={report.localization.overlayDataUrl}
             alt="RITA 预测掩码的红色叠加图，非数据集标注"
           />
-          <p>原始响应分数：{report.localization.score?.toFixed(4) ?? '不可用'}（未经校准）</p>
           <p>
-            整图判断：
+            定位输出：
+            {report.localization.regionCount > 0
+              ? `模型标记了 ${report.localization.regionCount} 个可疑区域`
+              : '本次未标记可疑区域（不等同于确认真实）'}
+          </p>
+          <p>像素响应统计：{report.localization.score?.toFixed(4) ?? '不可用'}（非整图置信度）</p>
+          <p>
+            图像级分类：
             {report.localization.decision === 'inconclusive'
-              ? '证据不足 / 阈值未验证'
+              ? report.localization.score === null
+                ? '未输出结论（未获得有效响应或阈值未配置）'
+                : '未输出结论（尚未配置经验证的阈值）'
               : report.localization.decision === 'suspicious'
                 ? '可疑（配置阈值）'
                 : '未检出异常（配置阈值）'}
