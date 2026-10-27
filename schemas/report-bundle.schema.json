@@ -1,0 +1,362 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "urn:image-authenticity-app:evidence-bundle:1.0",
+  "title": "Image authenticity evidence bundle v1.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "bundleId",
+    "purpose",
+    "createdAt",
+    "image",
+    "reports",
+    "artifacts"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "bundleId": { "$ref": "#/$defs/id" },
+    "purpose": { "enum": ["integration_fixture", "analysis"] },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "image": { "$ref": "#/$defs/image" },
+    "reports": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/report" } },
+    "artifacts": { "type": "array", "minItems": 2, "items": { "$ref": "#/$defs/artifact" } }
+  },
+  "$defs": {
+    "id": { "type": "string", "minLength": 1 },
+    "hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "bbox": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "additionalItems": false,
+      "items": [
+        { "type": "integer", "minimum": 0 },
+        { "type": "integer", "minimum": 0 },
+        { "type": "integer", "minimum": 1 },
+        { "type": "integer", "minimum": 1 }
+      ]
+    },
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "imageId",
+        "sha256",
+        "originalArtifactId",
+        "displayArtifactId",
+        "encodedWidth",
+        "encodedHeight",
+        "width",
+        "height",
+        "exifOrientation",
+        "coordinateSpace",
+        "displayTransform"
+      ],
+      "properties": {
+        "imageId": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+        "sha256": { "$ref": "#/$defs/hash" },
+        "originalArtifactId": { "$ref": "#/$defs/id" },
+        "displayArtifactId": { "$ref": "#/$defs/id" },
+        "encodedWidth": { "type": "integer", "minimum": 1 },
+        "encodedHeight": { "type": "integer", "minimum": 1 },
+        "width": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 },
+        "exifOrientation": { "type": "integer", "minimum": 1, "maximum": 8 },
+        "coordinateSpace": { "const": "display_image_pixels" },
+        "displayTransform": { "const": "exif_auto_orient_no_resize" }
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "artifactId",
+        "type",
+        "uri",
+        "mediaType",
+        "sha256",
+        "width",
+        "height",
+        "coordinateSpace",
+        "bboxXYWH",
+        "sourceArtifactId",
+        "origin"
+      ],
+      "properties": {
+        "artifactId": { "$ref": "#/$defs/id" },
+        "type": { "enum": ["original", "display", "crop", "mask", "heatmap"] },
+        "uri": { "type": "string", "minLength": 1 },
+        "mediaType": { "type": "string", "pattern": "^image/" },
+        "sha256": { "$ref": "#/$defs/hash" },
+        "width": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 },
+        "coordinateSpace": {
+          "enum": ["encoded_file_pixels", "display_image_pixels", "region_local_pixels"]
+        },
+        "bboxXYWH": { "anyOf": [{ "$ref": "#/$defs/bbox" }, { "type": "null" }] },
+        "sourceArtifactId": { "type": ["string", "null"] },
+        "origin": { "enum": ["original", "derived", "mock"] }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "evidenceId",
+        "kind",
+        "origin",
+        "description",
+        "regionId",
+        "artifactIds",
+        "data",
+        "limitation"
+      ],
+      "properties": {
+        "evidenceId": { "$ref": "#/$defs/id" },
+        "kind": { "type": "string", "minLength": 1 },
+        "origin": { "enum": ["measured", "mock"] },
+        "description": { "type": "string" },
+        "regionId": { "type": ["string", "null"] },
+        "artifactIds": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/id" } },
+        "data": { "type": "object" },
+        "limitation": { "type": "string" }
+      }
+    },
+    "producer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 }
+      }
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message"],
+      "properties": {
+        "code": { "type": "string", "minLength": 1 },
+        "message": { "type": "string", "minLength": 1 }
+      }
+    },
+    "score": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "value", "positiveClass", "calibrated"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "value": { "type": "number" },
+        "positiveClass": { "type": "string", "minLength": 1 },
+        "calibrated": { "type": "boolean" }
+      }
+    },
+    "region": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["regionId", "bboxXYWH", "coordinateSpace", "maskArtifactId"],
+      "properties": {
+        "regionId": { "$ref": "#/$defs/id" },
+        "bboxXYWH": { "$ref": "#/$defs/bbox" },
+        "coordinateSpace": { "const": "display_image_pixels" },
+        "maskArtifactId": { "type": ["string", "null"] }
+      }
+    },
+    "check": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["status", "details"],
+      "properties": {
+        "status": { "enum": ["completed", "failed", "unsupported", "not_run"] },
+        "details": { "type": "object" }
+      }
+    },
+    "provenanceResult": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["preprocessing", "metadata", "credentials", "watermark"],
+      "properties": {
+        "preprocessing": {
+          "type": "object",
+          "required": ["originalPreserved", "displayTransform"],
+          "properties": {
+            "originalPreserved": { "const": true },
+            "displayTransform": { "const": "exif_auto_orient_no_resize" }
+          }
+        },
+        "metadata": { "$ref": "#/$defs/check" },
+        "credentials": { "$ref": "#/$defs/check" },
+        "watermark": { "$ref": "#/$defs/check" }
+      }
+    },
+    "manipulationResult": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["decision", "score", "regions", "operationHints"],
+      "properties": {
+        "decision": { "enum": ["suspicious", "no_anomaly_detected", "inconclusive"] },
+        "score": { "anyOf": [{ "$ref": "#/$defs/score" }, { "type": "null" }] },
+        "regions": { "type": "array", "items": { "$ref": "#/$defs/region" } },
+        "operationHints": { "type": "array", "items": { "type": "object" } }
+      }
+    },
+    "aigcResult": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["decision", "score", "clues"],
+      "properties": {
+        "decision": { "enum": ["ai_generated", "non_ai", "inconclusive"] },
+        "score": { "anyOf": [{ "$ref": "#/$defs/score" }, { "type": "null" }] },
+        "clues": { "type": "array", "items": { "type": "object" } }
+      }
+    },
+    "confidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "source", "calibrated"],
+      "properties": {
+        "value": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "source": { "enum": ["unavailable", "vlm_self_assessment", "calibrated_fusion"] },
+        "calibrated": { "type": "boolean" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "source": { "const": "unavailable" } } },
+          "then": {
+            "properties": { "value": { "type": "null" }, "calibrated": { "const": false } }
+          }
+        },
+        {
+          "if": { "properties": { "source": { "const": "vlm_self_assessment" } } },
+          "then": {
+            "properties": { "value": { "type": "number" }, "calibrated": { "const": false } }
+          }
+        },
+        {
+          "if": { "properties": { "source": { "const": "calibrated_fusion" } } },
+          "then": {
+            "properties": { "value": { "type": "number" }, "calibrated": { "const": true } }
+          }
+        }
+      ]
+    },
+    "explanationResult": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["finalDecision", "confidence", "analysis", "claims", "unresolved"],
+      "properties": {
+        "finalDecision": { "enum": ["suspicious", "no_anomaly_detected", "inconclusive"] },
+        "confidence": { "$ref": "#/$defs/confidence" },
+        "analysis": { "type": "string", "minLength": 1 },
+        "claims": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["text", "evidenceIds"],
+            "properties": {
+              "text": { "type": "string" },
+              "evidenceIds": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": { "$ref": "#/$defs/id" }
+              }
+            }
+          }
+        },
+        "unresolved": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "report": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "reportId",
+        "moduleId",
+        "imageId",
+        "taskId",
+        "mode",
+        "status",
+        "producer",
+        "createdAt",
+        "elapsedMs",
+        "inputReportIds",
+        "result",
+        "evidence",
+        "artifacts",
+        "limitations",
+        "error"
+      ],
+      "properties": {
+        "schemaVersion": { "const": "1.0" },
+        "reportId": { "$ref": "#/$defs/id" },
+        "moduleId": { "enum": ["provenance", "manipulation", "aigc", "explanation"] },
+        "imageId": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+        "taskId": { "$ref": "#/$defs/id" },
+        "mode": { "enum": ["mock", "local"] },
+        "status": { "enum": ["completed", "failed", "unsupported", "not_run"] },
+        "producer": { "$ref": "#/$defs/producer" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "elapsedMs": { "type": "integer", "minimum": 0 },
+        "inputReportIds": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/id" }
+        },
+        "result": { "type": ["object", "null"] },
+        "evidence": { "type": "array", "items": { "$ref": "#/$defs/evidence" } },
+        "artifacts": { "type": "array", "items": { "$ref": "#/$defs/artifact" } },
+        "limitations": { "type": "array", "items": { "type": "string" } },
+        "error": { "anyOf": [{ "$ref": "#/$defs/error" }, { "type": "null" }] },
+        "extensions": { "type": "object" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "status": { "const": "completed" } } },
+          "then": { "properties": { "result": { "type": "object" }, "error": { "type": "null" } } },
+          "else": { "properties": { "result": { "type": "null" } } }
+        },
+        {
+          "if": { "properties": { "status": { "const": "failed" } } },
+          "then": { "properties": { "error": { "$ref": "#/$defs/error" } } }
+        },
+        {
+          "if": {
+            "properties": {
+              "moduleId": { "const": "provenance" },
+              "status": { "const": "completed" }
+            }
+          },
+          "then": { "properties": { "result": { "$ref": "#/$defs/provenanceResult" } } }
+        },
+        {
+          "if": {
+            "properties": {
+              "moduleId": { "const": "manipulation" },
+              "status": { "const": "completed" }
+            }
+          },
+          "then": { "properties": { "result": { "$ref": "#/$defs/manipulationResult" } } }
+        },
+        {
+          "if": {
+            "properties": { "moduleId": { "const": "aigc" }, "status": { "const": "completed" } }
+          },
+          "then": { "properties": { "result": { "$ref": "#/$defs/aigcResult" } } }
+        },
+        {
+          "if": {
+            "properties": {
+              "moduleId": { "const": "explanation" },
+              "status": { "const": "completed" }
+            }
+          },
+          "then": { "properties": { "result": { "$ref": "#/$defs/explanationResult" } } }
+        }
+      ]
+    }
+  }
+}

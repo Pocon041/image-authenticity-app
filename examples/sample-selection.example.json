@@ -1,0 +1,38 @@
+{
+  "exampleCaseId": "sample-002",
+  "cases": [
+    {
+      "caseId": "sample-001",
+      "kind": "real",
+      "category": "authentic_photo",
+      "typeBasis": "your_dataset_manifest",
+      "sourceImage": "C:/datasets/example/real.jpg",
+      "sourceMask": null,
+      "dataset": "your-local-dataset",
+      "sourceUrl": "https://example.org/dataset",
+      "sourceManifest": null
+    },
+    {
+      "caseId": "sample-002",
+      "kind": "tampered",
+      "category": "your_confirmed_manipulation_type",
+      "typeBasis": "your_dataset_annotation",
+      "sourceImage": "C:/datasets/example/tampered.jpg",
+      "sourceMask": "C:/datasets/example/tampered-mask.png",
+      "dataset": "your-local-dataset",
+      "sourceUrl": "https://example.org/dataset",
+      "sourceManifest": null
+    },
+    {
+      "caseId": "sample-003",
+      "kind": "ai_generated",
+      "category": "your_generator_name",
+      "typeBasis": "your_dataset_manifest",
+      "sourceImage": "C:/datasets/example/generated.png",
+      "sourceMask": null,
+      "dataset": "your-local-dataset",
+      "sourceUrl": "https://example.org/dataset",
+      "sourceManifest": null
+    }
+  ]
+}

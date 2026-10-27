@@ -7,3 +7,6 @@ work/
 .env
 .env.*
 !.env.example
+examples/local-selection.json
+examples/local-data/
+examples/stage1-materials/

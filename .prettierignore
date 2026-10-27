@@ -4,3 +4,6 @@ out/
 dist/
 work/
 package-lock.json
+examples/local-data/
+examples/local-selection.json
+examples/stage1-materials/
