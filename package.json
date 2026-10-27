@@ -1,0 +1,64 @@
+{
+  "name": "image-authenticity-app",
+  "version": "0.1.0",
+  "private": true,
+  "description": "SRDP 本地图像真实性分析桌面工作台 — 工程 Smoke 原型",
+  "main": "./out/main/index.js",
+  "author": "SRDP",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "predev": "npm run runtime:ensure",
+    "dev": "electron-vite dev",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "prestart": "npm run runtime:ensure",
+    "start": "electron-vite preview",
+    "typecheck": "tsc --noEmit",
+    "build": "npm run typecheck && electron-vite build",
+    "smoke": "npm run build && node tests/smoke.mjs",
+    "smoke:dev": "npm run build && node tests/smoke.mjs --dev",
+    "smoke:startup": "node tests/startup.mjs",
+    "smoke:packaged": "npm run package:dir && node tests/smoke.mjs --packaged",
+    "runtime:ensure": "node scripts/ensure-electron.mjs",
+    "package:dir": "npm run build && npm run runtime:ensure && electron-builder --win --dir"
+  },
+  "dependencies": {
+    "lucide-react": "^0.468.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "sharp": "^0.35.5"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "electron": "^45.0.0",
+    "electron-builder": "^26.0.0",
+    "electron-vite": "^6.0.0",
+    "playwright": "^1.58.0",
+    "prettier": "^3.9.10",
+    "typescript": "^5.9.0",
+    "vite": "^8.3.5"
+  },
+  "build": {
+    "appId": "cn.srdp.desktop",
+    "productName": "SRDP",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "electronDist": "node_modules/electron/dist",
+    "npmRebuild": false,
+    "win": {
+      "target": "dir",
+      "signAndEditExecutable": false
+    }
+  }
+}
