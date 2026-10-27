@@ -69,7 +69,7 @@ export function registerDesktopIPC(
         const window = requireWindow(event)
         validateId(imageId, true)
         validateId(taskId)
-        if (backend !== 'mock' && backend !== 'rita')
+        if (backend !== 'mock' && backend !== 'rita' && backend !== 'sica')
           throw new AppError('INVALID_REQUEST', '未知的分析服务。')
         if (picking) throw new AppError('BUSY', '请等待图片导入结束。')
         const report = await session.analyze(

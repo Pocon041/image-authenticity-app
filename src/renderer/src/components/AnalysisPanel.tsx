@@ -11,10 +11,37 @@ function ReportContent({ report }: { report: AnalysisReport }) {
           <h3>{report.title}</h3>
           <span>
             耗时 {(report.elapsedMs / 1000).toFixed(1)} 秒 ·{' '}
-            {report.mode === 'local' ? '本地 RITA 推理' : '本地模拟服务'}
+            {report.mode === 'local'
+              ? report.classification
+                ? '本地 SICA 分类'
+                : '本地 RITA 推理'
+              : '本地模拟服务'}
           </span>
         </div>
       </div>
+      {report.classification && (
+        <div className="localization-result" data-testid="sica-classification">
+          <h4>图像级二分类结果</h4>
+          <p>
+            模型判断：
+            {report.classification.decision === 'fake'
+              ? '疑似伪造（未区分生成或篡改）'
+              : '倾向真实（不等同于真实性证明）'}
+          </p>
+          <p>伪造分数：{report.classification.score.toFixed(6)}（未经校准）</p>
+          <p>分类阈值：{report.classification.threshold}；本次未生成定位掩码。</p>
+          {report.classification.checkpointVariant === 'full' && (
+            <p>当前使用 full 权重，可能见过相关数据；此结果不作为独立泛化评测。</p>
+          )}
+          <details>
+            <summary>查看 SICA JSON 报告</summary>
+            <pre data-testid="sica-bundle">
+              {JSON.stringify(report.classification.bundle, null, 2)}
+            </pre>
+          </details>
+          <p className="bundle-path">报告保存于：{report.classification.bundlePath}</p>
+        </div>
+      )}
       <div className="summary">
         <span className="small-label">描述摘要</span>
         <p>{report.summary}</p>
@@ -76,6 +103,8 @@ function ReportContent({ report }: { report: AnalysisReport }) {
 }
 
 export function AnalysisPanel({ workspace: w }: { workspace: AnalysisWorkspace }) {
+  const modelName = w.backend === 'sica' ? 'SICA' : 'RITA'
+  const local = w.backend !== 'mock'
   return (
     <section className="panel result-panel" aria-label="分析描述" aria-busy={w.running}>
       <div className="panel-heading">
@@ -85,7 +114,7 @@ export function AnalysisPanel({ workspace: w }: { workspace: AnalysisWorkspace }
         </div>
         <span className={`result-status ${w.report ? 'done' : ''}`}>
           {w.report
-            ? `已完成 · ${w.report.mode === 'local' ? 'RITA' : '模拟'}`
+            ? `已完成 · ${w.report.mode === 'local' ? (w.report.classification ? 'SICA' : 'RITA') : '模拟'}`
             : w.running
               ? '处理中'
               : '待开始'}
@@ -97,14 +126,14 @@ export function AnalysisPanel({ workspace: w }: { workspace: AnalysisWorkspace }
             <div className="result-icon">
               <LoaderCircle size={32} className="spin" />
             </div>
-            <h3>{w.backend === 'rita' ? '正在运行 RITA' : '正在运行模拟流程'}</h3>
+            <h3>{local ? `正在运行 ${modelName}` : '正在运行模拟流程'}</h3>
             <p data-testid="analysis-progress-label">
-              {w.progress?.label ?? (w.backend === 'rita' ? '准备本地推理任务' : '准备模拟任务')}
+              {w.progress?.label ?? (local ? '准备本地推理任务' : '准备模拟任务')}
             </p>
             <div
               className="loading-track"
               role="progressbar"
-              aria-label={w.backend === 'rita' ? 'RITA 任务进度' : '模拟任务进度'}
+              aria-label={local ? `${modelName} 任务进度` : '模拟任务进度'}
               aria-valuemin={0}
               aria-valuemax={100}
               aria-valuenow={w.progress?.percent ?? 0}
@@ -112,9 +141,7 @@ export function AnalysisPanel({ workspace: w }: { workspace: AnalysisWorkspace }
               <span style={{ width: `${w.progress?.percent ?? 0}%` }} />
             </div>
             <small>
-              {w.backend === 'rita'
-                ? '进度来自本地推理进程，可以取消任务'
-                : '进度来自本地模拟服务，没有调用模型'}
+              {local ? '进度来自本地推理进程，可以取消任务' : '进度来自本地模拟服务，没有调用模型'}
             </small>
             <button
               className="secondary-button cancel-button"
@@ -133,11 +160,13 @@ export function AnalysisPanel({ workspace: w }: { workspace: AnalysisWorkspace }
             </div>
             <h3>{w.image ? '图片已就绪' : '等待第一张图片'}</h3>
             <p>
-              {w.backend === 'rita'
-                ? '选择图片后启动本地 RITA 定位。\n需要配置 Python 和官方权重。'
-                : w.image
-                  ? '点击「开始模拟分析」，\n查看完整的描述展示效果。'
-                  : '导入图片并开始模拟分析后，\n分析描述将在这里展示。'}
+              {w.backend === 'sica'
+                ? '选择图片后运行 SICA 二分类。\n需要配置 Python 和官方权重。'
+                : w.backend === 'rita'
+                  ? '选择图片后启动本地 RITA 定位。\n需要配置 Python 和官方权重。'
+                  : w.image
+                    ? '点击「开始模拟分析」，\n查看完整的描述展示效果。'
+                    : '导入图片并开始模拟分析后，\n分析描述将在这里展示。'}
             </p>
             <div className="capability-list">
               <span>
@@ -154,9 +183,11 @@ export function AnalysisPanel({ workspace: w }: { workspace: AnalysisWorkspace }
               </span>
             </div>
             <small>
-              {w.backend === 'rita'
-                ? '此模式仅运行篡改定位，其他模块未执行'
-                : '以上能力当前均未接入模型'}
+              {w.backend === 'sica'
+                ? '此模式只运行整图分类，不生成掩码或 VLM 解释'
+                : w.backend === 'rita'
+                  ? '此模式仅运行篡改定位，其他模块未执行'
+                  : '以上能力当前均未接入模型'}
             </small>
           </div>
         )}

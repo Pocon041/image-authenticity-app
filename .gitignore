@@ -12,4 +12,5 @@ examples/local-data/
 examples/stage1-materials/
 weights/
 config/rita.local.json
+config/sica.local.json
 __pycache__/

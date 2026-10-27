@@ -1,0 +1,7 @@
+# Requires the project's CPU/CUDA-compatible torch, torchvision and pinned CLIP source.
+timm==1.0.21
+Pillow==11.2.1
+numpy==2.2.4
+ftfy
+regex
+tqdm

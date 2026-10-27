@@ -64,7 +64,7 @@ export function useAnalysisWorkspace() {
           setNotice(
             backend === 'mock'
               ? '模拟分析已取消，可以重新开始。'
-              : 'RITA 分析已取消，可以重新开始。'
+              : `${backend === 'sica' ? 'SICA' : 'RITA'} 分析已取消，可以重新开始。`
           )
         else setError(result.error)
       } else if (result.data.imageId === image.id) setReport(result.data)

@@ -98,17 +98,23 @@ export function ImagePanel({ workspace: w }: { workspace: AnalysisWorkspace }) {
           disabled={!w.image || w.busy}
         >
           {w.running ? <LoaderCircle size={17} className="spin" /> : <Sparkles size={17} />}
-          {w.backend === 'rita'
+          {w.backend === 'sica'
             ? w.running
-              ? 'RITA 分析中…'
+              ? 'SICA 分类中…'
               : w.report
-                ? '重新运行 RITA'
-                : '开始 RITA 定位'
-            : w.running
-              ? '模拟分析中…'
-              : w.report
-                ? '重新模拟分析'
-                : '开始模拟分析'}
+                ? '重新运行 SICA'
+                : '开始 SICA 二分类'
+            : w.backend === 'rita'
+              ? w.running
+                ? 'RITA 分析中…'
+                : w.report
+                  ? '重新运行 RITA'
+                  : '开始 RITA 定位'
+              : w.running
+                ? '模拟分析中…'
+                : w.report
+                  ? '重新模拟分析'
+                  : '开始模拟分析'}
           {!w.running && <ArrowRight size={16} />}
         </button>
       </div>

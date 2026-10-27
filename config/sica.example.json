@@ -1,0 +1,11 @@
+{
+  "pythonPath": "python",
+  "upstreamPath": ".tools/sica-upstream/model.py",
+  "clipSourcePath": ".tools/openai-clip",
+  "checkpointPath": "weights/sica/sica_weight_train.pth",
+  "checkpointSha256": null,
+  "checkpointVariant": "train",
+  "device": "auto",
+  "threshold": 0.5,
+  "timeoutMs": 180000
+}

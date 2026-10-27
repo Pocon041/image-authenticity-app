@@ -58,9 +58,17 @@ export interface AnalysisReport {
     bundlePath: string
     bundle: Record<string, unknown>
   }
+  classification?: {
+    decision: 'fake' | 'real'
+    score: number
+    threshold: number
+    checkpointVariant: string
+    bundlePath: string
+    bundle: Record<string, unknown>
+  }
 }
 
-export type AnalysisBackend = 'mock' | 'rita'
+export type AnalysisBackend = 'mock' | 'rita' | 'sica'
 
 export interface DesktopAPI {
   chooseImage(): Promise<Response<ImageAsset | null>>
