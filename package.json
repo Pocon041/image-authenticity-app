@@ -19,6 +19,8 @@
     "rita:infer": "node scripts/run-rita.mjs",
     "sica:setup": "node scripts/setup-sica-source.mjs",
     "sica:infer": "node scripts/run-sica.mjs",
+    "hifi:infer": "node scripts/run-hifi.mjs infer",
+    "hifi:evaluate": "node scripts/run-hifi.mjs evaluate",
     "smoke:sica": "npm run build && node tests/sica-smoke.mjs",
     "smoke:rita": "npm run build && node tests/rita-smoke.mjs",
     "smoke:rita:real": "npm run build && node tests/rita-real-smoke.mjs",

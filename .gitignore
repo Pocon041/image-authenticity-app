@@ -13,4 +13,5 @@ examples/stage1-materials/
 weights/
 config/rita.local.json
 config/sica.local.json
+config/hifi.local.json
 __pycache__/

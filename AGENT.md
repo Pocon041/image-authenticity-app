@@ -216,3 +216,17 @@ Windows 启动入口为 `start.cmd`；`run.cmd` 负责优先使用 `.tools/` 下
 - SICA 增加后，既有 15 项模拟主流程 Smoke 再次通过，类型检查与生产构建通过；没有用测试失败来触发模拟回退。新增代码与文档保持 README 无差异。
 - 使用说明为 `docs/SICA_INTEGRATION.md`；README 保持不变。SICA、RITA 发布包的 Python/权重分发均未配置。本轮新功能尚未推送 GitHub。
 - 用户另已下载 HiFi-Net general 两个 750001.pth，路径位于 weights/hifi/general/HRNet 与 NLCDetection；已创建对应目录并核对文件存在。官方配套 center/radius（18 维中心及标量半径，543 字节）已保存 `.tools/hifi-upstream/center/radius_center.pth`；暂不需要 weights_loc，不混用 225000 权重。HiFi-Net 尚未执行或接入。
+
+## HiFi-Net 二分类与定位测试（2026-10-27）
+
+- 用户授权测试 HiFi-Net 的分类与定位。分支 `feature/hifi-evaluation` 从当前 SICA 分支建立，未训练、未调整阈值、未替换 APP 默认模型或修改 README。
+- 固定官方源码提交 `0ca70d651087bb09959dec583947031c47d30209`，位于 `.tools/hifi-official/`。两份 general 750001 权重严格加载：HRNet 699 状态项、NLCDetection 66 状态项，无缺失/多余；哈希分别为 `be21278afb4e657bdafdf581d8d8bc6bc09f3b4507b10502ce98f1ae7ef1c5c1`、`7615fcb054e7cbd0b25d647d72655a690424232668abbc911551648e84b5f8fc`。
+- 使用相同源码中的 center/radius，SHA256 `e41e09256e65bcff9ba43e72f08701bf4d3904ccdb749f2d32a008af92c2483b`，radius≈1.24048。源码 np.int 通过模块内代理兼容；yacs 0.1.8 隔离安装到 `.tools/hifi-deps/`，未修改 EIT 包版本或官方源码。
+- 保持官方单图 API 256×256 bicubic、RGB/255、无 ImageNet 归一化，FP32/cuda:0。分类主口径为 14 类 argmax 折叠真假，额外记录 score>=0.5 口径；定位使用原始特征距离>=2.3，不把距离当概率。
+- 本地 CASIA 479 张全部读取成功：原生分类 TP=60/TN=87/FP=9/FN=323，ACC=30.69%、F1=26.55%、AUROC=0.44895；0.5 口径 ACC=30.90%，与原生有 1 张不同。
+- 全部 383 张篡改图原尺寸定位 macro pixel F1=0.002413、IoU=0.001409、AUC=0.47545；368 张预测为空。没有用分类结果筛掉定位失败，没有真值驱动反转、阈值拟合或边界剔除。原生标注随 EXIF 进行对应变换，源数据只读。
+- 同环境抽查两个样例与原始官方 HiFi_Net 类方法：标签/分数相同，掩码逐像素一致。记录为 `work/hifi-casia-observation/api-parity.json`，它排查适配改写偏差，不证明旧环境的精确复现。
+- 结果保存在 `work/hifi-casia-observation/`，单图原始输出在 `work/hifi-verification/`。现有通用组合未达到可用效果；不能据此否定专用 weights_loc。若后续测试 225000，必须配套 NLCDetection_loc/CE 分支，不沿用当前通用距离规则。
+- 新增 backend/hifi/、config/hifi.example.json、本机忽略配置及 hifi:evaluate/hifi:infer；说明在 docs/HIFI_EVALUATION.md。单图 inspection.json 为诊断记录，不冒充 v1.0 证据包；尚未接入 HiFi APP 模式或 VLM。
+- 当前分类效果对比只适用于同一本地子集上的不同模型/预处理配置，非控制训练数据的公平算法基准；不宣传独立泛化或支持全部篡改类型。
+- 用户进一步询问当前权重是否只该二分类：SICA 确实只做分类，未用它生成掩码；HiFi general 750001 的官方 README/HiFi_Net.py 同时提供 detect/localize，但它不是 weights_loc 的专用传统定位权重。此次定位指标应视为该通用 API 路径的诊断，不冒充专用定位版本的基准结论。

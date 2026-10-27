@@ -1,0 +1,10 @@
+{
+  "pythonPath": "python",
+  "sourcePath": ".tools/hifi-official",
+  "dependencyPath": ".tools/hifi-deps",
+  "encoderPath": "weights/hifi/general/HRNet/750001.pth",
+  "detectorPath": "weights/hifi/general/NLCDetection/750001.pth",
+  "centerPath": ".tools/hifi-official/center/radius_center.pth",
+  "device": "cuda:0",
+  "distanceThreshold": 2.3
+}
