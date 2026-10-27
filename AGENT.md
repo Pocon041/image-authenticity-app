@@ -2,7 +2,7 @@
 
 GitHub 仓库名采用 `image-authenticity-app`，中文项目名称为“图像真实性分析桌面应用”。本地开发目录保留 `D:\SRDP`。
 远程仓库为 `https://github.com/Pocon041/image-authenticity-app`，主分支为 `main`。
-当前协议和联调工具的共享变更按用户要求在 `czh` 分支维护并推送，不直接修改远端 `main`。
+当前协议和联调工具的共享变更按用户要求在 `czh` 分支维护并推送，不直接修改远端 `main`。后续各模块的开发人员应创建独自的分支并提交
 
 ## 项目目标与当前范围
 
