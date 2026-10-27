@@ -18,6 +18,7 @@
     "rita:setup": "node scripts/setup-rita-source.mjs",
     "rita:infer": "node scripts/run-rita.mjs",
     "smoke:rita": "npm run build && node tests/rita-smoke.mjs",
+    "smoke:rita:real": "npm run build && node tests/rita-real-smoke.mjs",
     "prestart": "npm run runtime:ensure",
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit",
