@@ -4,7 +4,7 @@ import { IPC, type AnalysisProgress, type DesktopAPI } from '../shared/contracts
 const desktop: DesktopAPI = {
   chooseImage: () => ipcRenderer.invoke(IPC.chooseImage),
   clearImage: () => ipcRenderer.invoke(IPC.clearImage),
-  analyze: (imageId, taskId) => ipcRenderer.invoke(IPC.analyze, imageId, taskId),
+  analyze: (imageId, taskId, backend) => ipcRenderer.invoke(IPC.analyze, imageId, taskId, backend),
   cancelAnalysis: (taskId) => ipcRenderer.invoke(IPC.cancelAnalysis, taskId),
   onAnalysisProgress(listener) {
     const handler = (_event: Electron.IpcRendererEvent, progress: AnalysisProgress) =>

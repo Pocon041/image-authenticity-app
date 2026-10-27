@@ -6,9 +6,10 @@ import { useAnalysisWorkspace } from './hooks/useAnalysisWorkspace'
 
 export function App() {
   const workspace = useAnalysisWorkspace()
+  const local = workspace.backend === 'rita'
   const steps = [
     { number: '01', label: '导入图片', complete: !!workspace.image },
-    { number: '02', label: '模拟分析', complete: !!workspace.report },
+    { number: '02', label: local ? 'RITA 定位' : '模拟分析', complete: !!workspace.report },
     { number: '03', label: '查看描述', complete: !!workspace.report }
   ]
 
@@ -22,12 +23,32 @@ export function App() {
         </div>
         <div className="mode-badge">
           <FlaskConical size={15} />
-          模拟分析模式
+          {local ? 'RITA 本地定位' : '模拟分析模式'}
         </div>
       </div>
       <div className="demo-notice">
         <Info size={17} />
-        <span>当前为 Smoke 测试版本。所有分析描述均为模拟内容，未接入检测模型或语言模型。</span>
+        <span>
+          {local
+            ? 'RITA 模式使用本机官方权重，未配置时会提示错误；此模式不执行 AI 检测或 VLM，整图阈值仍需验证。'
+            : '当前为 Smoke 测试版本。所有分析描述均为模拟内容，未接入检测模型或语言模型。'}
+        </span>
+      </div>
+      <div className="backend-picker" role="group" aria-label="分析服务">
+        <button
+          aria-pressed={!local}
+          disabled={workspace.busy}
+          onClick={() => workspace.selectBackend('mock')}
+        >
+          模拟流程
+        </button>
+        <button
+          aria-pressed={local}
+          disabled={workspace.busy}
+          onClick={() => workspace.selectBackend('rita')}
+        >
+          RITA 本地定位
+        </button>
       </div>
       <div className="steps" aria-label="分析流程">
         {steps.map((step, index) => (

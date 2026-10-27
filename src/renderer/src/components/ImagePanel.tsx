@@ -98,7 +98,17 @@ export function ImagePanel({ workspace: w }: { workspace: AnalysisWorkspace }) {
           disabled={!w.image || w.busy}
         >
           {w.running ? <LoaderCircle size={17} className="spin" /> : <Sparkles size={17} />}
-          {w.running ? '模拟分析中…' : w.report ? '重新模拟分析' : '开始模拟分析'}
+          {w.backend === 'rita'
+            ? w.running
+              ? 'RITA 分析中…'
+              : w.report
+                ? '重新运行 RITA'
+                : '开始 RITA 定位'
+            : w.running
+              ? '模拟分析中…'
+              : w.report
+                ? '重新模拟分析'
+                : '开始模拟分析'}
           {!w.running && <ArrowRight size={16} />}
         </button>
       </div>

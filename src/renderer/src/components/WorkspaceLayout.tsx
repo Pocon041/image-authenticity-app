@@ -53,7 +53,7 @@ export function WorkspaceLayout({ children }: PropsWithChildren) {
               <ShieldCheck size={14} />
               本机处理 · 无远程 API 调用
             </span>
-            <span>工程 Smoke 原型 / MOCK ONLY</span>
+            <span>第一阶段 / 本地图像分析</span>
           </footer>
         </div>
       </main>

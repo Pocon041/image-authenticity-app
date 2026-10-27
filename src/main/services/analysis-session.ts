@@ -1,4 +1,4 @@
-import type { AnalysisProgress } from '../../shared/contracts'
+import type { AnalysisBackend, AnalysisProgress } from '../../shared/contracts'
 import { AppError } from '../errors'
 import type { ImportedImage } from '../image-import'
 import type { AnalysisService } from './analysis'
@@ -27,7 +27,12 @@ export class AnalysisSession {
     if (this.busy) throw new AppError('BUSY', '已有分析任务正在运行。')
   }
 
-  async analyze(imageId: string, taskId: string, onProgress: (progress: AnalysisProgress) => void) {
+  async analyze(
+    imageId: string,
+    taskId: string,
+    onProgress: (progress: AnalysisProgress) => void,
+    backend: AnalysisBackend = 'mock'
+  ) {
     this.assertIdle()
     if (!this.selectedImage || this.selectedImage.asset.id !== imageId) {
       throw new AppError('STALE_IMAGE', '图片已失效，请重新选择图片。')
@@ -36,12 +41,13 @@ export class AnalysisSession {
     this.activeTask = task
     try {
       return await this.service.analyze(this.selectedImage, {
+        backend,
         taskId,
         signal: task.controller.signal,
         onProgress
       })
     } catch (error) {
-      if (task.controller.signal.aborted) throw new AppError('CANCELLED', '模拟分析已取消。')
+      if (task.controller.signal.aborted) throw new AppError('CANCELLED', '分析任务已取消。')
       throw error
     } finally {
       if (this.activeTask === task) this.activeTask = null

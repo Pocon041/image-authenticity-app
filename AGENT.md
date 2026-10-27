@@ -11,6 +11,8 @@ GitHub 仓库名采用 `image-authenticity-app`，中文项目名称为“图像
 当前阶段只实现端到端 Smoke 闭环：选择本地图片 → 预览 → 模拟分析 → 显示模拟描述。
 不接入检测模型、语言模型、远程 API 或真实推理。模拟内容必须始终明确标注，不能展示伪造的真实检测结论或置信度。
 
+阶段更新：用户现已授权开始第二人模块的 RITA 预训练推理接入验证，允许独立的本地真实推理路径；原模拟模式继续保留。没有授权训练新模型或接入 VLM。缺少权重时不得伪造真实报告或静默回退模拟。
+
 ## 维护要求
 
 - 本文件是项目约定的唯一正文。每次改变框架、目录、运行命令、接口或阶段范围时，同步更新本文件。
@@ -26,7 +28,7 @@ GitHub 仓库名采用 `image-authenticity-app`，中文项目名称为“图像
 - `AnalysisSession` 管理当前图片、互斥任务和取消；模拟服务经回调报告任务进度。
 - 主进程保留原始文件路径，界面只接收预览 DTO。界面组件与 `useAnalysisWorkspace` 交互状态分开。
 - 跨进程调用统一使用结果响应与稳定错误代码，进度携带任务 ID，监听器必须可取消订阅。
-- 当前没有 Python 服务；不要为未来模型预先引入推理依赖或空壳后端。
+- RITA 接入前没有 Python 服务；当前按用户授权新增 `backend/rita/` 单图子进程，不提前添加其他模型或 VLM 后端。
 - 渲染进程禁止直接访问 Node.js、文件系统或任意 IPC。启用 contextIsolation 和 sandbox，关闭 nodeIntegration。
 
 ## 目录职责
@@ -41,6 +43,9 @@ GitHub 仓库名采用 `image-authenticity-app`，中文项目名称为“图像
 - `examples/stage1-materials/`、`examples/local-selection.json`：第一阶段材料包与实际选择清单，Git 忽略，不自动公开发布。`examples/local-data/` 为先前中间样例，不作为本轮交付目录。
 - `tests/`：真实 Electron 窗口的端到端 Smoke 验证。
 - `scripts/`：运行时检查和安装；Windows 从官方发布地址下载 Electron，并按 npm 包提供的 SHA256 校验。
+- `backend/rita/`：RITA 单图执行、掩码解码和测试；`config/rita.example.json` 为共享配置模板，`config/rita.local.json` 为 Git 忽略的本机配置。
+- `weights/rita/rita_catnet.pth`：用户从官方分享下载的权重，整个 `weights/` 不提交 Git。
+- `.tools/rita-upstream/rita.py`：下载并校验的固定版本源码，不随本项目仓库重新分发。
 - `.tools/`：可选的项目本地 Node 环境，不提交。
 - `work/`：生成的测试图、截图和临时文件，不提交。
 - `out/`、`dist/`：构建产物，不提交。
@@ -63,6 +68,10 @@ Windows 启动入口为 `start.cmd`；`run.cmd` 负责优先使用 `.tools/` 下
 - `run.cmd run format` / `format:check`：统一源码与文档格式。
 - `run.cmd run examples:prepare`：按类型选择清单准备材料，默认输出 `examples/stage1-materials/`；每类少量原文件、规范显示图、原生标注、TSV 清单，以及一份给第四人的 VLM JSON。不修改源数据集、不调用模型。
 - `run.cmd run examples:validate`：校验全部材料的哈希、显示像素、标注尺寸，以及唯一 JSON 的 Schema 和证据引用；也支持 `-- --bundle <path>` 校验单个包。
+- `run.cmd run rita:setup`：下载并校验固定官方模型源码；不下载权重、不训练。
+- `run.cmd run rita:infer -- --image <path>`：按本机配置执行单图，结果保存到 `work/rita-cli/`。
+- `run.cmd run smoke:rita`：真实 Electron 下验证独立 RITA 入口、缺失权重报错及模拟模式隔离。
+- `<配置的Python> -m unittest discover -s backend/rita -p test_*.py`：验证控制类别、几何、分数汇总和严格加载拒绝路径。
 
 使用 `package-lock.json` 固定依赖。需要 Node 22.12+，推荐 Node 24 LTS。不要修改系统 Node 来满足本项目。
 修改跨进程协议或核心交互后执行类型检查和主流程 Smoke 测试。Smoke 测试只模拟文件选择对话框，实际文件读取、解码、IPC、模拟分析和 React 展示均走真实应用路径。
@@ -80,7 +89,7 @@ Windows 启动入口为 `start.cmd`；`run.cmd` 负责优先使用 `.tools/` 下
 - 数据集示例只作联调，不作为效果证明；没有执行的来源凭证和水印检查标记为 `not_run`。
 - 用户要求材料优先覆盖种类、每类少量取样，并且只交付一份给第四人的示例 JSON。数据目录仅保留 `vlm-input.example.json`；其余来源、类别和标注关系使用 `manifest.tsv`。Schema JSON 属于协议定义，不是额外样例报告。
 - 本地 IMD2020 已核对为 Yu2018 生成式修复子集，不能宣传覆盖完整 IMD2020。真值掩码是原生 JPEG，应与模拟预测掩码分别标记。
-- 当前 v1.0 尚未接入 APP，现有随机 ID 与旧 `AnalysisReport` 不自动满足新协议。四模块注册、API 适配、报告保存和实际 VLM 调用为后续工作。
+- 当前 APP 图片 ID 已改为原始字节 SHA256，重复导入保持一致；主进程保留原始字节快照。RITA 路径可生成 v1.0 manipulation 报告与证据包，原模拟报告仍使用旧展示类型。其他模块注册、公共报告汇总与 VLM 调用尚未实现。
 
 ## 当前状态
 
@@ -97,4 +106,29 @@ Windows 启动入口为 `start.cmd`；`run.cmd` 负责优先使用 `.tools/` 下
 - 三份原生标注单独保存。唯一的 `vlm-input.example.json` 面向 IMD2020 修复样本，只含前三个模块，定位矩形和检测分数均为模拟，不含真值或第四人的预置输出。
 - 材料通过文件级校验：12 张原文件及显示副本哈希/像素、3 份标注尺寸，以及唯一 JSON 的 Schema、坐标、裁剪、掩码值和证据引用均通过。未运行 APP、检测模型或 VLM。
 - Windows 应用目录已生成过，打包后测试曾在隐藏窗口截图步骤超时；暂未通过发布验收，本轮不继续追查此具体问题。
-- 后续模型接入、真实检测、证据解释、历史记录和安装器不属于本轮范围。
+- 历史范围中模型接入不在 Smoke 原型内；用户现已授权第二人 RITA 接入，具体状态见下方。来源、AI 检测、VLM、历史记录和安装器仍未实现。
+
+## 第二人模块：RITA 选型核对（2026-10-27）
+
+- 用户明确本人的工作属于第二人：篡改图像级判断、像素定位、结构化报告和 APP 接入；先评估现有 RITA，暂未要求训练或执行模型。
+- 已在线核对官方 `scu-zjz/RITA` 的 `README.md`、`rita.py`、`test.py`、`test.sh`、`train.py`、`balanced_data.py` 和论文 v3。仓库核对提交为 `b50efcd5b4c41b8bfc69b0b10ce6230dcb67b983`。
+- README 虽仍把 Autoregressive inference code 列为待发布，`test.py` 实际已含 `AutoregressiveMaskGenerator`：迭代输出类别掩码并以 EOS/最大步数终止。因此不能仅根据 TODO 断言自回归推理循环完全不存在。
+- 当前公开自然图像实现默认 `num_classes=4`；数据构造使用篡改/其余像素、EOS 和 padding，模型返回像素 logits，没有独立的整图二分类头，也不是四种编辑操作分类。需要核对权重与类别约定，并单独验证图像级分数汇总及阈值。
+- 论文的传统定位协议与多步过程监督不同；传统协议权重不能未经核验就当作可恢复真实编辑顺序。论文附录的 23 类原子操作示例另用私有文档数据训练，不代表公开四类模型能直接输出这些操作名称。
+- 官方 README 提供百度网盘权重/依赖文件入口；尚未下载、读取或严格加载权重，无法确认其完整性、训练协议和效果。根目录未见独立 LICENSE 或完整依赖锁定，后续复用需核对代码与权重使用条件。
+- 官方评测入口为 NCCL/torchrun、多 GPU、固定 512 输入和硬编码本地路径，模型初始化还硬编码 SegFormer 预训练文件。桌面接入应抽取单图单进程推理、配置路径，并恢复到协议规定的规范显示坐标，不直接运行数据集评测脚本。
+- 候选接入目标：模型真实像素输出 → 掩码/区域/裁剪/响应统计 → v1.0 manipulation 报告 → Electron 调用。`operationHints` 可为空；响应分数不自动视为校准概率，图像真实性结论允许 inconclusive。
+- 下一步应先核实可用权重和单图加载，再用现有多类型材料检查接口与几何；若进入质量评测，另用更充分且独立的带标注样本，检查真实图误报、拼接、复制移动和修复表现。现有 12 张联调材料不能证明泛化或确定阈值。
+- 本轮仅静态代码和论文核对，未安装 Python 推理环境、未执行检测、未训练，README 不变。本条记录尚未提交推送；选型仍为候选，不能记为已集成。
+
+## RITA 接入开发进展（2026-10-27）
+
+- 开发分支为 `feature/rita-manipulation`，从 `czh` 建立。保留用户已有的分支说明，不修改 README。
+- 官方分享已正常通过提取码访问，确认文件名 `rita_catnet.pth`；当前未登录下载接口返回错误，尚未获得权重。用户表示会自行下载，已告知放置 `D:\SRDP\weights\rita\rita_catnet.pth`，目录已创建。
+- 本机配置已准备，使用现有 EIT Python（PyTorch 2.7.0+cu126、timm 1.0.21），不修改其已安装依赖。配置不提交。源码检查和单图执行独立于其他项目的代码。
+- 实现固定源码 SHA256 校验、去除骨干硬编码初始化路径后完整 strict=True 权重加载、单进程 FP32 自回归、超时及取消、像素类别解码、规范显示坐标恢复、区域裁剪与 v1.0 报告保存。
+- 只接收四类任务权重；class0=篡改，class1=其余，class2=EOS，class3=padding。按首个 EOS 主导步骤之前的最后有效输出定位，控制类别不会被自动算成篡改。默认整图阈值为空，结果为 inconclusive，响应分数不作已校准概率。
+- 桌面新增独立 RITA 模式，真实调用 Python，不因缺失模型而回退模拟。可展示预测叠加及 JSON；结果保存于 `work/rita-runs/<taskId>/`。发布包的 Python/权重分发尚未配置。
+- 已通过类型检查、构建、既有 15 项模拟 Smoke 和 5 项 RITA 入口检查（重复导入 SHA256、真实 IPC、无权重明确报错、不安全任务 ID、模式隔离）。7 项 Python 后处理与负向加载测试全部通过，包括首个 EOS 边界、padding、缩放、分数分辨率不变、缺权重和不完整权重 strict 拒绝。
+- 已执行随机初始化网络结构的单次 CUDA 前向检查，输出 [1,4,512,512] 且有限。这只证明当前计算环境和网络形状可运行，没有加载预训练权重、没有评估定位效果；不得作为检测成功或性能结果。
+- 当前尚未完成官方权重严格加载、真实单图输出 Schema 校验、掩码质量、显存/耗时实测及图像级阈值验证。用户权重就位后继续；未训练。

@@ -1,8 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
-import type { AnalysisProgress, AnalysisReport, ImageAsset } from '../../../shared/contracts'
+import type {
+  AnalysisBackend,
+  AnalysisProgress,
+  AnalysisReport,
+  ImageAsset
+} from '../../../shared/contracts'
 
 export function useAnalysisWorkspace() {
   const [image, setImage] = useState<ImageAsset | null>(null)
+  const [backend, setBackend] = useState<AnalysisBackend>('mock')
   const [report, setReport] = useState<AnalysisReport | null>(null)
   const [progress, setProgress] = useState<AnalysisProgress | null>(null)
   const [status, setStatus] = useState<'idle' | 'picking' | 'running' | 'cancelling'>('idle')
@@ -52,13 +58,18 @@ export function useAnalysisWorkspace() {
     setProgress(null)
     setStatus('running')
     try {
-      const result = await window.desktop.analyze(image.id, taskId)
+      const result = await window.desktop.analyze(image.id, taskId, backend)
       if (!result.ok) {
-        if (result.code === 'CANCELLED') setNotice('模拟分析已取消，可以重新开始。')
+        if (result.code === 'CANCELLED')
+          setNotice(
+            backend === 'mock'
+              ? '模拟分析已取消，可以重新开始。'
+              : 'RITA 分析已取消，可以重新开始。'
+          )
         else setError(result.error)
       } else if (result.data.imageId === image.id) setReport(result.data)
     } catch {
-      setError('模拟分析失败，请重试。')
+      setError('分析失败，请重试。')
     } finally {
       if (currentTask.current === taskId) {
         currentTask.current = null
@@ -106,6 +117,15 @@ export function useAnalysisWorkspace() {
   }
 
   return {
+    backend,
+    selectBackend(next: AnalysisBackend) {
+      if (locked.current) return
+      setBackend(next)
+      setReport(null)
+      setError('')
+      setNotice('')
+      setProgress(null)
+    },
     image,
     report,
     progress,

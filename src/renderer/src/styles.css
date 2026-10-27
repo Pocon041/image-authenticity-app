@@ -742,3 +742,55 @@ h1 {
   color: #9cafca;
   font-size: 12px;
 }
+
+.backend-picker {
+  display: flex;
+  gap: 8px;
+  margin-top: 18px;
+}
+.backend-picker button {
+  color: #a9b8cd;
+  background: #192332;
+  border: 1px solid #354256;
+  border-radius: 6px;
+  padding: 8px 13px;
+  font-size: 12px;
+}
+.backend-picker button[aria-pressed='true'] {
+  color: #b9d0ff;
+  border-color: #6389c8;
+  background: #233451;
+}
+.localization-result {
+  margin-top: 20px;
+  border-top: 1px solid #2b3543;
+  padding-top: 16px;
+}
+.localization-result h4 {
+  font-size: 12px;
+  font-weight: 500;
+}
+.localization-result img {
+  display: block;
+  max-width: 100%;
+  max-height: 320px;
+  margin: 12px auto;
+  object-fit: contain;
+}
+.localization-result p,
+.localization-result summary {
+  font-size: 11px;
+  color: #91a4bf;
+  line-height: 1.8;
+}
+.localization-result pre {
+  max-height: 260px;
+  overflow: auto;
+  padding: 12px;
+  background: #10151d;
+  font-size: 10px;
+  white-space: pre-wrap;
+}
+.bundle-path {
+  overflow-wrap: anywhere;
+}

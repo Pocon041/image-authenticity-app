@@ -10,3 +10,6 @@ work/
 examples/local-selection.json
 examples/local-data/
 examples/stage1-materials/
+weights/
+config/rita.local.json
+__pycache__/

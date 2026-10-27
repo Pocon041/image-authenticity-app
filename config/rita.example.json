@@ -1,0 +1,10 @@
+{
+  "pythonPath": "python",
+  "upstreamPath": ".tools/rita-upstream/rita.py",
+  "checkpointPath": "weights/rita/rita_catnet.pth",
+  "checkpointSha256": null,
+  "device": "auto",
+  "maxSteps": 10,
+  "decisionThreshold": null,
+  "timeoutMs": 180000
+}

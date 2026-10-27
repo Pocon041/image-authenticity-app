@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { createHash } from 'node:crypto'
 import { open } from 'node:fs/promises'
 import { basename, extname } from 'node:path'
 import sharp from 'sharp'
@@ -16,10 +16,11 @@ const mimeTypes: Record<string, string> = {
 export interface ImportedImage {
   asset: ImageAsset
   sourcePath: string
+  originalBytes: Buffer
 }
 
 export async function importImage(filePath: string): Promise<ImportedImage> {
-  const mimeType = mimeTypes[extname(filePath).toLowerCase()]
+  let mimeType = mimeTypes[extname(filePath).toLowerCase()]
   if (!mimeType) throw new Error('不支持此文件格式，请选择 PNG、JPG 或 WebP 图片。')
   const file = await open(filePath, 'r')
   try {
@@ -49,6 +50,7 @@ export async function importImage(filePath: string): Promise<ImportedImage> {
       ) {
         throw new Error('Unsupported image')
       }
+      mimeType = `image/${metadata.format}`
       const rotated = metadata.orientation !== undefined && metadata.orientation >= 5
       width = rotated ? metadata.height : metadata.width
       height = rotated ? metadata.width : metadata.height
@@ -66,8 +68,10 @@ export async function importImage(filePath: string): Promise<ImportedImage> {
     }
     return {
       sourcePath: filePath,
+      originalBytes: bytes,
       asset: {
-        id: randomUUID(),
+        id: `sha256:${createHash('sha256').update(bytes).digest('hex')}`,
+        sha256: createHash('sha256').update(bytes).digest('hex'),
         name: basename(filePath),
         size: length,
         width,

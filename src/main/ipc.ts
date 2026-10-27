@@ -22,8 +22,8 @@ export function registerDesktopIPC(
     return window
   }
 
-  function validateId(value: unknown): asserts value is string {
-    if (typeof value !== 'string' || !/^[\w-]{1,80}$/.test(value)) {
+  function validateId(value: unknown, image = false): asserts value is string {
+    if (typeof value !== 'string' || !(image ? /^[\w:-]{1,100}$/ : /^[\w-]{1,80}$/).test(value)) {
       throw new AppError('INVALID_REQUEST', '请求参数无效。')
     }
   }
@@ -62,20 +62,30 @@ export function registerDesktopIPC(
     }
   })
 
-  ipcMain.handle(IPC.analyze, async (event, imageId: unknown, taskId: unknown) => {
-    try {
-      const window = requireWindow(event)
-      validateId(imageId)
-      validateId(taskId)
-      if (picking) throw new AppError('BUSY', '请等待图片导入结束。')
-      const report = await session.analyze(imageId, taskId, (progress) => {
-        if (!window.isDestroyed()) window.webContents.send(IPC.progress, progress)
-      })
-      return { ok: true, data: report }
-    } catch (error) {
-      return failure(error)
+  ipcMain.handle(
+    IPC.analyze,
+    async (event, imageId: unknown, taskId: unknown, backend: unknown = 'mock') => {
+      try {
+        const window = requireWindow(event)
+        validateId(imageId, true)
+        validateId(taskId)
+        if (backend !== 'mock' && backend !== 'rita')
+          throw new AppError('INVALID_REQUEST', '未知的分析服务。')
+        if (picking) throw new AppError('BUSY', '请等待图片导入结束。')
+        const report = await session.analyze(
+          imageId,
+          taskId,
+          (progress) => {
+            if (!window.isDestroyed()) window.webContents.send(IPC.progress, progress)
+          },
+          backend
+        )
+        return { ok: true, data: report }
+      } catch (error) {
+        return failure(error)
+      }
     }
-  })
+  )
 
   ipcMain.handle(IPC.cancelAnalysis, (event, taskId: unknown): Response<boolean> => {
     try {
