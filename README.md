@@ -10,7 +10,7 @@
 
 SICA 判真也继续定位；某个模型失败时保留其他模型的结果。支持取消、补充检查、原图/叠加切换及区域裁剪。HiFi-Net 已退出当前应用代码，历史效果记录保留在 [HIFI_EVALUATION.md](docs/HIFI_EVALUATION.md)。
 
-本阶段负责视觉检测与工程接入；OCR、来源凭证、AI 生成专用模块和最后的 VLM 综合解释尚未整合。模型标记是待核查线索，不能直接视为已证实篡改，当前不输出未经验证的综合真假概率。
+当前已整合第一人的来源/预处理模块：记录元数据、扫描内嵌C2PA凭证、检查元数据水印标记，并在独立环境就绪时执行可见水印关键词OCR与SDXL固定载荷解码。水印OCR不扩展为通用文字内容分析；AI生成专用模块和最后的VLM综合解释尚未整合。模型标记是待核查线索，不能直接视为已证实篡改，当前不输出未经验证的综合真假概率。
 
 ## 已安装基础版：如何增量升级
 
@@ -116,6 +116,16 @@ foreach ($modelName in @('rita', 'sica', 'rise')) {
 
 ### 6. 启动并验证
 
+首次接入第一人来源检查时，另行准备隔离环境（不会更改上述模型环境）：
+
+```powershell
+# 复用上面创建的Python，也可填写已有Python的完整路径
+$env:PROVENANCE_PYTHON = (Resolve-Path .venv\Scripts\python.exe).Path
+.\run.cmd run provenance:setup
+```
+
+来源依赖安装到 `.tools/provenance-venv`；缺少此环境时，APP仍生成基础图像信息及凭证容器扫描记录，并明确标记详细解析、水印像素检查未执行。实现与局限见 [PROVENANCE_V01.md](docs/PROVENANCE_V01.md)。
+
 ```powershell
 .\start.cmd
 ```
@@ -129,7 +139,8 @@ foreach ($modelName in @('rita', 'sica', 'rise')) {
 联合任务保存在 `work/analysis-runs/<taskId>/`，APP 中可点击「打开报告文件夹」。
 
 - **`analysis.json`**：默认阅读及后续综合分析的简明报告，包含图片身份、模型来源、状态、分数、区域、掩码/裁剪路径、证据引用、分歧和限制。
-- **`bundle.json` / `report.json`**：兼容 v1.0 的完整证据包与单一篡改模块报告。
+- **`bundle.json` / `report.json`**：兼容v1.0的完整证据包及独立篡改报告；完整包同时包含manipulation和provenance两个模块。
+- **`reports/provenance.json`**：第一人来源、预处理、C2PA和水印检查报告；保持各子检查的未执行/失败状态，不以缺少凭证证明真假。
 - **`images/`、`detectors/`**：原文件副本、规范显示图、掩码、裁剪、浮点响应及内部诊断。
 
 源码清单、逐块专家分数和运行日志不塞入简明报告。交给第四阶段时保留整个目录；JSON 中的图片路径需要实际加载才能成为 VLM 的视觉输入。
@@ -168,7 +179,7 @@ foreach ($modelName in @('rita', 'sica', 'rise')) {
 - `src/main/`：文件读取、IPC、统一任务编排、Python 子进程与证据汇总。
 - `src/preload/`、`src/shared/`：最小桌面桥接、跨进程类型。
 - `src/renderer/`：React 工作台。
-- `backend/rita`、`sica`、`rise`：三个模型适配；`backend/common` 为共享评测工具。
+- `backend/rita`、`sica`、`rise`：三个检测模型适配；`backend/provenance`为第一人来源检查，`backend/common`为共享评测工具。
 - `config/`、`schemas/`、`docs/`：配置模板、报告约束和模块说明。
 - `scripts/`、`tests/`：运行准备、验证与真实桌面测试。
 

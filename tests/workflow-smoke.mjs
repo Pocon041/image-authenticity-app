@@ -83,7 +83,16 @@ try {
   await page.getByTestId('workflow-progress').waitFor()
   const document = await result(),
     first = document.reports[0]
-  assert.equal(document.reports.length, 1)
+  assert.equal(document.reports.length, 2)
+  assert.equal(document.reports[1].moduleId, 'provenance')
+  assert.equal(document.reports[1].evidence.length, 4)
+  const provenancePath = join(
+    project,
+    'work/analysis-runs',
+    first.taskId,
+    'reports/provenance.json'
+  )
+  assert.equal(JSON.parse(await readFile(provenancePath, 'utf8')).moduleId, 'provenance')
   assert.equal(first.producer.name, 'manipulation-workflow')
   assert.equal(first.result.score, null)
   assert.equal(first.result.decision, 'inconclusive')
@@ -122,7 +131,7 @@ try {
   )
   assert.equal(document.artifacts.filter((a) => ['original', 'display'].includes(a.type)).length, 2)
   await page.screenshot({ path: join(output, '02-document.png'), fullPage: true })
-  checks.push('real SICA + RiSE document workflow and self-contained single-module evidence bundle')
+  checks.push('real SICA + RiSE document workflow with linked provenance and manipulation reports')
 
   await page.getByTestId('supplement-button').click()
   const augmented = await result(),

@@ -273,9 +273,11 @@ const both = await new WorkflowAnalysisService(root, uncertain.services).analyze
 )
 assert.deepEqual(uncertain.calls, ['sica', 'rita', 'rise'])
 assert.equal(uncertain.maximum, 1)
-assert.equal(both.workflow.bundle.reports.length, 1)
+assert.equal(both.workflow.bundle.reports.length, 2)
 assert.equal(both.workflow.bundle.reports[0].result.score, null)
 assert.equal(both.workflow.bundle.reports[0].result.regions.length, 2)
+assert.equal(both.workflow.bundle.reports[1].moduleId, 'provenance')
+assert.equal(both.workflow.bundle.reports[1].evidence.length, 4)
 assert.equal(
   both.workflow.bundle.artifacts.filter((a) => ['original', 'display'].includes(a.type)).length,
   2
@@ -296,7 +298,7 @@ assert.equal(JSON.stringify(both.workflow.summary).includes('data:image'), false
 assert.equal(JSON.stringify(both.workflow.summary).includes('expertSelectionConfidence'), false)
 assert.ok(JSON.stringify(both.workflow.summary).length < 10000)
 checks.push(
-  'uncertain routing is sequential; single report, separate masks, deduplicated original/display'
+  'uncertain routing is sequential; independent provenance/manipulation reports, separate masks and deduplicated input'
 )
 checks.push(
   'concise report retains evidence and regions without source lists, tile scores or embedded images'
@@ -322,6 +324,7 @@ const failedReport = await new WorkflowAnalysisService(root, failed.services).an
 assert.equal(failedReport.workflow.status, 'failed')
 assert.equal(failedReport.workflow.bundle.reports[0].result, null)
 assert.equal(failedReport.workflow.bundle.reports[0].error.code, 'ALL_DETECTORS_FAILED')
+assert.equal(failedReport.workflow.bundle.reports[1].moduleId, 'provenance')
 checks.push('all detector failures never become no-anomaly results')
 
 const controller = new AbortController(),

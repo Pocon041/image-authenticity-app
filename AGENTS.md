@@ -21,6 +21,9 @@
 - `config/*.example.json`：共享配置模板；`config/*.local.json`：Git忽略的本机配置。当前EIT与RiSE隔离依赖目录保持现状，不随合并覆盖。
 - 原始运行记录在 `work/analysis-runs` 与各模型 `*-runs`；不将实际图片/权重/诊断产物提交Git。
 - 下一版候选区域二次复核仍是待验证方案，尚未实现。
+- 已在feature/provenance-integration合并main的e1e59b4/yht来源模块。只适配共享输入/证据汇总，不改SICA/RITA/RiSE推理策略；analysis.json保持篡改摘要，完整bundle增加provenance报告。共用接入状态写AGENT.md。
+- 合并冲突保留第二人的强类型证据汇总与解释引用校验，同时接入第一人来源报告。prepare阶段先显示来源检查进度，取消仍停止后续调度；来源读取器修复了任务已取消时的监听竞态。简明报告按moduleId查找manipulation，不依赖多模块报告排列顺序。
+- 本轮整合后真实SICA/RiSE/RITA联合Smoke8组通过（含补充复用、SICA阴性仍定位、部分失败、实际推理取消），9组编排测试通过。未新增模型、训练、阈值或二次复核策略；来源模块像素验证归属第一人，共用结果汇总见AGENT.md。
 
 ## 检查入口
 

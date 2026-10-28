@@ -161,20 +161,20 @@ if (actualOption >= 0) {
   const actual = JSON.parse(await readFile(file, 'utf8'))
   assert.deepEqual(validateEvidenceBundle(actual), [])
   assertEvidenceBundle(actual)
-  const input = actual.reports.find((report) => report.status === 'completed')
-  assert.ok(input && input.evidence.length > 0)
+  const inputs = actual.reports.filter(
+    (report) => report.status === 'completed' && report.evidence.length > 0
+  )
+  assert.ok(inputs.length > 0)
   const sample = {
     ...explanation,
     imageId: actual.image.imageId,
-    inputReportIds: [input.reportId],
+    inputReportIds: inputs.map((input) => input.reportId),
     result: {
       ...explanation.result,
-      claims: [
-        {
-          text: 'Compatibility fixture citing existing detector evidence; no interpretation was generated.',
-          evidenceIds: [input.evidence[0].evidenceId]
-        }
-      ]
+      claims: inputs.map((input) => ({
+        text: 'Compatibility fixture citing existing detector evidence; no interpretation was generated.',
+        evidenceIds: [input.evidence[0].evidenceId]
+      }))
     }
   }
   assert.deepEqual(validateExplanationReport(sample, actual.reports), [])

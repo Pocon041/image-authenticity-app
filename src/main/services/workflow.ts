@@ -61,7 +61,8 @@ export class WorkflowAnalysisService implements AnalysisService {
       )
     try {
       context.signal.throwIfAborted()
-      const common = await prepareWorkflowInput(input, output)
+      notify(1, '检查来源信息与图像预处理')
+      const common = await prepareWorkflowInput(input, output, this.root, context.signal)
       await manifest('running')
       for (let index = 0; index < planned.length; index++) {
         context.signal.throwIfAborted()
@@ -198,6 +199,7 @@ export class WorkflowAnalysisService implements AnalysisService {
         }
       for (const name of ['bundle.json', 'report.json', 'analysis.json'])
         await rm(join(output, name), { force: true })
+      await rm(join(output, 'reports/provenance.json'), { force: true })
       await manifest(context.signal.aborted ? 'cancelled' : 'failed')
       throw error
     }

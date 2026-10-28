@@ -62,12 +62,17 @@ Windows从start.cmd启动源码APP；run.cmd优先使用可选本地Node，否�
 
 ## 当前联调状态（2026-10-28）
 
-- v0.2.0本地视觉工作流可运行，默认输出analysis.json和标准bundle.json；来源/AIGC/解释后端尚未统一接入。模块详细验证移至AGENTS.md。
+- v0.2.0本地视觉工作流可运行，默认输出analysis.json和标准bundle.json；第一人来源模块已从最新main整合，AIGC/解释后端尚未统一接入。模块详细验证移至AGENTS.md。
 - 第一阶段材料包按类型少量准备，唯一的vlm-input.example.json为显式模拟联调输入；实际数据及GT继续Git忽略，成员自行配置数据路径。
 - 已拉取并合并yr_explanation截至 `e2793d5`（上游先合并czh的e435a03）；实际新增protocol.ts与共用记录，无generateExplanation/VLM/解释UI。保留第二人既有检测能力与本机配置。
 - 共用类型与现有Schema名称已对齐；运行时使用同一Schema校验报告结构、confidence联动及引用。`validateExplanationReport(report)`只做结构检查，显式传上游数组才解析引用，空数组不等于省略。
 - 交接方式见 `docs/EXPLANATION_HANDOFF.md`。已有真实检测包与明确标注的测试解释引用兼容，不代表已运行VLM。
 - 本轮7组协议兼容检查通过，覆盖畸形输入、confidence联动、空/缺失/跨图引用和既有真实输出的证据ID衔接。未改变公共JSON字段或新增解释占位结果；本地整合到czh，原yr_explanation分支不改写。
+- 本轮同步main至e1e59b4，已确认其包含yht的44b74da（来源v0.1.1）。完整包增加独立provenance及reports/provenance.json，manipulation仍单独保存；保留本地强类型和解释引用校验，不覆盖本机检测模型配置。
+- 来源模块读取原文件与规范显示副本，记录EXIF/XMP/IPTC、C2PA和水印子检查。来源模块允许的OCR仅用于水印关键词候选，不替代第四人的通用OCR内容分析；缺少元数据、凭证或水印不作为真假结论。
+- 来源依赖隔离在.tools/provenance-venv，通过provenance:setup安装；未就绪/失败逐子检查记录，界面折叠展示来源状态，主完成标记限篡改检测。详细能力与安装见docs/PROVENANCE_V01.md。
+- 整合验证完成：真实联合Smoke8组、共用协议7组（引用provenance/manipulation两份报告）、C2PA容器8例、元数据水印3例、XMP/IPTC/EXIF解析、真实来源Reader普通/异常清单读取，以及5项合成水印像素检查通过。水印纹理载体可能丢位，保留精确匹配规则，不把近似载荷称为命中；这些是接口与工程检查，不是准确率基准。
+- 类型检查、生产构建、模拟桌面15项、默认start.cmd启动3项与1400/1060布局回归通过。本机provenance隔离环境已就绪，未修改既有检测模型的Python环境。此次更新整合至本地czh，不改写或推送远端main/yht。
 
 ## Git协作
 

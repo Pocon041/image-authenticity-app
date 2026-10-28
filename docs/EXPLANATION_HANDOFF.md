@@ -11,7 +11,7 @@
 
 两者来自同一快照，`analysis.reportId` 对应 `bundle.reports[0].reportId`，摘要中的 `evidenceId` 沿用完整包中的ID。不要把 `analysis.json` 强制转换为 `EvidenceBundle`，也不要为适配第四人而重编号已有ID。
 
-当前联合包内只有一个 `moduleId=manipulation` 报告，前三人模块尚未全部整合。第四人应允许缺少来源/AIGC报告，明确保留缺失信息，不生成这些模块的假结果。
+当前联合包有独立的manipulation和provenance报告。`analysis.json`仍只是篡改摘要，不包含完整来源检查详情；第四人应从bundle.json按moduleId查找并引用两个报告。AIGC尚未整合，解释应明确缺失信息，不生成该模块的假结果。
 
 ## 类型与运行时校验
 
