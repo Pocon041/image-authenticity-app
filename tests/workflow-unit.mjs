@@ -273,9 +273,11 @@ const both = await new WorkflowAnalysisService(root, uncertain.services).analyze
 )
 assert.deepEqual(uncertain.calls, ['sica', 'rita', 'rise'])
 assert.equal(uncertain.maximum, 1)
-assert.equal(both.workflow.bundle.reports.length, 1)
+assert.equal(both.workflow.bundle.reports.length, 2)
 assert.equal(both.workflow.bundle.reports[0].result.score, null)
 assert.equal(both.workflow.bundle.reports[0].result.regions.length, 2)
+assert.equal(both.workflow.bundle.reports[1].moduleId, 'provenance')
+assert.equal(both.workflow.bundle.reports[1].evidence.length, 4)
 assert.equal(
   both.workflow.bundle.artifacts.filter((a) => ['original', 'display'].includes(a.type)).length,
   2
@@ -322,6 +324,7 @@ const failedReport = await new WorkflowAnalysisService(root, failed.services).an
 assert.equal(failedReport.workflow.status, 'failed')
 assert.equal(failedReport.workflow.bundle.reports[0].result, null)
 assert.equal(failedReport.workflow.bundle.reports[0].error.code, 'ALL_DETECTORS_FAILED')
+assert.equal(failedReport.workflow.bundle.reports[1].moduleId, 'provenance')
 checks.push('all detector failures never become no-anomaly results')
 
 const controller = new AbortController(),
