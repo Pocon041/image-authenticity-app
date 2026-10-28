@@ -5,8 +5,16 @@ import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
 
 const require = createRequire(import.meta.url)
-const electronDirectory = dirname(require.resolve('electron/package.json'))
-const { version } = require('electron/package.json')
+let electronDirectory, version
+try {
+  electronDirectory = dirname(require.resolve('electron/package.json'))
+  version = require('electron/package.json').version
+} catch {
+  console.error(
+    '[runtime] Electron package is missing. From the project directory, run `run.cmd ci --include=dev`, then retry `start.cmd`.'
+  )
+  process.exit(1)
+}
 
 function runtimeReady() {
   try {
