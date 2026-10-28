@@ -37,6 +37,54 @@ export async function prepareWorkflowInput(input: ImportedImage, output: string)
     coordinateSpace: 'display_image_pixels',
     displayTransform: 'exif_auto_orient_no_resize'
   }
+  const provenanceReport: Json = {
+    schemaVersion: '1.0',
+    reportId: `report-${randomUUID()}`,
+    moduleId: 'provenance',
+    imageId: image.imageId,
+    taskId: '',
+    mode: 'local',
+    status: 'completed',
+    producer: { name: 'provenance-preprocessing', version: '0.1.0' },
+    createdAt: new Date().toISOString(),
+    elapsedMs: 0,
+    inputReportIds: [],
+    result: {
+      preprocessing: {
+        originalPreserved: true,
+        displayTransform: image.displayTransform,
+        details: {
+          originalSha256: image.sha256,
+          encodedDimensions: [image.encodedWidth, image.encodedHeight],
+          displayDimensions: [image.width, image.height],
+          outputFormat: 'png',
+          colourspace: 'srgb'
+        }
+      },
+      metadata: {
+        status: 'completed',
+        details: {
+          format: metadata.format ?? null,
+          width: metadata.width ?? null,
+          height: metadata.height ?? null,
+          orientation: metadata.orientation ?? 1,
+          hasExif: Boolean(metadata.exif),
+          hasIccProfile: Boolean(metadata.icc),
+          hasXmp: Boolean(metadata.xmp),
+          hasIptc: Boolean(metadata.iptc)
+        }
+      },
+      credentials: { status: 'not_run', details: { reason: '尚未接入 C2PA/来源凭证验证。' } },
+      watermark: { status: 'not_run', details: { reason: '尚未接入可见或隐式水印检测。' } }
+    },
+    evidence: [],
+    artifacts: [],
+    limitations: [
+      '基础元数据字段只用于记录文件属性，不代表来源真实性。',
+      '来源凭证与水印检查本次未执行，不能解释为未发现。'
+    ],
+    error: null
+  }
   const artifacts: Json[] = [
     {
       artifactId: image.originalArtifactId,
@@ -65,7 +113,7 @@ export async function prepareWorkflowInput(input: ImportedImage, output: string)
       origin: 'derived'
     }
   ]
-  return { image, artifacts }
+  return { image, artifacts, provenanceReport }
 }
 
 // Only read files within a detector's task directory, including when the OS resolves symlinks.
@@ -93,6 +141,7 @@ export async function aggregateEvidence(args: {
   previousTaskId?: string
 }) {
   const { common, detectors, output, signal } = args
+  common.provenanceReport.taskId = args.taskId
   const assets: Json[] = [...common.artifacts],
     owned: Json[] = [],
     evidence: Json[] = [],
@@ -269,7 +318,7 @@ export async function aggregateEvidence(args: {
     purpose: 'analysis',
     createdAt: timestamp,
     image: common.image,
-    reports: [report],
+    reports: [report, common.provenanceReport],
     artifacts: assets
   }
   const ajv = new Ajv({ allErrors: true, strict: false })
