@@ -1,0 +1,143 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Concise manipulation evidence view v1.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "reportType",
+    "reportId",
+    "image",
+    "status",
+    "decision",
+    "screening",
+    "localization",
+    "regions",
+    "evidence",
+    "disagreements",
+    "limitations",
+    "audit"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "reportType": { "const": "manipulation_summary" },
+    "reportId": { "type": "string", "minLength": 1 },
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "imageId",
+        "sha256",
+        "width",
+        "height",
+        "original",
+        "display",
+        "coordinateSpace"
+      ],
+      "properties": {
+        "imageId": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+        "sha256": { "$ref": "#/$defs/hash" },
+        "width": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 },
+        "original": { "type": "string" },
+        "display": { "type": "string" },
+        "coordinateSpace": { "const": "display_image_pixels" }
+      }
+    },
+    "status": { "enum": ["completed", "partial", "failed"] },
+    "decision": { "const": "inconclusive" },
+    "screening": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model", "status"],
+      "properties": {
+        "model": { "$ref": "#/$defs/model" },
+        "status": { "$ref": "#/$defs/status" },
+        "decision": { "enum": ["fake", "real"] },
+        "score": { "type": "number", "minimum": 0, "maximum": 1 },
+        "threshold": { "type": "number", "minimum": 0, "maximum": 1 },
+        "calibrated": { "const": false },
+        "error": { "$ref": "#/$defs/error" }
+      }
+    },
+    "localization": {
+      "type": "array",
+      "maxItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["model", "status"],
+        "properties": {
+          "model": { "$ref": "#/$defs/model" },
+          "status": { "$ref": "#/$defs/status" },
+          "regionCount": { "type": "integer", "minimum": 0 },
+          "listedRegionCount": { "type": "integer", "minimum": 0 },
+          "areaFraction": { "type": "number", "minimum": 0, "maximum": 1 },
+          "mask": { "type": ["string", "null"] },
+          "heatmap": { "type": ["string", "null"] },
+          "evidenceIds": { "$ref": "#/$defs/strings" },
+          "error": { "$ref": "#/$defs/error" }
+        }
+      }
+    },
+    "regions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["regionId", "model", "bboxXYWH", "crop"],
+        "properties": {
+          "regionId": { "type": "string" },
+          "model": { "enum": ["rita", "rise"] },
+          "bboxXYWH": {
+            "type": "array",
+            "minItems": 4,
+            "maxItems": 4,
+            "items": { "type": "integer", "minimum": 0 }
+          },
+          "areaPixels": { "type": "integer", "minimum": 0 },
+          "crop": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["evidenceId", "model", "description", "artifacts"],
+        "properties": {
+          "evidenceId": { "type": "string" },
+          "model": { "enum": ["sica", "rita", "rise"] },
+          "description": { "type": "string" },
+          "artifacts": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "disagreements": { "$ref": "#/$defs/strings" },
+    "limitations": { "$ref": "#/$defs/strings" },
+    "audit": { "const": "bundle.json" }
+  },
+  "$defs": {
+    "status": { "enum": ["completed", "failed", "not_run"] },
+    "hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "strings": { "type": "array", "items": { "type": "string" } },
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name"],
+      "properties": {
+        "id": { "enum": ["sica", "rita", "rise"] },
+        "name": { "type": "string" },
+        "version": { "type": "string" },
+        "checkpointSha256": { "$ref": "#/$defs/hash" }
+      }
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message"],
+      "properties": { "code": { "type": "string" }, "message": { "type": "string" } }
+    }
+  }
+}

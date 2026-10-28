@@ -1,0 +1,5 @@
+# Install torch/torchvision matching your CPU or CUDA runtime first.
+timm==1.0.21
+numpy==2.2.4
+Pillow==11.2.1
+opencv-python==4.11.0.86
