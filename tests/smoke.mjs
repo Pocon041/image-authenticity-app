@@ -25,7 +25,10 @@ if (process.argv.includes('--dev')) {
 const packaged = process.argv.includes('--packaged')
 const desktop = await electron.launch({
   ...(packaged ? { executablePath: join(project, 'dist', 'win-unpacked', 'SRDP.exe') } : {}),
-  args: packaged ? ['--smoke-test'] : [project, '--smoke-test'],
+  args: [
+    ...(packaged ? ['--smoke-test'] : [project, '--smoke-test']),
+    ...(process.argv.includes('--software-rendering') ? ['--disable-gpu'] : [])
+  ],
   env: testEnv,
   timeout: 30_000
 })
@@ -38,6 +41,8 @@ try {
     if (/^https?:/.test(request.url())) remoteRequests.push(request.url())
   })
   await page.getByRole('heading', { name: '从一张图片开始' }).waitFor()
+  await page.getByText('开发与单模型调试', { exact: true }).click()
+  await page.getByRole('button', { name: '模拟流程', exact: true }).click()
   assert.equal(await page.getByTestId('analyze-button').isDisabled(), true)
   assert.deepEqual(
     await page.evaluate(() => ({
@@ -46,7 +51,14 @@ try {
     })),
     {
       hasNode: false,
-      methods: ['analyze', 'cancelAnalysis', 'chooseImage', 'clearImage', 'onAnalysisProgress']
+      methods: [
+        'analyze',
+        'cancelAnalysis',
+        'chooseImage',
+        'clearImage',
+        'onAnalysisProgress',
+        'openReportDirectory'
+      ]
     }
   )
   const preferences = await desktop.evaluate(({ BrowserWindow }) => {

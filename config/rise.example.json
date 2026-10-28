@@ -1,0 +1,11 @@
+{
+  "pythonPath": "python",
+  "sourcePath": ".tools/rise-official",
+  "dependencyPath": ".tools/rise-deps-v5",
+  "checkpointPath": "weights/RiSE/RiSE-9.pth",
+  "checkpointSha256": "dd7f28ffb9c68080bc26553b725140996315627ea43d711a94e8e522d10e282e",
+  "device": "cuda:0",
+  "tileStride": 384,
+  "maxTiles": 128,
+  "timeoutMs": 600000
+}

@@ -1,0 +1,18 @@
+{
+  "commit": "83c1c2fc86eeb31ee2c50155e09826bdb780be1f",
+  "files": {
+    "configs/rise9.json": "1c65a1089a816a41a96c444d980a212aa8386cb6b6e06554c804ea3034e00a2a",
+    "rise/__init__.py": "42e4deb97d0baebca534a60512c4d65e7bfa6fbd4178230f0cf92b93245dec28",
+    "rise/checkpoint.py": "49f41c175a250a83567bfefdb134ac07eb5bf36c6cd19ac226cad7db07c5ddc4",
+    "rise/config.py": "69204482f9d0c1ba14c68e7af5ba790533d6860bd3670591d474c8c51a320cd2",
+    "rise/data.py": "db7c0976552391ceb32a15b70050495a0a74dadce746435c75e7db39fd258ef6",
+    "rise/inference.py": "8f9a0e20830e5fd8e07f423825f48a9af3c51bd6d6e633d2257c34851ff8f730",
+    "rise/models/__init__.py": "371e8b8db2d472641804b9e71080f2a7086c27382efa53d90b2167345202795a",
+    "rise/models/adf.py": "540b743da687b7527dd883efd71689bc3d84b65d576ef1a5df8a65456eb3650d",
+    "rise/models/dct.py": "556a56fcb45885da0e6520d63c8b1c277e0fd679affd853ee6d2acb7f26c8954",
+    "rise/models/experts.py": "caf9cebe25061b783678d101d73183fbca1b654086926d28953664522ba093ed",
+    "rise/models/loss.py": "5d8a052b0637e3132fdfd2f3275372ba2f12fe6614e740977e10728bfb858550",
+    "rise/models/model.py": "daac156a56149c4ba3639bb03cf18a64b6032de51b81097c00dd79de5b87387b",
+    "rise/models/scale_block.py": "da09b86ea8129c59c1064ca7f735e372ad3c9068e9e049d0b03376ec6bb8f66d"
+  }
+}

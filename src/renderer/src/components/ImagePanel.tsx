@@ -16,6 +16,13 @@ function formatSize(bytes: number): string {
 }
 
 export function ImagePanel({ workspace: w }: { workspace: AnalysisWorkspace }) {
+  const labels = {
+    workflow: ['开始分析', '重新分析', '分析中…'],
+    mock: ['开始模拟分析', '重新模拟分析', '模拟分析中…'],
+    rita: ['开始 RITA 定位', '重新运行 RITA', 'RITA 分析中…'],
+    sica: ['开始 SICA 二分类', '重新运行 SICA', 'SICA 分类中…'],
+    rise: ['开始 RiSE 定位', '重新运行 RiSE', 'RiSE 分析中…']
+  }[w.backend]
   return (
     <section className="panel image-panel" aria-label="图片工作区">
       <div className="panel-heading">
@@ -87,6 +94,30 @@ export function ImagePanel({ workspace: w }: { workspace: AnalysisWorkspace }) {
           <span>文件仅在本次会话中读取，不修改原图</span>
         </div>
       )}
+      {w.backend === 'workflow' && (
+        <div className="simple-content-type">
+          <label htmlFor="content-type">图片类型</label>
+          <select
+            id="content-type"
+            value={w.contentType}
+            disabled={w.busy}
+            onChange={(event) =>
+              w.selectContentType(event.target.value as 'photo' | 'document' | 'unsure')
+            }
+          >
+            <option value="photo">普通照片</option>
+            <option value="document">文档 / 票据 / 截图</option>
+            <option value="unsure">不确定 / 混合内容</option>
+          </select>
+          <small data-testid="route-plan">
+            {w.contentType === 'document'
+              ? '包括拍摄的小票和文字截图。'
+              : w.contentType === 'photo'
+                ? '适用于人物、物品和自然场景。'
+                : '将运行两种定位检查，耗时稍长。'}
+          </small>
+        </div>
+      )}
       <div className="image-actions">
         <button className="secondary-button" onClick={w.chooseImage} disabled={w.busy}>
           {w.image ? '更换图片' : '浏览文件'}
@@ -98,7 +129,7 @@ export function ImagePanel({ workspace: w }: { workspace: AnalysisWorkspace }) {
           disabled={!w.image || w.busy}
         >
           {w.running ? <LoaderCircle size={17} className="spin" /> : <Sparkles size={17} />}
-          {w.running ? '模拟分析中…' : w.report ? '重新模拟分析' : '开始模拟分析'}
+          {w.running ? labels[2] : w.report ? labels[1] : labels[0]}
           {!w.running && <ArrowRight size={16} />}
         </button>
       </div>

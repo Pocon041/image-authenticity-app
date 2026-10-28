@@ -1,8 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
-import type { AnalysisProgress, AnalysisReport, ImageAsset } from '../../../shared/contracts'
+import type {
+  AnalysisBackend,
+  AnalysisProgress,
+  AnalysisReport,
+  ContentType,
+  ImageAsset
+} from '../../../shared/contracts'
 
 export function useAnalysisWorkspace() {
   const [image, setImage] = useState<ImageAsset | null>(null)
+  const [backend, setBackend] = useState<AnalysisBackend>('workflow')
+  const [contentType, setContentType] = useState<ContentType>('unsure')
   const [report, setReport] = useState<AnalysisReport | null>(null)
   const [progress, setProgress] = useState<AnalysisProgress | null>(null)
   const [status, setStatus] = useState<'idle' | 'picking' | 'running' | 'cancelling'>('idle')
@@ -41,24 +49,39 @@ export function useAnalysisWorkspace() {
     }
   }
 
-  async function analyze() {
+  async function analyze(supplement = false) {
     if (!image || locked.current) return
     locked.current = true
     const taskId = crypto.randomUUID()
     currentTask.current = taskId
     setError('')
     setNotice('')
-    setReport(null)
+    if (!supplement) setReport(null)
     setProgress(null)
     setStatus('running')
     try {
-      const result = await window.desktop.analyze(image.id, taskId)
+      const result = await window.desktop.analyze(
+        image.id,
+        taskId,
+        backend,
+        backend === 'workflow'
+          ? {
+              contentType,
+              ...(supplement && report?.workflow ? { supplementFromTaskId: report.id } : {})
+            }
+          : undefined
+      )
       if (!result.ok) {
-        if (result.code === 'CANCELLED') setNotice('模拟分析已取消，可以重新开始。')
+        if (result.code === 'CANCELLED')
+          setNotice(
+            backend === 'mock'
+              ? '模拟分析已取消，可以重新开始。'
+              : `${backend === 'workflow' ? '联合' : backend === 'rise' ? 'RiSE' : backend === 'sica' ? 'SICA' : 'RITA'} 分析已取消，可以重新开始。${supplement ? '上一份证据仍保留。' : ''}`
+          )
         else setError(result.error)
       } else if (result.data.imageId === image.id) setReport(result.data)
     } catch {
-      setError('模拟分析失败，请重试。')
+      setError('分析失败，请重试。')
     } finally {
       if (currentTask.current === taskId) {
         currentTask.current = null
@@ -106,6 +129,24 @@ export function useAnalysisWorkspace() {
   }
 
   return {
+    backend,
+    contentType,
+    selectContentType(next: ContentType) {
+      if (locked.current) return
+      setContentType(next)
+      setReport(null)
+      setProgress(null)
+      setError('')
+      setNotice('')
+    },
+    selectBackend(next: AnalysisBackend) {
+      if (locked.current) return
+      setBackend(next)
+      setReport(null)
+      setError('')
+      setNotice('')
+      setProgress(null)
+    },
     image,
     report,
     progress,
@@ -115,7 +156,8 @@ export function useAnalysisWorkspace() {
     busy: status !== 'idle',
     running: status === 'running' || status === 'cancelling',
     chooseImage,
-    analyze,
+    analyze: () => analyze(false),
+    supplement: () => analyze(true),
     cancel,
     clearImage,
     dismissError: () => setError('')

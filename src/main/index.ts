@@ -1,11 +1,11 @@
 import { app, BrowserWindow } from 'electron'
 import { join } from 'node:path'
 import { registerDesktopIPC } from './ipc'
-import { MockAnalysisService } from './services/analysis'
+import { RoutedAnalysisService } from './services/rita'
 import { AnalysisSession } from './services/analysis-session'
 
 let mainWindow: BrowserWindow | null = null
-const session = new AnalysisSession(new MockAnalysisService())
+const session = new AnalysisSession(new RoutedAnalysisService())
 const smokeMode = process.argv.includes('--smoke-test')
 
 function createWindow(): void {
