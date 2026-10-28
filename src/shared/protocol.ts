@@ -1,5 +1,5 @@
 // src/shared/protocol.ts
-// 协议 v1.0 类型定义，严格对应 schemas/bundle.schema.json。
+// 协议 v1.0 类型定义，严格对应 schemas/report-bundle.schema.json。
 // 与 src/shared/contracts.ts 中的现有 UI 类型（AnalysisReport 等）互相独立，
 // 两者之间通过 adapter 连接，不在这里混用。
 //
@@ -8,6 +8,10 @@
 //   status 与 result/error 的联动约束由 validate* 运行时校验函数保证。
 // - schema 中 open object（operationHints、clues、details、data、extensions）统一用 Record<string, unknown>。
 // - 字符串 pattern（hash、imageId）在类型层无法表达，交由运行时校验。
+
+import Ajv from 'ajv'
+import addFormats from 'ajv-formats'
+import bundleSchema from '../../schemas/report-bundle.schema.json'
 
 // ===== 基础标量与元组 =====
 
@@ -29,9 +33,7 @@ export type CheckStatus = 'completed' | 'failed' | 'unsupported' | 'not_run'
 
 export type ArtifactType = 'original' | 'display' | 'crop' | 'mask' | 'heatmap'
 export type ArtifactCoordinateSpace =
-  | 'encoded_file_pixels'
-  | 'display_image_pixels'
-  | 'region_local_pixels'
+  'encoded_file_pixels' | 'display_image_pixels' | 'region_local_pixels'
 export type ArtifactOrigin = 'original' | 'derived' | 'mock'
 export type EvidenceOrigin = 'measured' | 'mock'
 
@@ -116,6 +118,7 @@ export interface Check {
 // ===== 四个模块的 result =====
 
 export interface ProvenancePreprocessing {
+  [key: string]: unknown
   originalPreserved: true
   displayTransform: 'exif_auto_orient_no_resize'
 }
@@ -210,11 +213,7 @@ export interface ExplanationReport extends ModuleReportBase {
   result: ExplanationResult | null
 }
 
-export type ModuleReport =
-  | ProvenanceReport
-  | ManipulationReport
-  | AigcReport
-  | ExplanationReport
+export type ModuleReport = ProvenanceReport | ManipulationReport | AigcReport | ExplanationReport
 
 // ===== 证据包 =====
 
@@ -230,172 +229,83 @@ export interface EvidenceBundle {
 
 // ===== 运行时校验 =====
 
-const FINAL_DECISIONS: readonly FinalDecision[] = [
-  'suspicious',
-  'no_anomaly_detected',
-  'inconclusive'
-]
+// Reuse the canonical schema so the runtime contract cannot drift from the JSON files.
+const ajv = new Ajv({ allErrors: true, strict: false, strictNumbers: true })
+addFormats(ajv)
+ajv.addSchema(bundleSchema)
+const checkBundle = ajv.getSchema<EvidenceBundle>(bundleSchema.$id)!
+const checkModuleReport = ajv.compile<ModuleReport>({ $ref: `${bundleSchema.$id}#/$defs/report` })
 
-function isNonEmptyString(v: unknown): v is string {
-  return typeof v === 'string' && v.length > 0
+export function validateEvidenceBundle(value: unknown): string[] {
+  return checkBundle(value) ? [] : [ajv.errorsText(checkBundle.errors, { separator: '; ' })]
 }
 
-function isHash(v: unknown): v is Hash {
-  return typeof v === 'string' && /^[a-f0-9]{64}$/.test(v)
-}
-
-function isImageId(v: unknown): v is ImageId {
-  return typeof v === 'string' && /^sha256:[a-f0-9]{64}$/.test(v)
-}
-
-function isBBox(v: unknown): v is BBox {
-  return (
-    Array.isArray(v) &&
-    v.length === 4 &&
-    v.every((n) => typeof n === 'number' && Number.isInteger(n)) &&
-    v[0] >= 0 &&
-    v[1] >= 0 &&
-    v[2] >= 1 &&
-    v[3] >= 1
-  )
+export function assertEvidenceBundle(value: unknown): asserts value is EvidenceBundle {
+  const errors = validateEvidenceBundle(value)
+  if (errors.length) throw new Error(`Invalid evidence bundle: ${errors.join('; ')}`)
 }
 
 /**
- * 校验 ExplanationReport 单报告一致性。
- * - 不传 upstreamReports 时跳过 evidenceIds 引用解析。
- * - 传入 upstreamReports 时，claims.evidenceIds 必须能在 inputReportIds 对应的上游报告 evidence 中解析到。
+ * Validate an explanation against the shared schema, then resolve its citations.
+ * Omit upstreamReports for a shape-only check; pass [] to require an empty input set.
+ * Successful validation proves structure and citation integrity, not factual correctness.
  */
 export function validateExplanationReport(
-  report: ExplanationReport,
-  upstreamReports: ModuleReport[] = []
+  report: unknown,
+  upstreamReports?: readonly ModuleReport[]
 ): string[] {
+  if (!checkModuleReport(report))
+    return [ajv.errorsText(checkModuleReport.errors, { separator: '; ' })]
+  if (report.moduleId !== 'explanation') return ['moduleId must be "explanation"']
   const errors: string[] = []
+  if (report.inputReportIds.includes(report.reportId))
+    errors.push('inputReportIds cannot reference the explanation itself')
+  const localEvidence = new Set<string>()
+  for (const evidence of report.evidence) {
+    if (localEvidence.has(evidence.evidenceId))
+      errors.push(`duplicate evidenceId in report: ${evidence.evidenceId}`)
+    localEvidence.add(evidence.evidenceId)
+  }
+  const localArtifacts = new Set<string>()
+  for (const artifact of report.artifacts) {
+    if (localArtifacts.has(artifact.artifactId))
+      errors.push(`duplicate artifactId in report: ${artifact.artifactId}`)
+    localArtifacts.add(artifact.artifactId)
+  }
+  if (upstreamReports === undefined) return errors
 
-  if (report.moduleId !== 'explanation') {
-    errors.push(`moduleId must be "explanation", got "${report.moduleId}"`)
-    return errors
-  }
-  if (report.schemaVersion !== '1.0') {
-    errors.push('schemaVersion must be "1.0"')
-  }
-  if (!isNonEmptyString(report.reportId)) {
-    errors.push('reportId must be a non-empty string')
-  }
-  if (!isImageId(report.imageId)) {
-    errors.push('imageId must match ^sha256:[a-f0-9]{64}$')
-  }
-  if (!isNonEmptyString(report.taskId)) {
-    errors.push('taskId must be a non-empty string')
-  }
-  if (report.mode !== 'mock' && report.mode !== 'local') {
-    errors.push('mode must be "mock" or "local"')
-  }
-  if (new Set(report.inputReportIds).size !== report.inputReportIds.length) {
-    errors.push('inputReportIds must be unique')
-  }
-
-  // status 与 result / error 的联动
-  if (report.status === 'completed') {
-    if (report.result === null) {
-      errors.push('status="completed" requires result to be an object')
-    }
-    if (report.error !== null) {
-      errors.push('status="completed" requires error to be null')
-    }
-  } else {
-    if (report.result !== null) {
-      errors.push(`status="${report.status}" requires result to be null`)
-    }
-    if (report.status === 'failed' && report.error === null) {
-      errors.push('status="failed" requires error')
-    }
-  }
-
-  // 证据与附件基础字段
-  const evidenceIds = new Set<string>()
-  for (const ev of report.evidence) {
-    if (!isNonEmptyString(ev.evidenceId)) {
-      errors.push('evidence.evidenceId must be a non-empty string')
+  const byId = new Map<string, ModuleReport>()
+  for (const upstream of upstreamReports) {
+    if (!checkModuleReport(upstream)) {
+      errors.push('upstream report does not conform to protocol v1.0')
       continue
     }
-    if (evidenceIds.has(ev.evidenceId)) {
-      errors.push(`duplicate evidenceId in report: ${ev.evidenceId}`)
-    }
-    evidenceIds.add(ev.evidenceId)
+    if (byId.has(upstream.reportId))
+      errors.push(`ambiguous upstream reportId: ${upstream.reportId}`)
+    byId.set(upstream.reportId, upstream)
   }
-  for (const art of report.artifacts) {
-    if (!isNonEmptyString(art.artifactId)) {
-      errors.push('artifact.artifactId must be a non-empty string')
-    }
-    if (!isHash(art.sha256)) {
-      errors.push(`artifact ${art.artifactId}: sha256 invalid`)
-    }
-    if (art.bboxXYWH !== null && !isBBox(art.bboxXYWH)) {
-      errors.push(`artifact ${art.artifactId}: bboxXYWH invalid`)
-    }
-  }
-
-  if (report.result === null) {
-    return errors
-  }
-
-  const r = report.result
-
-  if (!FINAL_DECISIONS.includes(r.finalDecision)) {
-    errors.push(`invalid finalDecision: ${String(r.finalDecision)}`)
-  }
-  if (!isNonEmptyString(r.analysis)) {
-    errors.push('analysis must be a non-empty string')
-  }
-  if (r.confidence.value !== null) {
-    if (typeof r.confidence.value !== 'number') {
-      errors.push('confidence.value must be number or null')
-    } else if (r.confidence.value < 0 || r.confidence.value > 1) {
-      errors.push('confidence.value must be in [0, 1]')
-    }
-  }
-  if (!Array.isArray(r.unresolved) || r.unresolved.some((s) => typeof s !== 'string')) {
-    errors.push('unresolved must be string[]')
-  }
-
-  // claims 内部约束
-  r.claims.forEach((claim, i) => {
-    if (typeof claim.text !== 'string') {
-      errors.push(`claims[${i}].text must be a string`)
-    }
-    if (!Array.isArray(claim.evidenceIds) || claim.evidenceIds.length === 0) {
-      errors.push(`claims[${i}].evidenceIds must not be empty`)
-      return
-    }
-    if (new Set(claim.evidenceIds).size !== claim.evidenceIds.length) {
-      errors.push(`claims[${i}].evidenceIds must be unique`)
-    }
-  })
-
-  // 可选：跨报告引用解析
-  if (upstreamReports.length > 0) {
-    const inputIds = new Set(report.inputReportIds)
-    const referenced: ModuleReport[] = upstreamReports.filter((u) =>
-      inputIds.has(u.reportId)
-    )
-    const missingInputs = report.inputReportIds.filter(
-      (id) => !upstreamReports.some((u) => u.reportId === id)
-    )
-    for (const id of missingInputs) {
+  const evidenceOwners = new Map<string, string>()
+  for (const id of report.inputReportIds) {
+    const upstream = byId.get(id)
+    if (!upstream) {
       errors.push(`inputReportIds references unknown reportId: ${id}`)
+      continue
     }
-    const upstreamEvidence = new Set<string>()
-    for (const up of referenced) {
-      for (const ev of up.evidence) upstreamEvidence.add(ev.evidenceId)
+    if (upstream.imageId !== report.imageId) {
+      errors.push(`input report imageId mismatch: ${id}`)
+      continue
     }
-    r.claims.forEach((claim, i) => {
-      for (const eid of claim.evidenceIds) {
-        if (!upstreamEvidence.has(eid)) {
-          errors.push(`claims[${i}] references unknown evidenceId: ${eid}`)
-        }
-      }
-    })
+    for (const evidence of upstream.evidence) {
+      if (evidenceOwners.has(evidence.evidenceId))
+        errors.push(`ambiguous upstream evidenceId: ${evidence.evidenceId}`)
+      evidenceOwners.set(evidence.evidenceId, id)
+    }
   }
-
+  for (const [index, claim] of (report.result?.claims ?? []).entries()) {
+    for (const id of claim.evidenceIds) {
+      if (!evidenceOwners.has(id))
+        errors.push(`claims[${index}] references unknown evidenceId: ${id}`)
+    }
+  }
   return errors
 }

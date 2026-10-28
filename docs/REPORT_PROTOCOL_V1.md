@@ -1,6 +1,6 @@
 # 第一阶段报告协议 v1.0（联调初稿）
 
-这份协议用于四人独立开发和结果汇总。前三个模块分别提交报告，第四个模块消费证据包。具体模型尚未接入，当前示例中的分析输出均为模拟数据。
+这份协议用于四人独立开发和结果汇总。前三个模块分别提交报告，第四个模块消费证据包。当前第二人已接入真实视觉检测；早期联调示例中的分析输出仍为明确标记的模拟数据。
 
 机器可读定义为 `schemas/report-bundle.schema.json`。独立模块报告的入口是 `schemas/module-report.schema.json`；使用它时应同时加载证据包 Schema，因为两者共享同一份字段定义。
 
@@ -10,7 +10,7 @@
 
 新增可选字段可以保持版本兼容。删除、改名或改变语义属于不兼容变更，应同步升级协议版本、校验器和样例。
 
-本协议已提供样例和校验脚本，**尚未替换 APP 现有的 `ImageAsset`、随机图片 ID、`AnalysisReport` 或 IPC 接口**。后续接入时需要做适配，不能将现有 APP 返回值直接视为符合 v1.0。
+四模块交换类型为 `src/shared/protocol.ts`，与 `schemas/report-bundle.schema.json` 对齐。APP已采用原文件SHA256身份，并通过主进程适配写出v1.0证据包；界面 `contracts.ts::AnalysisReport` 仍是独立DTO，不能直接当作标准证据包。第四人接入与引用校验说明见 [EXPLANATION_HANDOFF.md](./EXPLANATION_HANDOFF.md)。
 
 ## 2. 原文件和图片身份
 

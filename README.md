@@ -172,4 +172,6 @@ foreach ($modelName in @('rita', 'sica', 'rise')) {
 - `config/`、`schemas/`、`docs/`：配置模板、报告约束和模块说明。
 - `scripts/`、`tests/`：运行准备、验证与真实桌面测试。
 
-阅读和维护 `AGENT.md`；公共图片身份、坐标和证据语义不得由单模块自行改变。`weights/`、`work/`、`.tools/`、`.venv/`、`node_modules/`、`out/`、`dist/` 和本机配置不提交。发布包中的 Python/权重分发、CPU 路径及更大规模独立质量评测尚未验收。
+阅读 `AGENT.md` 的四人共用规则和 `AGENTS.md` 的第二人模块说明；模块独有记录写AGENTS.md，共享协议与交接规则写AGENT.md。公共图片身份、坐标和证据语义不得由单模块自行改变。`weights/`、`work/`、`.tools/`、`.venv/`、`node_modules/`、`out/`、`dist/` 和本机配置不提交。发布包中的 Python/权重分发、CPU 路径及更大规模独立质量评测尚未验收。
+
+`yr_explanation`分支的四模块协议类型已合并，解释报告引用可与当前证据包衔接；VLM推理和解释界面尚未提交。接口约定见 [EXPLANATION_HANDOFF.md](docs/EXPLANATION_HANDOFF.md)。
