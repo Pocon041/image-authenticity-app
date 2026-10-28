@@ -51,6 +51,12 @@ run.cmd run provenance:setup
 
 ## 上游方法
 
+本地整合补充了5项合成像素检查：可见水印关键词、平坦载体上的固定/非固定载荷、纹理载体的严格匹配语义、小图配置边界和超大图未扫描状态。纹理载体在本机往返出现过1位丢失，因此“已嵌入”不保证精确解码；实现没有放宽精确匹配，也不将近似匹配当作命中。这些检查不构成真实图片上的准确率或鲁棒性基准。
+
+```powershell
+.tools/provenance-venv/Scripts/python.exe -m unittest discover -s backend/provenance -p test_*.py
+```
+
 - [C2PA Python SDK 用法](https://github.com/contentauth/c2pa-python/blob/main/docs/usage.md)
 - [C2PA Context 与验证设置](https://github.com/contentauth/c2pa-python/blob/main/docs/context-settings.md)
 - [RapidOCR 官方安装文档](https://rapidai.github.io/RapidOCRDocs/main/en/install_usage/rapidocr/install/)

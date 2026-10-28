@@ -298,7 +298,7 @@ assert.equal(JSON.stringify(both.workflow.summary).includes('data:image'), false
 assert.equal(JSON.stringify(both.workflow.summary).includes('expertSelectionConfidence'), false)
 assert.ok(JSON.stringify(both.workflow.summary).length < 10000)
 checks.push(
-  'uncertain routing is sequential; single report, separate masks, deduplicated original/display'
+  'uncertain routing is sequential; independent provenance/manipulation reports, separate masks and deduplicated input'
 )
 checks.push(
   'concise report retains evidence and regions without source lists, tile scores or embedded images'

@@ -61,6 +61,7 @@ export class WorkflowAnalysisService implements AnalysisService {
       )
     try {
       context.signal.throwIfAborted()
+      notify(1, '检查来源信息与图像预处理')
       const common = await prepareWorkflowInput(input, output, this.root, context.signal)
       await manifest('running')
       for (let index = 0; index < planned.length; index++) {

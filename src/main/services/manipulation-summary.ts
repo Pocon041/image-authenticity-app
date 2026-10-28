@@ -2,7 +2,8 @@ import type { DetectorResult } from '../../shared/contracts'
 
 // A concise reader/VLM view. The complete v1.0 bundle remains the audit record.
 export function manipulationSummary(bundle: Record<string, any>, detectors: DetectorResult[]) {
-  const report = bundle.reports[0]
+  const report = bundle.reports.find((item: any) => item.moduleId === 'manipulation')
+  if (!report) throw new Error('Evidence bundle is missing its manipulation report')
   const records = report.result?.detectors ?? report.extensions.detectorExecutions
   const assets = new Map<string, Record<string, any>>(
     bundle.artifacts.map((item: any) => [item.artifactId, item])
@@ -100,7 +101,7 @@ export function manipulationSummary(bundle: Record<string, any>, detectors: Dete
     disagreements: report.result?.disagreements ?? [],
     limitations: [
       '筛查分数与定位响应不是整图真实性概率；标记区域可能包含误报。',
-      '本报告仅含视觉检测，OCR及最终综合解释由后续模块完成。'
+      '本摘要仅含篡改视觉检测；来源与水印见bundle.json，通用OCR与综合解释由后续模块处理。'
     ],
     audit: 'bundle.json'
   }

@@ -30,7 +30,11 @@ assert.equal(hash(await bytes(summary.image.original)), summary.image.sha256)
 assert.equal(summary.image.imageId, `sha256:${summary.image.sha256}`)
 await bytes(summary.image.display)
 const audit = JSON.parse(await bytes(summary.audit))
-assert.equal(summary.reportId, audit.reports[0].reportId)
+assert.ok(
+  audit.reports.some(
+    (report) => report.moduleId === 'manipulation' && report.reportId === summary.reportId
+  )
+)
 assert.equal(summary.image.imageId, audit.image.imageId)
 const evidenceIds = new Set(summary.evidence.map((item) => item.evidenceId))
 assert.equal(evidenceIds.size, summary.evidence.length)

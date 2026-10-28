@@ -2,7 +2,7 @@
 
 GitHub 仓库名采用 `image-authenticity-app`，中文项目名称为“图像真实性分析桌面应用”。本地开发目录保留 `D:\SRDP`。
 远程仓库为 `https://github.com/Pocon041/image-authenticity-app`，主分支为 `main`。
-当前协议和联调工具的共享变更按用户要求在 `czh` 分支维护并推送，不直接修改远端 `main`。后续各模块的开发人员应创建独自的分支并提交
+公共可运行版本维护在 `main`，各模块在自己的分支开发。用户于2026-10-29授权将已验证的czh功能更新发布到main；整合时保留其他成员的更新，排除第二人专用AGENTS.md，遇到冲突先告知用户并等待确认。
 
 ## 项目目标与当前范围
 
@@ -19,7 +19,7 @@ GitHub 仓库名采用 `image-authenticity-app`，中文项目名称为“图像
 
 ## 维护要求
 
-- 本文件是项目约定的唯一正文。每次改变框架、目录、运行命令、接口或阶段范围时，同步更新本文件。
+- 本文件维护四人共用的框架、接口、报告协议和协作约定；模块独有实现、测试与工作记录维护在各自分支的AGENTS.md。共享内容对照main增量合并，不整份替换他人记录。
 - 每次交付前更新“当前状态”，记录已实现内容、实际验证结果和已知限制，不将计划记为完成。
 - 用户的新要求优先于这里已有的约定。
 
@@ -41,7 +41,7 @@ GitHub 仓库名采用 `image-authenticity-app`，中文项目名称为“图像
 - `src/preload/`：桌面桥接白名单。
 - `src/renderer/`：React 工作台与样式。
 - `src/shared/`：跨进程数据协议。
-- `src/shared/protocol.ts`：协议 v1.0 类型定义，对应 `schemas/bundle.schema.json`；四人报告交换共用，与 `contracts.ts` 中现有 UI 类型互相独立，通过 adapter 连接。
+- `src/shared/protocol.ts`：协议 v1.0 类型定义，对应 `schemas/report-bundle.schema.json`；四人报告交换共用，与 `contracts.ts` 中现有 UI 类型互相独立，通过 adapter 连接。
 - `docs/REPORT_PROTOCOL_V1.md`：第一阶段四人报告协议初稿；公共字段和坐标含义不能由单模块自行改变。
 - `docs/PROVENANCE_V01.md`：第一人来源报告结构、字段、安装和检测边界。
 - `backend/provenance/`：EXIF/C2PA解析及水印子进程，不共享或更改其他模型后端。
@@ -381,3 +381,24 @@ Windows 启动入口为 `start.cmd`；`run.cmd` 负责优先使用 `.tools/` 下
 - 发布提交 `764ac72` 已快进整合至本地czh并成功push至origin/czh，远端ls-remote核对SHA为 `764ac7259491bc14e6223cd7964a2e6caacd0e44`，main未修改。首次GitHub直连超时，使用本机现有Git代理配置重试成功，未改写用户全局代理。
 - 增量复现已在独立临时worktree验证：从基础版 `091d906` 安装npm依赖，快进到 `764ac72` 后再次npm ci，类型检查、9组编排测试、构建与真实start.cmd启动均通过。配置生成命令仅创建缺失项、保留已有项的行为已核对；未重装或修改本机模型Python环境。结果存于 `work/cleanup-20261028/upgrade-verification.json`，临时worktree在保存结果后通过git worktree remove移除。
 - 清理后的真实联合Smoke8组、1400/1060布局检查、模拟15项和默认start.cmd启动3项通过。当前仓库工作区已整理为可提交源码，权重、图片、本机配置、运行结果均保持Git忽略。本条收尾文档单独提交并同步到czh。
+
+## 共用文档与模块文档的合并规则（2026-10-29）
+
+- 用户明确：AGENT.md是四人共用文件，更新应保留main已有内容，只增量补充已核对的共用变更；不使用某个模块重组后的整份文件替换main。上方原有历史记录继续保留，后续新增的模块独有日志不再写入本文件。
+- AGENTS.md由各模块在自己的分支维护。第二人专用内容保留在czh/个人分支，不合入main；main现有的通用入口文件保持原样。由于文件已被Git跟踪，添加.gitignore不能排除其分支合并差异。
+- 后续发布功能到main时，从最新main建立整合分支，选择功能变更并排除AGENTS.md；AGENT.md单独审阅并增量合并，不直接整条合并包含个人文档变更的czh分支。此前文档规则调整只在czh发布；2026-10-29用户另行授权发布到main，见下方整合记录。
+
+## 当前共用接口与本地联调补充（2026-10-29）
+
+- 本地czh已包含远端main截至e1e59b4的yht来源模块，同时保留第四人的protocol.ts类型与本地共用校验适配。标准定义为schemas/report-bundle.schema.json；界面contracts.ts中的AnalysisReport仍是独立DTO。
+- 当前bundle.json含独立manipulation和provenance报告，analysis.json是简明篡改视图，不是EvidenceBundle。正式引用的reportId/evidenceId沿用完整包，按moduleId读取，不依赖报告排列顺序；交接见docs/EXPLANATION_HANDOFF.md。
+- 共用校验复用Schema，校验status/result/error和confidence来源/校准状态；validateExplanationReport(report)只校验结构，显式传入上游数组才校验引用，[]不等于省略。引用校验不证明解释正确；当前未接入VLM或生成解释占位结果。
+- 来源依赖在.tools/provenance-venv隔离安装；可见水印OCR只提供关键词候选，SDXL载荷仅覆盖公开固定配置。缺少元数据/凭证/水印不证明真假，未运行/失败状态不能写成未检出。
+- 本地接口联调、启动和报告引用检查已完成，实际模型质量及模块细节见各自AGENTS.md/模块文档。main原有记录未被删除或重排；后续需更新共享现状时在对应位置作小范围修改或增补。
+
+## main功能整合与发布验证（2026-10-29）
+
+- 用户授权将czh现有功能发布到main，并要求发生冲突时先告知。以最新origin/main（e1e59b4）建立integrate/main-20261029，选择czh截至dfd3862的功能与共享文档差异；补丁检查和应用均无冲突，无文件删除，不整体合并第二人的个人记录。
+- main根目录AGENTS.md与整合前完全一致；AGENT.md保留原有历史，仅增量维护共用规则、接口和本次验证。README的更新、克隆及从零安装入口统一为main，各成员仍在个人分支开发。
+- 功能代码与已验证czh一致：保留yht来源模块、独立manipulation/provenance报告、共享Schema与解释引用校验，以及简洁来源展示和取消处理。未新增模型、训练、通用OCR或VLM推理，未更改模型阈值。
+- 本整合版本通过生产构建（含类型检查）、9组工作流测试、6组协议测试，以及实际start.cmd启动3项检查。本轮未重跑模型准确率评测；Python、模型权重与本机配置仍需按README准备，不随Git分发。

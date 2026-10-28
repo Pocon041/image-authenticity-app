@@ -5,6 +5,17 @@ import Ajv from 'ajv'
 import addFormats from 'ajv-formats'
 import sharp from 'sharp'
 import type { ContentType, DetectorResult } from '../../shared/contracts'
+import {
+  assertEvidenceBundle,
+  validateEvidenceBundle,
+  type ImageInfo,
+  type Artifact,
+  type Evidence,
+  type Region,
+  type ManipulationReport,
+  type ProvenanceReport,
+  type EvidenceBundle
+} from '../../shared/protocol'
 import type { ImportedImage } from '../image-import'
 import { AppError } from '../errors'
 import { manipulationSummary } from './manipulation-summary'
@@ -27,18 +38,14 @@ export async function prepareWorkflowInput(
   const hash = digest(input.originalBytes)
   if (input.asset.id !== `sha256:${hash}`) throw new AppError('INVALID_IMAGE', '原文件身份不一致。')
   const metadata = await sharp(input.originalBytes).metadata()
-  const display = await sharp(input.originalBytes)
-    .rotate()
-    .toColourspace('srgb')
-    .png()
-    .toBuffer()
+  const display = await sharp(input.originalBytes).rotate().toColourspace('srgb').png().toBuffer()
   const displayMetadata = await sharp(display).metadata()
   if (displayMetadata.width !== input.asset.width || displayMetadata.height !== input.asset.height)
     throw new AppError('INVALID_IMAGE', '规范显示尺寸不一致。')
   const originalUri = `images/original.${input.asset.mimeType === 'image/jpeg' ? 'jpg' : input.asset.mimeType.split('/')[1]}`
   await writeFile(join(output, originalUri), input.originalBytes)
   await writeFile(join(output, 'images/display.png'), display)
-  const image = {
+  const image: ImageInfo = {
     imageId: input.asset.id,
     sha256: hash,
     originalArtifactId: `${hash}:original`,
@@ -47,7 +54,7 @@ export async function prepareWorkflowInput(
     encodedHeight: metadata.height!,
     width: input.asset.width,
     height: input.asset.height,
-    exifOrientation: metadata.orientation ?? 1,
+    exifOrientation: (metadata.orientation ?? 1) as ImageInfo['exifOrientation'],
     coordinateSpace: 'display_image_pixels',
     displayTransform: 'exif_auto_orient_no_resize'
   }
@@ -86,7 +93,7 @@ export async function prepareWorkflowInput(
     pillowVersion: sourceInspection.pillowVersion ?? null,
     reason: sourceInspection.reason ?? null
   })
-  const provenanceReport: Json = {
+  const provenanceReport: ProvenanceReport = {
     schemaVersion: '1.0',
     reportId,
     moduleId: 'provenance',
@@ -114,8 +121,8 @@ export async function prepareWorkflowInput(
         status: 'completed',
         details: metadataSummary
       },
-      credentials,
-      watermark
+      credentials: { ...credentials, status: credentials.status, details: credentials.details },
+      watermark: { ...watermark, status: watermark.status, details: watermark.details }
     },
     evidence: [
       {
@@ -199,7 +206,7 @@ export async function prepareWorkflowInput(
     },
     error: null
   }
-  const artifacts: Json[] = [
+  const artifacts: Artifact[] = [
     {
       artifactId: image.originalArtifactId,
       type: 'original',
@@ -256,10 +263,10 @@ export async function aggregateEvidence(args: {
 }) {
   const { common, detectors, output, signal } = args
   common.provenanceReport.taskId = args.taskId
-  const assets: Json[] = [...common.artifacts],
-    owned: Json[] = [],
-    evidence: Json[] = [],
-    regions: Json[] = [],
+  const assets: Artifact[] = [...common.artifacts],
+    owned: Artifact[] = [],
+    evidence: Evidence[] = [],
+    regions: Region[] = [],
     records: Json[] = []
   const index = new Map(assets.map((a) => [a.artifactId, a]))
   for (const detector of detectors) {
@@ -275,8 +282,16 @@ export async function aggregateEvidence(args: {
     }
     const dto = detector.classification ?? detector.localization
     if (!dto) throw new AppError('INFERENCE_FAILED', '已完成模型缺少报告。')
-    const raw = dto.bundle as Json,
-      report = structuredClone(raw.reports[0]) as Json
+    const raw: unknown = dto.bundle
+    assertEvidenceBundle(raw)
+    const report = structuredClone(raw.reports[0])
+    if (
+      raw.reports.length !== 1 ||
+      report.moduleId !== 'manipulation' ||
+      report.status !== 'completed' ||
+      !report.result
+    )
+      throw new AppError('INFERENCE_FAILED', '检测器未返回已完成的篡改模块报告。')
     if (
       raw.image.imageId !== common.image.imageId ||
       raw.image.sha256 !== common.image.sha256 ||
@@ -287,8 +302,8 @@ export async function aggregateEvidence(args: {
       throw new AppError('INFERENCE_FAILED', '模型报告图片身份或执行模式不一致。')
     const source = dirname(dto.bundlePath),
       prefix = `detectors/${detector.backend}`
-    const modelArtifacts: Json[] = []
-    for (const original of raw.artifacts as Json[]) {
+    const modelArtifacts: Artifact[] = []
+    for (const original of raw.artifacts) {
       const data = await sourceBytes(source, original.uri)
       if (digest(data) !== original.sha256)
         throw new AppError('INFERENCE_FAILED', '模型附件哈希不一致。')
@@ -305,7 +320,7 @@ export async function aggregateEvidence(args: {
       const uri = `${prefix}/${original.uri}`
       await mkdir(dirname(join(output, uri)), { recursive: true })
       await writeFile(join(output, uri), data)
-      const artifact: Json = { ...original, uri }
+      const artifact: Artifact = { ...original, uri }
       assets.push(artifact)
       owned.push(artifact)
       modelArtifacts.push(artifact)
@@ -313,7 +328,9 @@ export async function aggregateEvidence(args: {
     }
     report.artifacts = modelArtifacts
     if (report.extensions?.rawResponse) {
-      const response = report.extensions.rawResponse
+      const response = report.extensions.rawResponse as Record<string, unknown>
+      if (!response || typeof response.uri !== 'string' || typeof response.sha256 !== 'string')
+        throw new AppError('INFERENCE_FAILED', '浮点响应记录无效。')
       const data = await sourceBytes(source, response.uri)
       if (digest(data) !== response.sha256)
         throw new AppError('INFERENCE_FAILED', '浮点响应哈希不一致。')
@@ -346,13 +363,13 @@ export async function aggregateEvidence(args: {
       }
     })
     regions.push(
-      ...(report.result.regions ?? []).map((region: Json) => ({
+      ...(report.result.regions ?? []).map((region) => ({
         ...region,
         detector: detector.backend
       }))
     )
     evidence.push(
-      ...report.evidence.map((entry: Json) => ({
+      ...report.evidence.map((entry) => ({
         ...entry,
         data: {
           ...entry.data,
@@ -365,7 +382,8 @@ export async function aggregateEvidence(args: {
     if (detector.localization) {
       detector.regionPreviews = []
       for (const region of (report.result.regions ?? []).slice(0, 20)) {
-        const crop = index.get(region.cropArtifactId)
+        const crop =
+          typeof region.cropArtifactId === 'string' ? index.get(region.cropArtifactId) : undefined
         if (!crop) continue
         const png = await sharp(await readFile(join(output, crop.uri)))
           .resize({ width: 320, height: 180, fit: 'inside', withoutEnlargement: true })
@@ -374,7 +392,7 @@ export async function aggregateEvidence(args: {
         detector.regionPreviews.push({
           regionId: region.regionId,
           bboxXYWH: region.bboxXYWH,
-          areaPixels: region.areaPixels ?? null,
+          areaPixels: typeof region.areaPixels === 'number' ? region.areaPixels : null,
           dataUrl: `data:image/png;base64,${png.toString('base64')}`
         })
       }
@@ -388,7 +406,7 @@ export async function aggregateEvidence(args: {
         ? 'partial'
         : 'completed'
   const timestamp = new Date().toISOString()
-  const report = {
+  const report: ManipulationReport = {
     schemaVersion: '1.0',
     reportId: `report-${randomUUID()}`,
     moduleId: 'manipulation',
@@ -417,7 +435,7 @@ export async function aggregateEvidence(args: {
     limitations: [
       '整图筛查不证明具体局部篡改；定位响应和专家选择分数未经图像级校准。',
       '各模型掩码与分数独立保留，未进行平均或并集合并。',
-      '篡改检测报告不运行通用OCR、来源凭证、专用AIGC检测或VLM；来源与水印检查见独立provenance报告。'
+      '篡改模块未运行通用OCR、AIGC专用检测或VLM；来源和水印结果见独立provenance报告。'
     ],
     error: completed ? null : { code: 'ALL_DETECTORS_FAILED', message: '所有计划的检测均未完成。' },
     extensions: {
@@ -426,7 +444,7 @@ export async function aggregateEvidence(args: {
       previousTaskId: args.previousTaskId ?? null
     }
   }
-  const bundle = {
+  const bundle: EvidenceBundle = {
     schemaVersion: '1.0',
     bundleId: `bundle-${randomUUID()}`,
     purpose: 'analysis',
@@ -437,14 +455,9 @@ export async function aggregateEvidence(args: {
   }
   const ajv = new Ajv({ allErrors: true, strict: false })
   addFormats(ajv)
-  const validate = ajv.compile(
-    JSON.parse(await readFile(join(args.root, 'schemas/report-bundle.schema.json'), 'utf8'))
-  )
-  if (!validate(bundle))
-    throw new AppError(
-      'INFERENCE_FAILED',
-      `联合证据包协议校验失败：${ajv.errorsText(validate.errors)}`
-    )
+  const protocolErrors = validateEvidenceBundle(bundle)
+  if (protocolErrors.length)
+    throw new AppError('INFERENCE_FAILED', `联合证据包协议校验失败：${protocolErrors.join('; ')}`)
   signal.throwIfAborted()
   await mkdir(join(output, 'reports'), { recursive: true })
   await writeFile(
@@ -467,7 +480,7 @@ export async function aggregateEvidence(args: {
   await writeFile(join(output, 'bundle.json'), JSON.stringify(bundle, null, 2))
   signal.throwIfAborted()
   return {
-    bundle: bundle as Record<string, unknown>,
+    bundle: bundle as unknown as Record<string, unknown>,
     summary: summary as Record<string, unknown>,
     status: status as 'completed' | 'partial' | 'failed'
   }

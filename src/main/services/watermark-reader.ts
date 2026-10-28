@@ -37,6 +37,7 @@ export async function inspectPixelWatermarks(args: {
     }, 60000)
     const abort = () => child.kill()
     args.signal.addEventListener('abort', abort, { once: true })
+    if (args.signal.aborted) abort()
     child.stdout.setEncoding('utf8').on('data', (chunk: string) => {
       stdout = (stdout + chunk).slice(-1_000_000)
     })
