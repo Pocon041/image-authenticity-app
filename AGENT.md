@@ -9,12 +9,13 @@ GitHub 仓库名采用 `image-authenticity-app`，中文项目名称为“图像
 开发基于本地推理的图像真实性分析桌面 APP。本项目侧重工程集成，不开发视觉取证算法。
 
 当前为v0.2.0源码开发版：选择本地图片 → 内容类型路由 → SICA整图筛查与RITA/RiSE定位 → 简明JSON和完整证据包。模拟模式仅保留作工程验证，必须明确标记，不能冒充真实推理。
-本阶段不训练模型，不接入OCR、VLM或远程推理服务。以下阶段授权记录为历史沿革，新要求与下方最新交付记录优先。
+本阶段不训练模型、不接入VLM或远程推理服务。来源模块仅获准使用OCR匹配可见水印文字，不扩展为第四阶段的通用内容OCR分析。以下阶段授权记录为历史沿革，新要求与下方最新交付记录优先。
 
 阶段更新：用户现已授权开始第二人模块的 RITA 预训练推理接入验证，允许独立的本地真实推理路径；原模拟模式继续保留。没有授权训练新模型或接入 VLM。缺少权重时不得伪造真实报告或静默回退模拟。
 后续授权更新：用户提供 SICA 权重并要求真实二分类接入及 CASIA v2 检查；允许独立 SICA 路径，仍不训练、不接入 VLM。仅下载 HiFi-Net 文件不代表已经接入该模型。
 后续授权更新（2026-10-28）：用户提供 RiSE-9 RGB 权重并明确要求测试及接入 APP，允许新增独立 RiSE 本地定位模式和必要依赖；OCR 证据与 VLM 仍留给第四阶段，不训练新模型。
 后续授权更新（2026-10-28）：用户批准联合工作流与UI新版本实现，并要求界面简洁易用、JSON有价值且不繁琐。当前默认入口为联合分析，详细模型诊断折叠/留内部文件；HiFi不进入联合路由。
+后续授权更新（2026-10-28）：用户明确由本人负责第一人来源/预处理模块，要求在 `yht` 上完成 v0.1.0，包含图像规范化、EXIF/XMP/IPTC、C2PA、可见水印及可行的隐形水印，并同步更新本文件；不得改其他合作者的关键逻辑，提交云端前必须先询问用户。水印OCR限图库/水印文字候选，不转为通用OCR/VLM。
 
 ## 维护要求
 
@@ -41,6 +42,8 @@ GitHub 仓库名采用 `image-authenticity-app`，中文项目名称为“图像
 - `src/renderer/`：React 工作台与样式。
 - `src/shared/`：跨进程数据协议。
 - `docs/REPORT_PROTOCOL_V1.md`：第一阶段四人报告协议初稿；公共字段和坐标含义不能由单模块自行改变。
+- `docs/PROVENANCE_V01.md`：第一人来源报告结构、字段、安装和检测边界。
+- `backend/provenance/`：EXIF/C2PA解析及水印子进程，不共享或更改其他模型后端。
 - `schemas/`：JSON Schema，模块报告与 VLM 证据包共用同一份字段定义。
 - `examples/USAGE.md`、`examples/sample-selection.example.json`：独立的样例使用说明与选择模板。
 - `examples/stage1-materials/`、`examples/local-selection.json`：第一阶段材料包与实际选择清单，Git 忽略，不自动公开发布。`examples/local-data/` 为先前中间样例，不作为本轮交付目录。
@@ -80,6 +83,7 @@ Windows 启动入口为 `start.cmd`；`run.cmd` 负责优先使用 `.tools/` 下
 - `run.cmd run sica:infer -- --image <path>`：使用本机 `config/sica.local.json` 执行真实二分类，写出 v1.0 单模块证据包。
 - `run.cmd run smoke:sica`：真实 Electron 中验证完整分类、缺权重、模式隔离和实际子进程取消。
 - `run.cmd run rise:setup` / `rise:infer` / `smoke:rise`：RiSE源码准备、真实单图与桌面检查。
+- `run.cmd run provenance:setup`：在 `.tools/provenance-venv` 安装 C2PA、图像元数据、RapidOCR 与水印检测依赖；不修改其他模型环境。
 - `run.cmd run test:workflow` / `smoke:workflow`：联合编排逻辑与真实桌面流程检查。
 - `run.cmd run report:validate -- <analysis.json>`：简明报告Schema、身份、相对路径与引用校验。
 - `<配置的Python> backend/sica/evaluate.py --casia-root <划分清单目录> --output <目录>`：只读运行本地 CASIA 子集，阈值固定 0.5，记录每图预测和分组统计，不声称独立泛化。
@@ -97,15 +101,17 @@ Windows 启动入口为 `start.cmd`；`run.cmd` 负责优先使用 `.tools/` 下
 - 原文件保持原字节；预览、显示副本和模型输入分开管理。模型输出必须映射回规范显示坐标。
 - 模块独立提交不可变报告，公共汇总器合并；模拟标记逐报告保存。VLM 输入仅含前三个模块，不包含预置的解释答案。
 - 模拟矩形、模拟分数与真实文件哈希、尺寸分别标记。数据集真值与类别放独立文件，不进入 VLM 证据包。
-- 数据集示例只作联调，不作为效果证明；没有执行的来源凭证和水印检查标记为 `not_run`。
+- 数据集示例只作联调，不作为效果证明；来源报告逐个保留凭证和水印子检查的未运行/失败状态。
 - 用户要求材料优先覆盖种类、每类少量取样，并且只交付一份给第四人的示例 JSON。数据目录仅保留 `vlm-input.example.json`；其余来源、类别和标注关系使用 `manifest.tsv`。Schema JSON 属于协议定义，不是额外样例报告。
 - 本地 IMD2020 已核对为 Yu2018 生成式修复子集，不能宣传覆盖完整 IMD2020。真值掩码是原生 JPEG，应与模拟预测掩码分别标记。
 - 当前 APP 图片 ID 已改为原始字节 SHA256，重复导入保持一致；主进程保留原始字节快照。RITA 路径可生成 v1.0 manipulation 报告与证据包，原模拟报告仍使用旧展示类型。其他模块注册、公共报告汇总与 VLM 调用尚未实现。
 
 ## 当前状态
 
+- yht 分支第一人模块 v0.1.0：完整联合包增加 provenance 报告及独立 `reports/provenance.json`。记录原文件 SHA-256、8位未缩放 sRGB 显示副本、EXIF/XMP/IPTC/GPS 摘要；检测 JPEG/PNG/WebP 的 C2PA 内嵌清单并通过 c2pa-python读取活动清单与签名验证状态；水印包括元数据关键词、RapidOCR图库标记候选和Stable Diffusion XL固定48位DWT-DCT载荷。OCR框使用 `display_image_pixels`，隐形载荷从原始解码像素检测；`extensions.mediaInput` 预留静态图/视频帧字段。
+- 水印与来源限制：OCR线索不能证明文本是水印；SDXL固定载荷可能被伪造，压缩/缩放/裁剪等可造成漏检，超过1200万像素的图片会标为未运行以避免耗时；不支持SynthID和通用隐形水印。无元数据不推断被剥离；无C2PA标记不排除外部凭证；签名/本地信任状态不等于内容真实。
+- 新增 `provenance:setup` 安装命令及 `docs/PROVENANCE_V01.md`。本机隔离 venv 已成功安装 C2PA 0.38.0、RapidOCR 3.10.0、ONNX Runtime 1.31.1、OpenCV headless 4.14.0.94、PyWavelets 1.10.0 和 invisible-watermark 0.2.0；未安装PyTorch、未改其他模型Python环境。TypeScript检查和Python语法编译通过；未用真实图片端到端验证新水印检测，也未运行回归测试。发布包尚未封装Python运行时。无提交、无推送。
 - 启动修复：`start.cmd` 安装依赖时显式包含开发依赖（Electron 位于 devDependencies）；运行时准备脚本在 Electron npm 包缺失时输出安装命令提示，不再抛出未处理的 `MODULE_NOT_FOUND`。本轮仅做 Node 语法检查，未执行依赖安装或桌面启动。
-- yht 分支第一人模块 v0.1.0 已开始：联合证据包增加独立 `provenance` 报告，记录原文件哈希、EXIF方向校正、未缩放 sRGB PNG 显示副本及基础容器元数据；C2PA来源凭证与水印检查明确标记 `not_run`。本小步尚未接入凭证验证或水印检测；本轮未运行测试。
 - v0.2.0已实现统一入口、照片/文档/不确定三种内容路由、串行模型调度、补充定位复用与部分失败处理。默认主报告为简明analysis.json，完整v1.0证据包保留；实际验证见下方联合版本记录。
 - 已接入 RiSE-9 RGB 独立文档定位模式，两张用户样例均在已知修改位置产生最大连通区域，真实 Electron Smoke 及既有模式回归通过；额外标记仍存在，不构成正式质量验收。具体见下方2026-10-28接入记录。
 - 桌面框架、类型化 IPC、图片导入和模板分析主流程已建立。
@@ -352,7 +358,7 @@ Windows 启动入口为 `start.cmd`；`run.cmd` 负责优先使用 `.tools/` 下
 - `bundle.json` / `report.json`继续遵循v1.0，顶层只有一个manipulation模块报告，decision=inconclusive/score=null。detectors只放简要模型状态与结果，源码文件清单、逐块专家分数等只保留在内部原始报告；不将原始追溯ID写成不能解析的inputReportIds。
 - 新增默认轻量视图 `analysis.json`、`schemas/manipulation-summary.schema.json` 和 `report:validate`。保留图片身份/坐标、筛查分数及校准状态、模型版本与权重哈希、定位状态/掩码/响应/区域裁剪、证据引用、分歧、简短限制与audit指向。排除base64图片、源码清单、逐块专家分数和运行路径日志。短信样例主报告3833字节，补充RITA后6995字节（非压缩；对应完整bundle为19413/39500字节），不是对所有图片体积的保证。
 - UI已简化：移除无实际导航用途的侧栏、联合模式的重复步骤条和模型工具栏；图片区内选择内容类型后开始分析。结果分整图筛查与局部定位，完成定位来源可切换，原图/叠加图可切换，裁剪/检测详情/JSON默认折叠。单模型入口收到底部开发调试。新增「打开报告文件夹」按钮；IPC只允许打开当前最近任务的受控analysis-runs目录，不接收任意路径。
-- 新组件 `WorkflowReport.tsx` 默认展示简明JSON。原始筛查分数与完整路径留在检测详情，避免把未经校准分数当作确定结论。未运行OCR/VLM、第三人AIGC或来源凭证模块；最终综合判断仍待第四阶段。
+- 新组件 `WorkflowReport.tsx` 默认展示简明JSON。原始筛查分数与完整路径留在检测详情，避免把未经校准分数当作确定结论。篡改模型不运行通用OCR/VLM或第三人AIGC；第一人来源与水印检查见独立provenance报告，最终综合判断仍待第四阶段。
 - 工程测试9组通过（合成适配器，只验证编排）：SICA阴性仍定位、部分失败、串行调度/单模块与附件去重、轻量报告无诊断杂项/内嵌图片、补充只跑缺失模型、全失败状态、取消停止队列与不生成完成包、附件损坏拒绝、失效补充引用拒绝。
 - 真实Electron联合Smoke8组通过：默认入口、SICA+RiSE文档路由、补充只跑RITA并复用前两者、非法选项/失效引用拒绝、缺SICA仍保留RITA、真实SICA阴性篡改样例仍RITA定位并提示分歧、真实RiSE首块后取消且无完成包、最小窗口及sandbox/contextIsolation/无渲染异常与HTTP。报告Schema、哈希、规范坐标、裁剪像素、相对路径和证据引用均通过校验。真实样例使用用户短信图及既有CASIA拼接图，不用于调阈值或宣称泛化。
 - 已修正一次可视回归发现的预览溢出：为规范图片预览设定容器内尺寸，1400与1060宽度均验证无横向溢出、图片不覆盖文件信息。`workflow-layout.mjs`回放已验证的真实证据进行纯展示回归，未冒充重新推理。

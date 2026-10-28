@@ -10,7 +10,7 @@
 
 新增可选字段可以保持版本兼容。删除、改名或改变语义属于不兼容变更，应同步升级协议版本、校验器和样例。
 
-本协议已提供样例和校验脚本，**尚未替换 APP 现有的 `ImageAsset`、随机图片 ID、`AnalysisReport` 或 IPC 接口**。后续接入时需要做适配，不能将现有 APP 返回值直接视为符合 v1.0。
+APP 联合工作流已使用原文件 SHA256 图片 ID、规范显示副本和 v1.0 证据包。简明 `analysis.json` 是 manipulation 展示摘要；供模块协作与第四人读取的完整主文件是任务目录中的 `bundle.json`。provenance 同时单独写入 `reports/provenance.json`，其内容也保留在完整 bundle 的 `reports` 数组中。
 
 ## 2. 原文件和图片身份
 
@@ -63,7 +63,15 @@
 
 最小结果为 `preprocessing`、`metadata`、`credentials`、`watermark`。后三项各自含 `status` 和 `details`。
 
-凭证是否存在、签名是否验证通过、声明内容和信任状态应分别表达。没有运行检查必须写 `not_run`，不能写成未检出。示例只实际进行了文件身份和显示副本处理，凭证、完整元数据取证和水印检查没有执行。
+`preprocessing.details` 记录原文件完整 SHA256、编码尺寸、显示尺寸、EXIF 方向处理、sRGB PNG 格式。原文件副本位于 `images/original.<ext>`，无缩放的显示副本位于 `images/display.png`；显示图采用 8 位像素、左上角原点的 `display_image_pixels` 坐标基准。
+
+`metadata.details` 保存格式、尺寸、方向、色彩空间、EXIF、GPS、XMP、IPTC 字段和解析状态。字段不存在或元数据区段缺失时，`strippingAssessment` 必须保持 `unknown`，不能推断被剥离或伪造。
+
+`credentials.details` 分开记录容器标记扫描结果、C2PA Reader 的活动清单、签发信息、声明动作、数字来源类型、签名验证和验证状态。读不到清单、容器格式不支持、清单解析失败和未发现清单是不同状态。离线 Reader 不获取远程清单或 OCSP 信息；验证结果不能简化成来源绝对可信。
+
+`watermark.details.detectors` 将元数据关键词、可见文字 OCR 和隐形载荷解码分开。可见文字仅报告图库/水印词的候选和显示坐标框；隐形检查目前只比对 Stable Diffusion XL 公开的固定 48 位 DWT-DCT 载荷。未匹配不代表不存在其他水印；SynthID 和通用隐形载荷不在支持范围内。每项候选都应带局限说明，OCR 文字不能证明其为后期水印。
+
+子检查未运行或失败必须分别保留状态，不能写成未检出。`docs/PROVENANCE_V01.md` 记录第一人模块字段、安装方式和现有检测边界。
 
 ### manipulation：篡改分类与定位
 
@@ -119,7 +127,7 @@ VLM 调用层根据 `artifactId` 加载实际图片。JSON 文件中的路径或
 
 ## 7. 第一阶段接入顺序
 
-先用这些样例完成报告解析、附件加载和 VLM 输入组织。公共框架后续再提供四个注册入口、任务上下文和报告保存接口；模块负责人替换自己的模拟服务。
+用这些样例校验报告解析、附件加载和 VLM 输入组织。模块报告保持独立；公共汇总器将报告组成不可变快照，后续模块应向 `bundle.json` 的约定结构提供报告，不应修改其他模块实现。
 
 本次新增脚本只准备并校验样例，不调用模型、不生成检测结论，也不代表 APP 已完成四模块接入。
 
