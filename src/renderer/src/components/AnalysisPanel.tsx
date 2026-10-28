@@ -1,8 +1,22 @@
 import { Check, CheckCircle2, Info, LoaderCircle, ScanLine } from 'lucide-react'
-import type { AnalysisReport } from '../../../shared/contracts'
+import type { AnalysisBackend, AnalysisReport } from '../../../shared/contracts'
 import type { AnalysisWorkspace } from '../hooks/useAnalysisWorkspace'
+import { WorkflowReport } from './WorkflowReport'
+
+function backendName(backend?: AnalysisBackend): string {
+  return backend === 'workflow'
+    ? '联合分析'
+    : backend === 'rise'
+      ? 'RiSE'
+      : backend === 'sica'
+        ? 'SICA'
+        : backend === 'rita'
+          ? 'RITA'
+          : '模拟'
+}
 
 function ReportContent({ report }: { report: AnalysisReport }) {
+  const rise = report.backend === 'rise'
   return (
     <div data-testid="analysis-report" className="report">
       <div className="report-title">
@@ -12,9 +26,11 @@ function ReportContent({ report }: { report: AnalysisReport }) {
           <span>
             耗时 {(report.elapsedMs / 1000).toFixed(1)} 秒 ·{' '}
             {report.mode === 'local'
-              ? report.classification
-                ? '本地 SICA 分类'
-                : '本地 RITA 推理'
+              ? rise
+                ? '本地 RiSE 文档定位'
+                : report.backend === 'sica'
+                  ? '本地 SICA 分类'
+                  : '本地 RITA 推理'
               : '本地模拟服务'}
           </span>
         </div>
@@ -64,9 +80,13 @@ function ReportContent({ report }: { report: AnalysisReport }) {
         <div className="localization-result">
           <h4>模型标记区域叠加</h4>
           <img
-            data-testid="rita-overlay"
+            data-testid={rise ? 'rise-overlay' : 'rita-overlay'}
             src={report.localization.overlayDataUrl}
-            alt="RITA 预测掩码的红色叠加图，非数据集标注"
+            alt={
+              rise
+                ? 'RiSE 预测掩码的红色叠加图，非人工标注'
+                : 'RITA 预测掩码的红色叠加图，非数据集标注'
+            }
           />
           <p>
             定位输出：
@@ -87,7 +107,7 @@ function ReportContent({ report }: { report: AnalysisReport }) {
           </p>
           <details>
             <summary>查看 JSON 报告</summary>
-            <pre data-testid="rita-bundle">
+            <pre data-testid={rise ? 'rise-bundle' : 'rita-bundle'}>
               {JSON.stringify(report.localization.bundle, null, 2)}
             </pre>
           </details>
@@ -103,18 +123,18 @@ function ReportContent({ report }: { report: AnalysisReport }) {
 }
 
 export function AnalysisPanel({ workspace: w }: { workspace: AnalysisWorkspace }) {
-  const modelName = w.backend === 'sica' ? 'SICA' : 'RITA'
+  const modelName = backendName(w.backend)
   const local = w.backend !== 'mock'
   return (
     <section className="panel result-panel" aria-label="分析描述" aria-busy={w.running}>
       <div className="panel-heading">
         <div>
           <ScanLine size={18} />
-          <h2>分析描述</h2>
+          <h2>{w.backend === 'workflow' ? '分析与证据' : '分析描述'}</h2>
         </div>
         <span className={`result-status ${w.report ? 'done' : ''}`}>
           {w.report
-            ? `已完成 · ${w.report.mode === 'local' ? (w.report.classification ? 'SICA' : 'RITA') : '模拟'}`
+            ? `已完成 · ${w.report.mode === 'local' ? backendName(w.report.backend) : '模拟'}`
             : w.running
               ? '处理中'
               : '待开始'}
@@ -143,6 +163,34 @@ export function AnalysisPanel({ workspace: w }: { workspace: AnalysisWorkspace }
             <small>
               {local ? '进度来自本地推理进程，可以取消任务' : '进度来自本地模拟服务，没有调用模型'}
             </small>
+            {w.progress?.steps && (
+              <ol className="workflow-progress" data-testid="workflow-progress">
+                {w.progress.steps.map((step) => (
+                  <li key={step.backend} data-status={step.status}>
+                    <span>
+                      {step.backend === 'sica'
+                        ? 'SICA · 整图筛查'
+                        : step.backend === 'rita'
+                          ? 'RITA · 图像定位'
+                          : 'RiSE · 文档定位'}
+                    </span>
+                    <strong>
+                      {
+                        {
+                          pending: '等待',
+                          running: '运行中',
+                          completed: '完成',
+                          failed: '未完成',
+                          not_run: '未安排',
+                          reused: '复用证据',
+                          cancelled: '已取消'
+                        }[step.status]
+                      }
+                    </strong>
+                  </li>
+                ))}
+              </ol>
+            )}
             <button
               className="secondary-button cancel-button"
               disabled={w.status === 'cancelling'}
@@ -151,6 +199,12 @@ export function AnalysisPanel({ workspace: w }: { workspace: AnalysisWorkspace }
               {w.status === 'cancelling' ? '正在取消…' : '取消分析'}
             </button>
           </div>
+        ) : w.report?.workflow ? (
+          <WorkflowReport
+            report={w.report}
+            originalDataUrl={w.image?.dataUrl ?? ''}
+            onSupplement={w.supplement}
+          />
         ) : w.report ? (
           <ReportContent report={w.report} />
         ) : (
@@ -160,34 +214,61 @@ export function AnalysisPanel({ workspace: w }: { workspace: AnalysisWorkspace }
             </div>
             <h3>{w.image ? '图片已就绪' : '等待第一张图片'}</h3>
             <p>
-              {w.backend === 'sica'
-                ? '选择图片后运行 SICA 二分类。\n需要配置 Python 和官方权重。'
-                : w.backend === 'rita'
-                  ? '选择图片后启动本地 RITA 定位。\n需要配置 Python 和官方权重。'
-                  : w.image
-                    ? '点击「开始模拟分析」，\n查看完整的描述展示效果。'
-                    : '导入图片并开始模拟分析后，\n分析描述将在这里展示。'}
+              {w.backend === 'workflow'
+                ? '选择图片与内容类型后开始分析。\n整图筛查与定位结果将分别呈现。'
+                : w.backend === 'rise'
+                  ? '选择图片后运行 RiSE 文档定位。\n将自动分块覆盖整张图片。'
+                  : w.backend === 'sica'
+                    ? '选择图片后运行 SICA 二分类。\n需要配置 Python 和官方权重。'
+                    : w.backend === 'rita'
+                      ? '选择图片后启动本地 RITA 定位。\n需要配置 Python 和官方权重。'
+                      : w.image
+                        ? '点击「开始模拟分析」，\n查看完整的描述展示效果。'
+                        : '导入图片并开始模拟分析后，\n分析描述将在这里展示。'}
             </p>
             <div className="capability-list">
-              <span>
-                <Check size={13} />
-                AI 生成检测展示位
-              </span>
-              <span>
-                <Check size={13} />
-                局部篡改定位展示位
-              </span>
-              <span>
-                <Check size={13} />
-                自然语言描述展示位
-              </span>
+              {w.backend === 'workflow' ? (
+                <>
+                  <span>
+                    <Check size={13} />
+                    独立整图筛查
+                  </span>
+                  <span>
+                    <Check size={13} />
+                    可追溯区域定位
+                  </span>
+                  <span>
+                    <Check size={13} />
+                    模型分歧保留
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span>
+                    <Check size={13} />
+                    AI 生成检测展示位
+                  </span>
+                  <span>
+                    <Check size={13} />
+                    局部篡改定位展示位
+                  </span>
+                  <span>
+                    <Check size={13} />
+                    自然语言描述展示位
+                  </span>
+                </>
+              )}
             </div>
             <small>
-              {w.backend === 'sica'
-                ? '此模式只运行整图分类，不生成掩码或 VLM 解释'
-                : w.backend === 'rita'
-                  ? '此模式仅运行篡改定位，其他模块未执行'
-                  : '以上能力当前均未接入模型'}
+              {w.backend === 'workflow'
+                ? '可按内容选择定位方式，也可运行两种定位进行对照'
+                : w.backend === 'rise'
+                  ? '此模式只运行视觉定位，不执行 OCR 或 VLM'
+                  : w.backend === 'sica'
+                    ? '此模式只运行整图分类，不生成掩码或 VLM 解释'
+                    : w.backend === 'rita'
+                      ? '此模式仅运行篡改定位，其他模块未执行'
+                      : '以上能力当前均未接入模型'}
             </small>
           </div>
         )}

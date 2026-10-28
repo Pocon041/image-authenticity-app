@@ -1,232 +1,175 @@
 # image-authenticity-app
 
-本地图像真实性分析桌面应用。项目侧重工程集成，目标是把 AI 生成检测、局部篡改定位和有证据支撑的解释整合到同一个桌面工作台。
+基于本地推理的图像真实性分析桌面应用。当前源码版本为 **v0.2.0**：在之前发布的 Electron 基础框架上，增加了 **SICA 整图筛查、RITA 图像定位、RiSE 文档定位，以及统一 JSON 报告**。
 
-**当前阶段：先跑通工程框架，所有分析均为模拟。** 没有接入检测模型、语言模型或远程 API，不提供真实的真假判断、检测分数或篡改热图。
+正常使用流程：**选择图片 → 选择图片类型 → 开始分析 → 查看可疑区域与报告**。
 
-## 已经搭好的主流程
+- 普通照片：SICA + RITA。
+- 文档、票据和截图：SICA + RiSE，包括拍摄的小票。
+- 不确定或混合内容：依次运行 SICA、RITA、RiSE，保留各模型的独立结果。
 
-选择本地图片 → 图片预览 → 启动模拟任务 → 接收进度 → 展示固定模板描述。
+SICA 判真也继续定位；某个模型失败时保留其他模型的结果。支持取消、补充检查、原图/叠加切换及区域裁剪。HiFi-Net 已退出当前应用代码，历史效果记录保留在 [HIFI_EVALUATION.md](docs/HIFI_EVALUATION.md)。
 
-当前包含：
+本阶段负责视觉检测与工程接入；OCR、来源凭证、AI 生成专用模块和最后的 VLM 综合解释尚未整合。模型标记是待核查线索，不能直接视为已证实篡改，当前不输出未经验证的综合真假概率。
 
-- 中文桌面工作台，使用系统原生文件选择对话框。
-- 单张 PNG / JPEG / WebP 导入、图片有效性检查、分辨率与文件大小展示。
-- 具有进度通知、重复任务保护和取消能力的模拟分析任务。
-- 模拟描述展示；更换图片时清除旧结果，取消选图时保留现有内容。
-- 独立的桌面主进程、界面组件、任务状态管理、共享类型和分析服务接口。
-- 真实 Electron 窗口中的端到端 Smoke 验证。
+## 已安装基础版：如何增量升级
 
-图片和结果只保留在当前会话，不写入历史数据库，不修改原图。运行时不上传图片；开发模式会访问本机 Vite 服务。
+以下步骤针对 **Windows 10/11 x64 源码版**。原来的 Node.js、Git 和 Electron 框架可以继续使用；从基础版升级主要增加模型源码、Python 环境、权重和本机配置。
 
-## 技术框架
+### 1. 更新代码与前端依赖
 
-- **Electron**：桌面窗口、文件访问和应用生命周期。
-- **React + TypeScript**：工作台界面与交互。
-- **electron-vite / Vite**：主进程、preload 和界面的开发与构建。
-- **sharp**：图片解码、方向校正和预览生成，不执行真实性检测。
-- **Playwright**：在真实桌面窗口中操作主流程。
-- **electron-builder**：生成 Windows 应用目录，发布流程后续完善。
-
-未来如果接入 Python 推理，由主进程的服务适配层管理；界面不直接运行 Python，也不直接访问文件系统。
-
-## 从零复现启动（Windows）
-
-当前验证环境为 **Windows 10/11 x64**。这是源码开发版本，克隆后需要安装依赖才能运行；当前不需要 Python、CUDA、GPU、模型权重或 API Key。
-
-### 1. 安装环境
-
-- 安装 [Git for Windows](https://git-scm.com/downloads/win)。
-- 安装 [Node.js 24 LTS](https://nodejs.org/en/download)，npm 随 Node.js 一起安装。项目最低要求 Node 22.12，但推荐统一使用 Node 24 LTS。
-- 安装完成后重新打开 PowerShell，确认以下命令可用：
+关闭旧 APP 及其开发终端，在原项目目录打开 PowerShell：
 
 ```powershell
-git --version
-node --version
-npm.cmd --version
+cd D:\SRDP  # 改为你自己的项目目录
+git status --short
+git fetch origin
+git switch czh
+git pull --ff-only origin czh
+.\run.cmd ci
 ```
 
-首次安装需要能访问 npm 包仓库以及 GitHub 的 Electron Releases 下载地址。完成依赖和运行时安装后，当前模拟分析流程在本机执行。
+当前可复现的新版本在 **`czh` 分支**，不要求更新 `main`。如果 `git status` 显示你修改过源码，先保存或提交自己的工作，再切换/更新分支；不要用 `git reset --hard` 或 `git clean` 强行覆盖。
 
-### 2. 克隆并启动
+`run.cmd ci` 按锁文件更新 npm 依赖，不会删除 `weights/`、`config/*.local.json`、`.tools/` 或 `work/`。Electron 运行时若需补齐，会在启动前自动准备，并可复用本机缓存。
 
-在希望保存项目的目录打开 PowerShell，依次运行：
+如果原来使用的是 ZIP 或单独的 `SRDP.exe`，没有 `.git`，请将新版源码克隆到新目录，不要直接替换旧程序的 `app.asar`：
 
 ```powershell
-git clone https://github.com/Pocon041/image-authenticity-app.git
-cd image-authenticity-app
-npm.cmd ci
-npm.cmd run dev
+git clone --branch czh https://github.com/Pocon041/image-authenticity-app.git image-authenticity-app-v02
+cd image-authenticity-app-v02
+.\run.cmd ci
 ```
 
-- `npm.cmd ci` 根据仓库内的 `package-lock.json` 安装锁定版本的依赖。
-- `npm.cmd run dev` 先检查 Electron 运行时；缺少时自动从官方发布地址下载并校验 SHA256，然后启动桌面窗口。
-- 首次运行会有下载等待，终端显示 `starting electron app...` 后应出现独立的中文桌面窗口。
-- 终端显示的 `http://127.0.0.1:5173/` 是桌面界面的本机开发服务地址。正常使用入口是自动打开的桌面窗口。
+已有权重可以在配置中填写其原来的绝对路径，无须再下载或复制。已有 Python 环境也可以复用；已有本机配置不要覆盖。当前交付是源码运行版，尚未把 Python 和权重打进安装包。
 
-Windows 示例统一使用 `npm.cmd`，以避免 PowerShell 对 `npm.ps1` 的脚本执行策略限制；在命令提示符中也可以使用 `npm`。
+### 2. 准备 Python 推理环境
 
-### 3. 验证主流程
+如果已经配置过本项目三个模型，直接沿用现有环境，确认配置路径仍正确；只安装缺少的包并继续下面的源码检查。只有基础版、尚无 Python 环境的用户，可以安装 [Python 3.13 x64](https://www.python.org/downloads/windows/)，然后在项目根目录创建本地环境：
 
-在桌面窗口中：
+```powershell
+py -3.13 -m venv .venv
+$modelPython = (Resolve-Path .venv\Scripts\python.exe).Path
+& $modelPython -m pip install --upgrade pip
+& $modelPython -m pip install torch==2.7.0 torchvision==0.22.0 --index-url https://download.pytorch.org/whl/cu126
+& $modelPython -m pip install -r backend/requirements-app.txt
+& $modelPython -m pip install --no-deps --target .tools/rise-deps-v5 -r backend/rise/requirements-isolated.txt
+```
 
-1. 点击“选择图片”，导入一张 PNG、JPG 或 WebP 图片，文件不超过 20 MB。
-2. 确认左侧出现图片预览、分辨率和文件大小。
-3. 点击“开始模拟分析”，观察进度变化。
-4. 大约 1.5 秒后，右侧应出现“模拟分析已完成”和固定模板描述。
-5. 可以继续尝试取消分析、重新分析、更换图片和清空图片。
+该组合面向 NVIDIA CUDA 显卡。请安装兼容的显卡驱动；PyTorch wheel 自带 CUDA 运行库，通常不必另外安装完整 CUDA Toolkit。实测为 RTX 4060 Laptop 8 GB，Python 3.13.2、torch 2.7.0+cu126、torchvision 0.22.0。CPU 性能与其他显卡尚未完成验收；这也不是作者论文环境的逐项复现。
 
-所有结果都标注为模拟内容，不代表对图片真实性的实际检测。
+RiSE 使用的 Transformers 5.7.0 等专用包隔离在 `.tools/rise-deps-v5/`，不会替换其他模型环境中的 Transformers。这里的 `--no-deps` 依赖前一条命令已装好的公共包，两步都需要执行。若本机已有此隔离目录且工作正常，不需要重复安装。
 
-关闭桌面窗口即可结束当前 Electron 应用；若终端中的开发服务仍在运行，使用 Ctrl+C 结束。保留启动终端，不要在使用过程中直接关闭它。
+检查 PyTorch 能否使用显卡：
 
-### 4. 后续双击启动
+```powershell
+& $modelPython -c "import torch; print(torch.__version__); print('CUDA:', torch.cuda.is_available())"
+```
 
-完成 Node.js 安装并克隆仓库后，可以双击根目录的 `start.cmd`。脚本在依赖缺失时执行 `npm ci`，随后启动相同的开发流程。
+只有运行离线数据集评测时，才需要额外安装 `backend/requirements-evaluation.txt`。APP 单图分析不要求下载 CASIA、IMD2020 或任何训练数据集。
 
-也可以在 PowerShell 中运行：
+### 3. 增量准备固定版本的模型源码
+
+```powershell
+.\run.cmd run rita:setup
+.\run.cmd run sica:setup
+.\run.cmd run rise:setup
+```
+
+这些命令只准备并校验固定版本源码；已有正确文件会复用，**不会自动下载任务权重或安装 Python 包**。首次执行需要访问 GitHub。运行推理时不需要调用云端模型服务。
+
+### 4. 放置权重
+
+从各模型官方入口下载，按下列位置放置；已下载过的文件直接复用：
+
+```text
+weights/
+├─ rita/rita_catnet.pth
+├─ sica/sica_weight_train.pth
+└─ RiSE/RiSE-9.pth
+```
+
+- **RITA**：[官方仓库](https://github.com/scu-zjz/RITA)，[官方权重分享](https://pan.baidu.com/s/1W1HC4_mn044ub2NLJLSeQQ?pwd=43nn)，提取码 `43nn`，选择 `rita_catnet.pth`。
+- **SICA**：[官方仓库](https://github.com/venus-guangjian/SICA_OpenMMSec)，[权重目录](https://drive.google.com/drive/folders/1HQ2tj_1aeeoWP7meAf01fqVHmsAcEGPU)。配置模板默认 `sica_weight_train.pth`。若使用 `sica_weight_full.pth`，请同时设置配置里的 `checkpointPath` 和 `checkpointVariant="full"`。full 使用过完整训练/验证/测试数据，相关数据上的结果不作为独立泛化证据。
+- **RiSE**：[官方仓库](https://github.com/KahimWong/RiSE)，[官方任务权重](https://huggingface.co/Jason37437/RiSE/tree/main)，选择 **`RiSE-9.pth`，RGB 版**。不要换成 `RiSE-9-DCT.pth`；两者输入和配置不同。模板内已经固定作者公布的 RiSE-9 校验值。
+
+本仓库不分发模型权重。第三方代码、权重和数据按各自的许可使用，本项目许可证不自动覆盖它们。
+
+### 5. 生成或调整本机配置
+
+如果采用上面的 `.venv`，可以运行以下命令，仅创建不存在的配置，保留现有成员的本机设置：
+
+```powershell
+foreach ($modelName in @('rita', 'sica', 'rise')) {
+    $localConfig = "config/$modelName.local.json"
+    if (-not (Test-Path -LiteralPath $localConfig)) {
+        $modelConfig = Get-Content "config/$modelName.example.json" -Raw | ConvertFrom-Json
+        $modelConfig.pythonPath = '.venv/Scripts/python.exe'
+        $modelConfig | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $localConfig -Encoding utf8
+    }
+}
+```
+
+如复用其他 Python 环境，将三个文件的 `pythonPath` 改为该环境的完整 `python.exe` 路径。这样双击启动也能找到它，无需先激活终端环境。权重也可以放在其他盘，在 `checkpointPath` 中填写实际路径。相对路径均相对于项目根目录。
+
+本机配置、Python 环境、权重与结果均被 Git 忽略；不要将个人盘符路径写入共享的 `*.example.json`。
+
+### 6. 启动并验证
 
 ```powershell
 .\start.cmd
 ```
 
-项目无需放在固定盘符或目录，`start.cmd` 会自动切换到自身所在的项目目录。仓库不包含本机的 `.tools/` 或 `node_modules/`；其他使用者只需安装前面列出的 Node.js 和 Git。
+之后直接双击同一个 `start.cmd` 即可。选择图片与内容类型，点击开始分析。首次分析包含导入 Python 和加载权重的时间；模型依次运行，避免争抢显存。
 
-### 5. 自动化复现检查
+只想确认框架启动、暂时没有权重时，打开底部「开发与单模型调试」选择「模拟流程」。模拟输出始终明确标注，不会冒充真实检测；联合模式缺少模型时会报告失败或部分完成。
 
-在项目根目录执行：
+## 报告在哪里
 
-```powershell
-npm.cmd run typecheck
-npm.cmd run smoke:startup
-npm.cmd run smoke
-```
+联合任务保存在 `work/analysis-runs/<taskId>/`，APP 中可点击「打开报告文件夹」。
 
-- `typecheck`：检查 TypeScript 类型。
-- `smoke:startup`：实际调用 `start.cmd`，确认启动钩子、Electron 窗口、React 页面与桌面桥接可用。
-- `smoke`：构建后启动真实 Electron，验证选图、模拟分析、取消和结果展示等流程。
+- **`analysis.json`**：默认阅读及后续综合分析的简明报告，包含图片身份、模型来源、状态、分数、区域、掩码/裁剪路径、证据引用、分歧和限制。
+- **`bundle.json` / `report.json`**：兼容 v1.0 的完整证据包与单一篡改模块报告。
+- **`images/`、`detectors/`**：原文件副本、规范显示图、掩码、裁剪、浮点响应及内部诊断。
 
-测试会自动关闭窗口，结果保存在 `work/startup/` 和 `work/smoke/`。执行自动化测试前，请先关闭本项目的开发服务，以免占用 5173 端口。
+源码清单、逐块专家分数和运行日志不塞入简明报告。交给第四阶段时保留整个目录；JSON 中的图片路径需要实际加载才能成为 VLM 的视觉输入。
 
-### 常见启动问题
+更多字段与工作流说明：[WORKFLOW_V02.md](docs/WORKFLOW_V02.md)、[报告协议](docs/REPORT_PROTOCOL_V1.md)。
 
-- **Node 版本不满足要求或找不到命令**：安装 Node.js 24 LTS，并重新打开终端后运行 `node --version` 确认。
-- **提示 npm.ps1 无法执行**：改用本文的 `npm.cmd` 命令，无需修改系统执行策略。
-- **提示 `Electron uninstall` 或运行时下载失败**：检查能否访问 GitHub Releases，然后运行下面的修复命令，再启动应用：
+## 从零安装
 
-  ```powershell
-  npm.cmd run runtime:ensure -- --repair
-  npm.cmd run dev
-  ```
+先安装 [Git for Windows](https://git-scm.com/downloads/win) 和 [Node.js 24 LTS](https://nodejs.org/en/download)，确认 `git --version`、`node --version` 可用，然后按上文克隆 `czh` 分支并完成 Python、源码、权重与配置步骤。Node 最低要求 22.12；新机器不依赖开发者私有的 `.tools/` 内容。
 
-- **提示 5173 端口被占用**：先回到上一次启动项目的终端，用 Ctrl+C 结束旧的开发服务，再启动本次应用。
+首次 npm 安装和 Electron 准备需要网络；配置完成后的图片检测在本机进行。开发模式的 `127.0.0.1:5173` 仅是桌面界面的本机 Vite 服务，使用入口是 Electron 窗口。
 
-Electron 45 采用延迟下载运行时的方式，因此只完成 `npm ci` 不一定已经下载桌面可执行文件。项目通过 `predev` / `prestart` 自动补齐。Windows 下载与解压使用自带的 PowerShell 模块，已验证的官方 ZIP 缓存在 `work/electron-cache/`，重装 npm 依赖后可以复用。
-
-`run.cmd` 是 Windows 下的辅助入口，优先使用可选的 `.tools/` 本地 Node，否则使用系统 Node。它与直接调用 npm 的开发命令等价，例如 `.\run.cmd run dev`。在新电脑上按上述步骤安装系统 Node 即可，不依赖开发者的本地环境。
-
-## 项目结构
-
-```text
-image-authenticity-app/
-├─ AGENT.md                         项目约定、范围、开发方式和当前状态
-├─ AGENTS.md                        自动发现入口，指向 AGENT.md
-├─ README.md                        项目说明和使用入口
-├─ electron.vite.config.ts          桌面开发与构建配置
-├─ package.json / package-lock.json 运行命令与依赖锁定
-├─ start.cmd / run.cmd              Windows 启动入口
-├─ scripts/                         Electron 运行时检查与下载
-├─ src/
-│  ├─ main/
-│  │  ├─ index.ts                   窗口与应用生命周期
-│  │  ├─ ipc.ts                     桌面 IPC 路由与参数检查
-│  │  ├─ errors.ts                  统一错误类型和响应
-│  │  ├─ image-import.ts            本地图片读取、解码和预览
-│  │  └─ services/
-│  │     ├─ analysis.ts             AnalysisService 接口与模拟实现
-│  │     └─ analysis-session.ts     当前图片、任务互斥、取消与释放
-│  ├─ preload/
-│  │  └─ index.ts                   最小范围的桌面桥接 API
-│  ├─ shared/
-│  │  └─ contracts.ts              图片、报告、进度和错误协议
-│  └─ renderer/
-│     ├─ index.html                页面入口与内容安全策略
-│     └─ src/
-│        ├─ App.tsx                工作台页面组装
-│        ├─ components/            桌面布局、图片面板、结果面板
-│        ├─ hooks/                 任务状态与交互逻辑
-│        ├─ main.tsx               React 入口
-│        └─ styles.css             工作台样式
-└─ tests/
-   └─ smoke.mjs                    Electron 端到端 Smoke 验证
-```
-
-生成的测试图片、截图和结果在 `work/`；构建产物在 `out/`；打包产物在 `dist/`。这些目录都不提交。
-
-## 模块怎么协作
-
-界面通过 `window.desktop` 调用 preload，preload 将请求交给主进程的 IPC 路由。主进程读取图片并管理分析会话，再调用 `AnalysisService`。结果和进度沿原路径返回界面。
-
-跨进程协议统一定义在 `src/shared/contracts.ts`。目前桥接层只开放五个方法：
-
-- `chooseImage()`：原生选图，返回预览与元信息；取消时返回空值。
-- `clearImage()`：释放主进程中的当前图片，并由界面清除展示内容。
-- `analyze(imageId, taskId)`：运行当前图片的模拟任务，返回报告。
-- `cancelAnalysis(taskId)`：请求取消指定任务。
-- `onAnalysisProgress(listener)`：订阅任务进度，返回取消订阅函数。
-
-请求结果统一使用 `ok` 区分成功与失败；失败包含稳定的错误代码和可展示的错误描述。每个任务携带独立任务 ID，界面据此过滤过期进度。主进程拒绝重复任务和失效图片 ID。
-
-原始文件路径只保留在主进程。界面接收处理后的预览，不具备任意文件访问或任意 IPC 能力；窗口启用 contextIsolation 和 sandbox，关闭 nodeIntegration。
-
-## 后续从哪里扩展
-
-1. **接入检测能力**：在 `src/main/services/` 下增加 `AnalysisService` 实现，通过同一个输入、进度与取消协议调用本地服务。
-2. **组织结果与证据**：扩展 `AnalysisReport` 的类型，保存模型结果、区域和证据引用，再增加结果面板组件。
-3. **接入自然语言解释**：根据结构化证据生成解释，保留证据引用和运行来源。
-4. **增加历史与导出**：作为独立的数据存储和报告服务接入，不把存储逻辑堆进界面。
-5. **完善交付**：补充安装包、签名、更新和更多运行环境验证。
-
-这些是后续工程接入位置，目前没有创建空壳 Python 后端、模型下载器或未实现的功能页面。
-
-## 开发命令
+## 检查与排错
 
 ```powershell
-.\run.cmd run dev            # 启动开发桌面窗口
-.\run.cmd run typecheck      # 类型检查
-.\run.cmd run build          # 构建主进程、preload 和界面
-.\run.cmd run smoke          # 构建后验证桌面流程
-.\run.cmd run smoke:dev      # 通过本机开发服务验证相同流程
-.\run.cmd run smoke:startup  # 验证 start.cmd 的真实启动链路
-.\run.cmd run format         # 格式化源码与文档
-.\run.cmd run format:check   # 检查格式
+.\run.cmd run typecheck
+.\run.cmd run build
+.\run.cmd run smoke:startup
+.\run.cmd run test:workflow
+.\run.cmd run smoke:workflow -- --image C:\path\to\image.png --software-rendering
+.\run.cmd run report:validate -- C:\path\to\task\analysis.json
 ```
 
-Smoke 测试只替代文件选择对话框，实际的文件读取、图片解码、IPC、模拟任务和 React 展示均走真实实现。测试自动关闭窗口，结果写入 `work/smoke/`。
+`test:workflow` 使用合成适配器验证工程逻辑；`smoke:workflow` 需要真实权重和本机 Python。`--software-rendering` 只影响测试窗口的渲染，模型仍使用 CUDA，不关闭 sandbox。测试与样例不证明检测准确率或跨域泛化。
 
-当前框架已通过类型检查、构建和 **15 项真实 Electron Smoke 检查**，覆盖正常导入、模拟分析、进度通知、取消后重新分析、更换与清空图片等流程。该测试运行中没有观察到 HTTP 请求或 React 运行时异常。这些检查验证工程主流程，不代表任何图像检测能力。
+- **`Electron uninstall`**：运行 `.\run.cmd run runtime:ensure -- --repair` 后重新启动。
+- **`npm.ps1` 被执行策略拦截**：使用 `run.cmd` 或 `npm.cmd`，不必修改系统执行策略。
+- **模型未就绪/缺权重**：检查对应 `config/*.local.json` 的 Python、源码和权重路径；Git 更新不会替你下载权重。
+- **RiSE 依赖报错**：确认专用包安装到 `.tools/rise-deps-v5`，配置的 `dependencyPath` 指向同一目录。
+- **5173 端口占用**：用 Ctrl+C 关闭上一次开发终端，再启动。
 
-另已通过 `smoke:startup`：实际执行 `start.cmd`，确认启动前运行时检查、electron-vite 启动、React 页面和 preload 桥接可用。结果保存在 `work/startup/`，用于覆盖直接启动 Electron 的测试无法发现的启动入口问题。
+图片保持原始字节，定位坐标采用 EXIF 校正、sRGB、未缩放的显示图。当前一次处理一张图片，最大 20 MB、6000 万像素；RiSE 默认最多128个图块，超限会明确报错。
 
-已提供以下发布相关入口，供后续完善交付流程：
+## 工程结构与协作
 
-```powershell
-.\run.cmd run package:dir
-.\run.cmd run smoke:packaged
-```
+- `src/main/`：文件读取、IPC、统一任务编排、Python 子进程与证据汇总。
+- `src/preload/`、`src/shared/`：最小桌面桥接、跨进程类型。
+- `src/renderer/`：React 工作台。
+- `backend/rita`、`sica`、`rise`：三个模型适配；`backend/common` 为共享评测工具。
+- `config/`、`schemas/`、`docs/`：配置模板、报告约束和模块说明。
+- `scripts/`、`tests/`：运行准备、验证与真实桌面测试。
 
-`package:dir` 生成 `dist/win-unpacked/SRDP.exe` 及其依赖文件。可运行目录已生成过；打包后的完整自动化验证曾在隐藏窗口截图环节超时，尚未验收。当前优先完成开发框架，不把发布版本标记为已完成。
-
-## 当前限制
-
-- 每次处理一张图片，文件最大 20 MB，解码上限为 6000 万像素。
-- 图片预览自动处理 EXIF 方向，最大边长为 1800 像素，原始文件保持不变。
-- 模拟服务按预置阶段等待约 1.5 秒，然后返回固定模板描述；进度也属于模拟流程。
-- 尚未实现真实检测、真实解释、热图、批量任务、拖放、历史记录、结果导出或安装器。
-- 目前验证重点为 Windows 开发框架，其他平台和发布交付后续再做。
-
-## 协作约定
-
-修改项目前阅读 `AGENT.md`。改变架构、接口、运行命令或阶段范围时同步更新它；README 应始终区分已经实现的功能与未来目标。
-
-本阶段的完成标准是：**框架分层清楚，模拟主流程可运行，后续能力有明确接入位置。**
+阅读和维护 `AGENT.md`；公共图片身份、坐标和证据语义不得由单模块自行改变。`weights/`、`work/`、`.tools/`、`.venv/`、`node_modules/`、`out/`、`dist/` 和本机配置不提交。发布包中的 Python/权重分发、CPU 路径及更大规模独立质量评测尚未验收。

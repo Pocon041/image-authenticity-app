@@ -1,6 +1,11 @@
 import { randomUUID } from 'node:crypto'
 import { setTimeout as delay } from 'node:timers/promises'
-import type { AnalysisBackend, AnalysisProgress, AnalysisReport } from '../../shared/contracts'
+import type {
+  AnalysisBackend,
+  AnalysisProgress,
+  AnalysisReport,
+  WorkflowOptions
+} from '../../shared/contracts'
 import type { ImportedImage } from '../image-import'
 
 // Future local inference implementations must preserve this boundary.
@@ -13,6 +18,8 @@ export interface AnalysisContext {
   taskId: string
   signal: AbortSignal
   onProgress(progress: AnalysisProgress): void
+  workflowOptions?: WorkflowOptions
+  previousReport?: AnalysisReport
 }
 
 export class MockAnalysisService implements AnalysisService {
@@ -32,6 +39,7 @@ export class MockAnalysisService implements AnalysisService {
     return {
       id: randomUUID(),
       imageId: image.id,
+      backend: 'mock',
       mode: 'mock',
       createdAt: new Date().toISOString(),
       elapsedMs: Math.round(performance.now() - startedAt),

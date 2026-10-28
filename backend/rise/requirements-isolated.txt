@@ -1,0 +1,7 @@
+# Install with --no-deps --target .tools/rise-deps-v5 into an existing PyTorch environment.
+# Tested host: Python3.13.2, torch2.7.0+cu126, torchvision0.22.0, timm1.0.21.
+transformers==5.7.0
+huggingface-hub==1.7.2
+tokenizers==0.22.2
+regex==2026.4.4
+efficientnet-pytorch==0.7.1

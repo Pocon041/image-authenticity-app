@@ -1,5 +1,7 @@
 # HiFi-Net 通用权重：二分类与定位检查
 
+> 历史评测记录。v0.2.0发布整理时已移除HiFi-Net的运行代码与命令；本文保留原有观察和协议纠正，不作为当前安装说明。权重和评测结果仍保留在本机。
+
 本轮按用户要求测试已经下载的 general `750001` 权重，没有训练、调阈值，也没有将它设为 APP 默认模型。SICA 和 RITA 保持原有独立模式。
 
 ## 模型与环境
@@ -87,3 +89,59 @@ npm.cmd run hifi:infer -- --image <本机图片> --output work/hifi-single-new
 结果 CSV/统计在指定目录；单图命令另存预测、连续距离 NPY 和叠加图。`inspection.json` 是调试记录，不是 v1.0 VLM 证据包。此轮没有添加 HiFi 的 APP 模式或正式模块报告接口。
 
 权重、数据、本机配置和 `.tools/` 均不提交 Git。README 保持不变，工作记录统一写入 AGENT.md。
+
+## 定位权重 225000（CE 分支）补充验证
+
+2026-10-27 追加：用户下载官方 localization weights 后，按 `HiFi_Net_loc.py` 的 CE 分支独立接入，未训练、未调阈值、未改 README。
+
+### 权重与代码路径
+
+- `weights/hifi/weight_loc/HRNet/225000.pth`：107032008 字节，SHA256 `f60dcb8a245831335db663579801aed09bd81e6b7f602c88d514461c435e7425`。
+- `weights/hifi/weight_loc/NLCDetection/225000.pth`：96371777 字节，SHA256 `a2e824ac2fc99565ad422d5afffbbfe7d9eaf2e8e0d6f48cc10e6bb079d947f7`。
+- strict=True 完整加载：HRNet 699 项、NLCDetection_loc 106 项，missing/unexpected 均为空。
+- 代码走 `models/NLCDetection_loc.py`，`--loss_type` 默认 `ce`，二值掩码按 `mask_binary >= 0.5` 生成，**不使用** general 的 2.3 距离阈值；`center_loc/radius_center.pth`（radius≈1.50596）只作审计记录，CE 分支推理不依赖它。
+- 新增 `backend/hifi/model_loader_loc.py`、`backend/hifi/evaluate_loc.py`、`backend/hifi/evaluate_loc_official.py`、`config/hifi.loc.example.json`；命令为 `npm run hifi:loc:evaluate` 与 `npm run hifi:loc:official`。
+
+### 关键协议修正
+
+初版适配器沿用了 general API 的 PIL bicubic 256 预处理，与官方定位评测脚本不一致：
+
+- 官方 `HiFi_Net_loc.py` + `utils/load_edata.py`：图像按**原分辨率**送入 HRNet，只有掩码分支在 `NLCDetection_loc.forward` 内部用 bilinear 插值到 256；GT 掩码用 PIL BICUBIC 缩到 256 后 `>0.5`。
+- 初版：先把图 PIL bicubic 缩到 256 再送入网络，GT 用 nearest 缩到 256。
+
+该偏差显著压低定位指标，已修正为 `predict(native=True)`，`evaluate_loc.py --input` 默认 `native`。初版结果保留在 `work/hifi-loc-casia-observation/` 作为偏差记录，不再作为结论。
+
+### 本地 CASIA 479 张结果（修正后，native 输入）
+
+定位（原尺寸、正类像素、无真值翻转）：
+
+- 383 张篡改：F1=0.34055、IoU=0.28028、AUC=0.86711；91 张预测为空；96 张真实图平均预测面积 0.22%。
+- 拼接：F1=0.3147、AUC=0.8335，37/130 空预测。
+- 复制移动：F1=0.3538、AUC=0.8844，54/253 空预测。
+
+二分类（cls_level_1 十四类 argmax）：
+
+- ACC=44.26%、balanced ACC=59.29%、F1=49.53%、AUROC=0.62285。
+- 叶子分布：real 333、inpainting 80、stgan 35、copy_move 19、splicing 12。
+- 修正后不再坍缩，但仍然弱，只作完整性记录，不作可用图像级检测器。
+
+### 精确官方协议复现
+
+`backend/hifi/evaluate_loc_official.py`（`npm run hifi:loc:official`）严格按官方脚本：原图输入、GT BICUBIC 256 + `>0.5`、逐图 `max(F1,F1_flip)` / `max(AUC,1-AUC)`、无 EXIF、batch=1。
+
+- macro F1=0.64750（无翻转 0.64638，7 张选择翻转）。
+- macro AUC=0.88540（无翻转 0.86674，27 张选择翻转）。
+- 拼接 F1=0.62641 / AUC=0.85957；复制移动 F1=0.65834 / AUC=0.89868。
+- 与项目脚本 `officialProtocolDiagnostic` 交叉验证：0.64747/0.88533 对 0.64750/0.88540，差异小于 1e-4。
+
+### 与论文和 750001 的对照
+
+| 指标               | 初版（bicubic256） | 修正后（native） | 论文            |
+| ------------------ | ------------------ | ---------------- | --------------- |
+| 官方口径 macro F1  | 0.54246            | 0.64750          | 0.616（微调）   |
+| 官方口径 macro AUC | 0.77971            | 0.88540          | 0.866（预训练） |
+| 正类像素 F1        | 0.14273            | 0.34055          | —               |
+| 像素 AUC           | 0.72638            | 0.86711          | —               |
+
+- 与论文同量级且略高，但本地 479 张 pilot 子集与本地修正掩码不等于官方 CASIA1+CASIA2 清单，不能称为论文复现。
+- general 750001 的官方入口（`HiFi_Net.py::_transform_image`）本身就是 PIL bicubic 256，已完成 API parity，不受本次修正影响；两套权重各自的官方路径预处理不同，不能混用。

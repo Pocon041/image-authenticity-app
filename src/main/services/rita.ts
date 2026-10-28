@@ -11,6 +11,8 @@ import type { AnalysisReport, ErrorCode } from '../../shared/contracts'
 import { AppError } from '../errors'
 import type { ImportedImage } from '../image-import'
 import { MockAnalysisService, type AnalysisContext, type AnalysisService } from './analysis'
+import { RiseAnalysisService } from './rise'
+import { WorkflowAnalysisService } from './workflow'
 import { SicaAnalysisService } from './sica'
 
 interface RitaConfig {
@@ -115,9 +117,23 @@ async function configFor(root: string): Promise<RitaConfig> {
 export class RoutedAnalysisService implements AnalysisService {
   private readonly mock = new MockAnalysisService()
   private readonly sica = new SicaAnalysisService()
+  private readonly rise = new RiseAnalysisService()
 
   async analyze(input: ImportedImage, context: AnalysisContext): Promise<AnalysisReport> {
+    if (context.backend === 'workflow') {
+      if (app.isPackaged)
+        throw new AppError(
+          'MODEL_NOT_READY',
+          '联合分析暂在源码开发模式运行，发布包模型环境尚未配置。'
+        )
+      return new WorkflowAnalysisService(app.getAppPath(), {
+        sica: this.sica,
+        rise: this.rise,
+        rita: { analyze: (image, ctx) => this.analyze(image, { ...ctx, backend: 'rita' }) }
+      }).analyze(input, context)
+    }
     if (context.backend === 'sica') return this.sica.analyze(input, context)
+    if (context.backend === 'rise') return this.rise.analyze(input, context)
     if (context.backend !== 'rita') return this.mock.analyze(input, context)
     if (app.isPackaged)
       throw new AppError('MODEL_NOT_READY', 'RITA 当前在源码开发模式接入，发布包环境尚未配置。')
@@ -226,6 +242,7 @@ export class RoutedAnalysisService implements AnalysisService {
     return {
       id: context.taskId,
       imageId: input.asset.id,
+      backend: 'rita',
       mode: 'local',
       createdAt: new Date().toISOString(),
       elapsedMs: result.elapsedMs,

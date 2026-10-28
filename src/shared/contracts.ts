@@ -3,7 +3,8 @@ export const IPC = {
   clearImage: 'srdp:image:clear',
   analyze: 'srdp:analysis:run',
   cancelAnalysis: 'srdp:analysis:cancel',
-  progress: 'srdp:analysis:progress'
+  progress: 'srdp:analysis:progress',
+  openReportDirectory: 'srdp:analysis:open-directory'
 } as const
 
 export type ErrorCode =
@@ -26,6 +27,45 @@ export interface AnalysisProgress {
   stage: 'preparing' | 'analyzing' | 'describing'
   percent: number
   label: string
+  steps?: WorkflowStep[]
+}
+
+export type ContentType = 'photo' | 'document' | 'unsure'
+export type DetectorBackend = 'sica' | 'rita' | 'rise'
+export interface WorkflowOptions {
+  contentType: ContentType
+  supplementFromTaskId?: string
+}
+export interface WorkflowStep {
+  backend: DetectorBackend
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'not_run' | 'reused' | 'cancelled'
+}
+export interface DetectorResult {
+  backend: DetectorBackend
+  status: 'completed' | 'failed' | 'not_run'
+  elapsedMs: number
+  reused?: boolean
+  error?: { code: string; message: string }
+  classification?: NonNullable<AnalysisReport['classification']>
+  localization?: NonNullable<AnalysisReport['localization']>
+  regionPreviews?: {
+    regionId: string
+    bboxXYWH: number[]
+    areaPixels: number | null
+    dataUrl: string
+  }[]
+}
+export interface WorkflowResult {
+  contentType: ContentType
+  primary: 'rita' | 'rise' | null
+  status: 'completed' | 'partial' | 'failed'
+  detectors: DetectorResult[]
+  flags: string[]
+  bundlePath: string
+  bundle: Record<string, unknown>
+  summaryPath: string
+  summary: Record<string, unknown>
+  previousTaskId?: string
 }
 
 export interface ImageAsset {
@@ -42,6 +82,7 @@ export interface ImageAsset {
 export interface AnalysisReport {
   id: string
   imageId: string
+  backend?: AnalysisBackend
   mode: 'mock' | 'local'
   createdAt: string
   elapsedMs: number
@@ -49,6 +90,7 @@ export interface AnalysisReport {
   summary: string
   sections: { title: string; description: string }[]
   disclaimer: string
+  workflow?: WorkflowResult
   localization?: {
     decision: string
     score: number | null
@@ -68,15 +110,17 @@ export interface AnalysisReport {
   }
 }
 
-export type AnalysisBackend = 'mock' | 'rita' | 'sica'
+export type AnalysisBackend = 'workflow' | 'mock' | 'rita' | 'sica' | 'rise'
 
 export interface DesktopAPI {
+  openReportDirectory(taskId: string): Promise<Response<null>>
   chooseImage(): Promise<Response<ImageAsset | null>>
   clearImage(): Promise<Response<null>>
   analyze(
     imageId: string,
     taskId: string,
-    backend?: AnalysisBackend
+    backend?: AnalysisBackend,
+    options?: WorkflowOptions
   ): Promise<Response<AnalysisReport>>
   cancelAnalysis(taskId: string): Promise<Response<boolean>>
   onAnalysisProgress(listener: (progress: AnalysisProgress) => void): () => void

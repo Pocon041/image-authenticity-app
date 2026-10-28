@@ -89,4 +89,4 @@ npm.cmd run examples:validate -- --bundle <输出目录>/bundle.json
 
 桌面 Smoke 检查实际 Python、完整权重、分类展示、缺权重报错和子进程取消，只有文件选择对话框被替代。现有材料包默认用于示例路径，可通过 `smoke:sica -- --image <路径>` 指定自己的图片。
 
-现阶段 SICA 暂用于源码开发模式，发布包的 Python/权重分发未配置；FakeShield 和 HiFi-Net 尚未接入。README 保持原有启动说明。
+现阶段SICA用于源码开发模式，默认由联合流程调度；独立入口位于底部开发调试区。发布包的Python/权重分发未配置，FakeShield未接入，HiFi-Net运行代码已移除。基础版增量升级步骤见根目录README。

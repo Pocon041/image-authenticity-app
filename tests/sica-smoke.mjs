@@ -32,7 +32,14 @@ await writeFile(
 const env = { ...process.env, SRDP_SICA_CONFIG: configPath }
 delete env.ELECTRON_RUN_AS_NODE
 delete env.ELECTRON_RENDERER_URL
-const desktop = await electron.launch({ args: [project, '--smoke-test'], env })
+const desktop = await electron.launch({
+  args: [
+    project,
+    '--smoke-test',
+    ...(process.argv.includes('--software-rendering') ? ['--disable-gpu'] : [])
+  ],
+  env
+})
 const errors = [],
   http = []
 try {
@@ -43,6 +50,7 @@ try {
     if (/^https?:/.test(request.url())) http.push(request.url())
   })
   await page.getByRole('heading', { name: '从一张图片开始' }).waitFor()
+  await page.getByText('开发与单模型调试', { exact: true }).click()
   await desktop.evaluate(({ dialog }, path) => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [path] })
   }, image)

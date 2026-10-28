@@ -1,8 +1,0 @@
-# Install a CUDA-compatible PyTorch/torchvision environment first.
-numpy
-Pillow
-scikit-learn
-imageio
-scipy
-einops
-yacs==0.1.8

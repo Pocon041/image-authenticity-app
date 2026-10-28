@@ -208,6 +208,7 @@ export class SicaAnalysisService implements AnalysisService {
     return {
       id: context.taskId,
       imageId: input.asset.id,
+      backend: 'sica',
       mode: 'local',
       createdAt: new Date().toISOString(),
       elapsedMs: report.elapsedMs,

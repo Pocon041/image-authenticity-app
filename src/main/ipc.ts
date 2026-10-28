@@ -1,5 +1,6 @@
-import { dialog, ipcMain, type BrowserWindow, type IpcMainInvokeEvent } from 'electron'
-import { IPC, type Response, type ImageAsset } from '../shared/contracts'
+import { app, dialog, ipcMain, shell, type BrowserWindow, type IpcMainInvokeEvent } from 'electron'
+import { dirname, resolve } from 'node:path'
+import { IPC, type Response, type ImageAsset, type WorkflowOptions } from '../shared/contracts'
 import { AppError, failure } from './errors'
 import { importImage } from './image-import'
 import type { AnalysisSession } from './services/analysis-session'
@@ -64,13 +65,39 @@ export function registerDesktopIPC(
 
   ipcMain.handle(
     IPC.analyze,
-    async (event, imageId: unknown, taskId: unknown, backend: unknown = 'mock') => {
+    async (
+      event,
+      imageId: unknown,
+      taskId: unknown,
+      backend: unknown = 'mock',
+      options?: unknown
+    ) => {
       try {
         const window = requireWindow(event)
         validateId(imageId, true)
         validateId(taskId)
-        if (backend !== 'mock' && backend !== 'rita' && backend !== 'sica')
+        if (
+          backend !== 'mock' &&
+          backend !== 'rita' &&
+          backend !== 'sica' &&
+          backend !== 'rise' &&
+          backend !== 'workflow'
+        )
           throw new AppError('INVALID_REQUEST', '未知的分析服务。')
+        let workflowOptions: WorkflowOptions | undefined
+        if (backend === 'workflow') {
+          if (!options || typeof options !== 'object' || Array.isArray(options))
+            throw new AppError('INVALID_REQUEST', '请选择图片内容类型。')
+          const value = options as Record<string, unknown>
+          if (
+            typeof value.contentType !== 'string' ||
+            !['photo', 'document', 'unsure'].includes(value.contentType) ||
+            Object.keys(value).some((key) => !['contentType', 'supplementFromTaskId'].includes(key))
+          )
+            throw new AppError('INVALID_REQUEST', '联合分析参数无效。')
+          if (value.supplementFromTaskId !== undefined) validateId(value.supplementFromTaskId)
+          workflowOptions = value as unknown as WorkflowOptions
+        }
         if (picking) throw new AppError('BUSY', '请等待图片导入结束。')
         const report = await session.analyze(
           imageId,
@@ -78,7 +105,8 @@ export function registerDesktopIPC(
           (progress) => {
             if (!window.isDestroyed()) window.webContents.send(IPC.progress, progress)
           },
-          backend
+          backend,
+          workflowOptions
         )
         return { ok: true, data: report }
       } catch (error) {
@@ -96,4 +124,22 @@ export function registerDesktopIPC(
       return failure(error)
     }
   })
+  ipcMain.handle(
+    IPC.openReportDirectory,
+    async (event, taskId: unknown): Promise<Response<null>> => {
+      try {
+        requireWindow(event)
+        validateId(taskId)
+        const report = session.reportForTask(taskId)
+        const directory = dirname(report.workflow!.bundlePath)
+        if (resolve(directory) !== resolve(app.getAppPath(), 'work/analysis-runs', taskId))
+          throw new AppError('INVALID_REQUEST', '报告目录无效。')
+        const error = await shell.openPath(directory)
+        if (error) throw new AppError('INTERNAL', '无法打开报告文件夹，请查看报告保存路径。')
+        return { ok: true, data: null }
+      } catch (error) {
+        return failure(error)
+      }
+    }
+  )
 }

@@ -1,4 +1,5 @@
 node_modules/
+.venv/
 .tools/
 out/
 dist/
@@ -14,4 +15,6 @@ weights/
 config/rita.local.json
 config/sica.local.json
 config/hifi.local.json
+config/hifi.loc.local.json
+config/rise.local.json
 __pycache__/

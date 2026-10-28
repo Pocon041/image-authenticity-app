@@ -58,7 +58,7 @@ npm.cmd run rita:infer -- --image examples/stage1-materials/sample-005/images/or
 
 可使用 `--config`、`--output` 指定配置和结果目录。命令为输入创建原始字节快照和未缩放规范显示副本，再运行单次 Python 进程。程序不会读取数据集标签或真值标注。
 
-桌面运行入口保持现有方式。界面选择“RITA 本地定位”，选图后点击“开始 RITA 定位”。主进程通过白名单桥接调用 Python，界面不直接访问 Python 或权重。
+桌面运行入口保持现有方式。默认由联合流程按内容类型调度；独立检查时，在底部开发调试中选择“RITA 本地定位”，选图后点击“开始 RITA 定位”。主进程通过白名单桥接调用Python，界面不直接访问Python或权重。
 
 结果目录包含：
 
