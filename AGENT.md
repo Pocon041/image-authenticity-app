@@ -40,6 +40,7 @@ GitHub 仓库名采用 `image-authenticity-app`，中文项目名称为“图像
 - `src/preload/`：桌面桥接白名单。
 - `src/renderer/`：React 工作台与样式。
 - `src/shared/`：跨进程数据协议。
+- `src/shared/protocol.ts`：协议 v1.0 类型定义，对应 `schemas/bundle.schema.json`；四人报告交换共用，与 `contracts.ts` 中现有 UI 类型互相独立，通过 adapter 连接。
 - `docs/REPORT_PROTOCOL_V1.md`：第一阶段四人报告协议初稿；公共字段和坐标含义不能由单模块自行改变。
 - `schemas/`：JSON Schema，模块报告与 VLM 证据包共用同一份字段定义。
 - `examples/USAGE.md`、`examples/sample-selection.example.json`：独立的样例使用说明与选择模板。
@@ -120,6 +121,7 @@ Windows 启动入口为 `start.cmd`；`run.cmd` 负责优先使用 `.tools/` 下
 - 材料通过文件级校验：12 张原文件及显示副本哈希/像素、3 份标注尺寸，以及唯一 JSON 的 Schema、坐标、裁剪、掩码值和证据引用均通过。未运行 APP、检测模型或 VLM。
 - Windows 应用目录已生成过，打包后测试曾在隐藏窗口截图步骤超时；暂未通过发布验收，本轮不继续追查此具体问题。
 - 历史范围中模型接入不在 Smoke 原型内；用户现已授权第二人 RITA 接入，具体状态见下方。来源、AI 检测、VLM、历史记录和安装器仍未实现。
+- 第四人协议类型已添加（`src/shared/protocol.ts`），对应 `schemas/report-bundle.schema.json` v1.0，含基础类型、Evidence/Artifact、四模块结果、报告与 EvidenceBundle，以及 `validateExplanationReport` 运行时校验；`generateExplanation`、UI adapter、上游报告接入与 VLM 调用尚未实现，`AnalysisReport` 未改动。
 
 ## 第二人模块：RITA 选型核对（2026-10-27）
 
