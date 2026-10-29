@@ -21,6 +21,7 @@
     "sica:infer": "node scripts/run-sica.mjs",
     "rise:setup": "node scripts/setup-rise-source.mjs",
     "rise:infer": "node scripts/run-rise.mjs",
+    "aigc:setup": "node scripts/setup-fsd.mjs",
     "smoke:rise": "npm run build && node tests/rise-smoke.mjs",
     "test:workflow": "node tests/workflow-unit.mjs",
     "test:watermark": "node tests/watermark-metadata.mjs",

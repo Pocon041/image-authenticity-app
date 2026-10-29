@@ -17,4 +17,5 @@ config/sica.local.json
 config/hifi.local.json
 config/hifi.loc.local.json
 config/rise.local.json
+config/aigc.local.json
 __pycache__/

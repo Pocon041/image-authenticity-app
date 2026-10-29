@@ -11,6 +11,7 @@
     "status",
     "decision",
     "screening",
+    "aigc",
     "localization",
     "regions",
     "evidence",
@@ -57,6 +58,21 @@
         "score": { "type": "number", "minimum": 0, "maximum": 1 },
         "threshold": { "type": "number", "minimum": 0, "maximum": 1 },
         "calibrated": { "const": false },
+        "error": { "$ref": "#/$defs/error" }
+      }
+    },
+    "aigc": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model", "status"],
+      "properties": {
+        "model": { "$ref": "#/$defs/model" },
+        "status": { "$ref": "#/$defs/status" },
+        "decision": { "enum": ["ai_generated", "non_ai", "inconclusive"] },
+        "zScore": { "type": "number" },
+        "threshold": { "type": "number" },
+        "attributedSource": { "type": ["string", "null"] },
+        "attributionScore": { "type": ["number", "null"] },
         "error": { "$ref": "#/$defs/error" }
       }
     },
@@ -108,7 +124,7 @@
         "required": ["evidenceId", "model", "description", "artifacts"],
         "properties": {
           "evidenceId": { "type": "string" },
-          "model": { "enum": ["sica", "rita", "rise"] },
+          "model": { "enum": ["aigc", "sica", "rita", "rise"] },
           "description": { "type": "string" },
           "artifacts": { "type": "array", "items": { "type": "string" } }
         }
@@ -127,7 +143,7 @@
       "additionalProperties": false,
       "required": ["id", "name"],
       "properties": {
-        "id": { "enum": ["sica", "rita", "rise"] },
+        "id": { "enum": ["aigc", "sica", "rita", "rise"] },
         "name": { "type": "string" },
         "version": { "type": "string" },
         "checkpointSha256": { "$ref": "#/$defs/hash" }

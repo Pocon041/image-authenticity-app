@@ -21,7 +21,8 @@ export function ImagePanel({ workspace: w }: { workspace: AnalysisWorkspace }) {
     mock: ['开始模拟分析', '重新模拟分析', '模拟分析中…'],
     rita: ['开始 RITA 定位', '重新运行 RITA', 'RITA 分析中…'],
     sica: ['开始 SICA 二分类', '重新运行 SICA', 'SICA 分类中…'],
-    rise: ['开始 RiSE 定位', '重新运行 RiSE', 'RiSE 分析中…']
+    rise: ['开始 RiSE 定位', '重新运行 RiSE', 'RiSE 分析中…'],
+    aigc: ['开始 FSD 检测', '重新运行 FSD', 'FSD 检测中…']
   }[w.backend]
   return (
     <section className="panel image-panel" aria-label="图片工作区">

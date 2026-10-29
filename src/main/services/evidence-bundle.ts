@@ -260,7 +260,8 @@ export async function aggregateEvidence(args: {
     owned: Json[] = [],
     evidence: Json[] = [],
     regions: Json[] = [],
-    records: Json[] = []
+    records: Json[] = [],
+    aigcReports: Json[] = []
   const index = new Map(assets.map((a) => [a.artifactId, a]))
   for (const detector of detectors) {
     signal.throwIfAborted()
@@ -273,7 +274,7 @@ export async function aggregateEvidence(args: {
       })
       continue
     }
-    const dto = detector.classification ?? detector.localization
+    const dto = detector.classification ?? detector.localization ?? detector.aigc
     if (!dto) throw new AppError('INFERENCE_FAILED', '已完成模型缺少报告。')
     const raw = dto.bundle as Json,
       report = structuredClone(raw.reports[0]) as Json
@@ -337,6 +338,17 @@ export async function aggregateEvidence(args: {
       result: {
         score: report.result.score,
         ...(report.result.classification ? { classification: report.result.classification } : {}),
+        ...(detector.aigc
+          ? {
+              aigc: {
+                decision: detector.aigc.decision,
+                zScore: detector.aigc.zScore,
+                threshold: detector.aigc.threshold,
+                attributedSource: detector.aigc.attributedSource,
+                attributionScore: detector.aigc.attributionScore
+              }
+            }
+          : {}),
         ...(detector.localization
           ? {
               regionCount: detector.localization.regionCount,
@@ -345,6 +357,7 @@ export async function aggregateEvidence(args: {
           : {})
       }
     })
+    if (detector.backend === 'aigc') aigcReports.push(report)
     regions.push(
       ...(report.result.regions ?? []).map((region: Json) => ({
         ...region,
@@ -417,7 +430,8 @@ export async function aggregateEvidence(args: {
     limitations: [
       '整图筛查不证明具体局部篡改；定位响应和专家选择分数未经图像级校准。',
       '各模型掩码与分数独立保留，未进行平均或并集合并。',
-      '篡改检测报告不运行通用OCR、来源凭证、专用AIGC检测或VLM；来源与水印检查见独立provenance报告。'
+      'AIGC 检测由 FSD 独立提供，z-score 未经本项目校准；来源归因可能错误，且不定位生成区域。',
+      '篡改检测报告不运行通用OCR或VLM；来源与水印检查见独立provenance报告。'
     ],
     error: completed ? null : { code: 'ALL_DETECTORS_FAILED', message: '所有计划的检测均未完成。' },
     extensions: {
@@ -432,7 +446,7 @@ export async function aggregateEvidence(args: {
     purpose: 'analysis',
     createdAt: timestamp,
     image: common.image,
-    reports: [report, common.provenanceReport],
+    reports: [report, common.provenanceReport, ...aigcReports],
     artifacts: assets
   }
   const ajv = new Ajv({ allErrors: true, strict: false })
