@@ -84,7 +84,7 @@ Windows 启动入口为 `start.cmd`；`run.cmd` 负责优先使用 `.tools/` 下
 - `run.cmd run sica:infer -- --image <path>`：使用本机 `config/sica.local.json` 执行真实二分类，写出 v1.0 单模块证据包。
 - `run.cmd run smoke:sica`：真实 Electron 中验证完整分类、缺权重、模式隔离和实际子进程取消。
 - `run.cmd run rise:setup` / `rise:infer` / `smoke:rise`：RiSE源码准备、真实单图与桌面检查。
-- `run.cmd run provenance:setup`：在 `.tools/provenance-venv` 安装 C2PA、图像元数据、RapidOCR 与水印检测依赖；不修改其他模型环境。
+- `run.cmd run provenance:setup`：在项目统一的 `.venv` 安装 C2PA、图像元数据、RapidOCR 与水印检测依赖。
 - `run.cmd run test:workflow` / `smoke:workflow`：联合编排逻辑与真实桌面流程检查。
 - `run.cmd run report:validate -- <analysis.json>`：简明报告Schema、身份、相对路径与引用校验。
 - `<配置的Python> backend/sica/evaluate.py --casia-root <划分清单目录> --output <目录>`：只读运行本地 CASIA 子集，阈值固定 0.5，记录每图预测和分组统计，不声称独立泛化。
@@ -109,9 +109,10 @@ Windows 启动入口为 `start.cmd`；`run.cmd` 负责优先使用 `.tools/` 下
 
 ## 当前状态
 
-- yht 分支第一人模块 v0.1.0：完整联合包增加 provenance 报告及独立 `reports/provenance.json`。记录原文件 SHA-256、8位未缩放 sRGB 显示副本、EXIF/XMP/IPTC/GPS 摘要；检测 JPEG/PNG/WebP 的 C2PA 内嵌清单并通过 c2pa-python读取活动清单与签名验证状态；水印包括元数据关键词、RapidOCR图库标记候选和Stable Diffusion XL固定48位DWT-DCT载荷。OCR框使用 `display_image_pixels`，隐形载荷从原始解码像素检测；`extensions.mediaInput` 预留静态图/视频帧字段。
-- 水印与来源限制：OCR线索不能证明文本是水印；SDXL固定载荷可能被伪造，压缩/缩放/裁剪等可造成漏检，超过1200万像素的图片会标为未运行以避免耗时；不支持SynthID和通用隐形水印。无元数据不推断被剥离；无C2PA标记不排除外部凭证；签名/本地信任状态不等于内容真实。
-- 新增 `provenance:setup` 安装命令及 `docs/PROVENANCE_V01.md`。本机隔离 venv 已成功安装 C2PA 0.38.0、RapidOCR 3.10.0、ONNX Runtime 1.31.1、OpenCV headless 4.14.0.94、PyWavelets 1.10.0 和 invisible-watermark 0.2.0；未安装PyTorch、未改其他模型Python环境。TypeScript检查和Python语法编译通过；未用真实图片端到端验证新水印检测，也未运行回归测试。发布包尚未封装Python运行时。无提交、无推送。
+- yht 分支第一人模块 v0.1.0：完整联合包增加 provenance 报告及独立 `reports/provenance.json`。记录原文件 SHA-256、8位未缩放 sRGB 显示副本、EXIF/XMP/IPTC/GPS 摘要；检测 JPEG/PNG/WebP 的 C2PA 内嵌清单并通过 c2pa-python读取活动清单与签名验证状态；水印包括元数据关键词、中英文常见可见水印短语候选、图库标记、豆包/Seedream品牌或模型文字候选、通用“AI生成”文字候选和Stable Diffusion XL固定48位DWT-DCT载荷。OCR框使用 `display_image_pixels`，隐形载荷从原始解码像素检测；`extensions.mediaInput` 预留静态图/视频帧字段。
+- 水印与来源限制：OCR线索不能证明文本是水印；当前全图与四角放大区域均执行OCR，保留词表外识别文本、坐标、置信度及文本框颜色/尺寸/倾斜和周围亮度差等近似特征，再组合关键词、位置、跨位置重复与叠加样式规则形成候选。该启发式可能误报正文或装饰字，也可能漏掉OCR不可识别的内容；词表不会穷尽所有服务，视觉特征不证明生成来源。SDXL固定载荷可能被伪造，压缩/缩放/裁剪等可造成漏检，超过1200万像素的图片会标为未运行以避免耗时；不支持SynthID和通用隐形水印。无元数据不推断被剥离；无C2PA标记不排除外部凭证；签名/本地信任状态不等于内容真实。
+- 来源检查界面现在展示 C2PA `claim_generator_info.name`；旧版报告无此名称时回退展示 `claim_generator`。图片工作区的“图像预览”按钮可打开大图查看，支持点击遮罩或按 Esc 关闭。
+- `provenance:setup` 已改为使用项目统一 `.venv`，并安装 C2PA 0.38.0、RapidOCR 3.10.0、ONNX Runtime 1.31.1、OpenCV headless 4.14.0.94、PyWavelets 1.10.0 和 invisible-watermark 0.2.0。此前验证：Python语法编译、7项 provenance 合成像素/词表测试、C2PA/Pillow来源读取、8项C2PA容器、EXIF/XMP/IPTC元数据、3项水印元数据检查及TypeScript检查均通过。本轮可见水印候选新增中英文常见短语、图库标记、豆包/Seedream和通用“AI生成”文字；这些文字不能证明生成平台。真实图片上的检出准确率/鲁棒性尚未验收。发布包尚未封装Python运行时。无提交、无推送。
 - 启动修复：`start.cmd` 安装依赖时显式包含开发依赖（Electron 位于 devDependencies）；运行时准备脚本在 Electron npm 包缺失时输出安装命令提示，不再抛出未处理的 `MODULE_NOT_FOUND`。本轮仅做 Node 语法检查，未执行依赖安装或桌面启动。
 - v0.2.0已实现统一入口、照片/文档/不确定三种内容路由、串行模型调度、补充定位复用与部分失败处理。默认主报告为简明analysis.json，完整v1.0证据包保留；实际验证见下方联合版本记录。
 - 已接入 RiSE-9 RGB 独立文档定位模式，两张用户样例均在已知修改位置产生最大连通区域，真实 Electron Smoke 及既有模式回归通过；额外标记仍存在，不构成正式质量验收。具体见下方2026-10-28接入记录。
@@ -393,7 +394,7 @@ Windows 启动入口为 `start.cmd`；`run.cmd` 负责优先使用 `.tools/` 下
 - 本地czh已包含远端main截至e1e59b4的yht来源模块，同时保留第四人的protocol.ts类型与本地共用校验适配。标准定义为schemas/report-bundle.schema.json；界面contracts.ts中的AnalysisReport仍是独立DTO。
 - 当前bundle.json含独立manipulation和provenance报告，analysis.json是简明篡改视图，不是EvidenceBundle。正式引用的reportId/evidenceId沿用完整包，按moduleId读取，不依赖报告排列顺序；交接见docs/EXPLANATION_HANDOFF.md。
 - 共用校验复用Schema，校验status/result/error和confidence来源/校准状态；validateExplanationReport(report)只校验结构，显式传入上游数组才校验引用，[]不等于省略。引用校验不证明解释正确；当前未接入VLM或生成解释占位结果。
-- 来源依赖在.tools/provenance-venv隔离安装；可见水印OCR只提供关键词候选，SDXL载荷仅覆盖公开固定配置。缺少元数据/凭证/水印不证明真假，未运行/失败状态不能写成未检出。
+- 来源依赖在项目统一 `.venv` 安装；可见水印OCR只提供中英文关键词候选，SDXL载荷仅覆盖公开固定配置。缺少元数据/凭证/水印不证明真假，未运行/失败状态不能写成未检出。
 - 本地接口联调、启动和报告引用检查已完成，实际模型质量及模块细节见各自AGENTS.md/模块文档。main原有记录未被删除或重排；后续需更新共享现状时在对应位置作小范围修改或增补。
 
 ## main功能整合与发布验证（2026-10-29）

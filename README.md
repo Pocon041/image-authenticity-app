@@ -116,15 +116,13 @@ foreach ($modelName in @('rita', 'sica', 'rise')) {
 
 ### 6. 启动并验证
 
-首次接入第一人来源检查时，另行准备隔离环境（不会更改上述模型环境）：
+项目统一使用根目录 `.venv`。首次准备来源检查依赖时，在项目根目录执行：
 
 ```powershell
-# 复用上面创建的Python，也可填写已有Python的完整路径
-$env:PROVENANCE_PYTHON = (Resolve-Path .venv\Scripts\python.exe).Path
 .\run.cmd run provenance:setup
 ```
 
-来源依赖安装到 `.tools/provenance-venv`；缺少此环境时，APP仍生成基础图像信息及凭证容器扫描记录，并明确标记详细解析、水印像素检查未执行。实现与局限见 [PROVENANCE_V01.md](docs/PROVENANCE_V01.md)。
+来源依赖安装到项目统一的 `.venv`；缺少此环境时，APP仍生成基础图像信息及凭证容器扫描记录，并明确标记详细解析、水印像素检查未执行。实现与局限见 [PROVENANCE_V01.md](docs/PROVENANCE_V01.md)。
 
 ```powershell
 .\start.cmd
