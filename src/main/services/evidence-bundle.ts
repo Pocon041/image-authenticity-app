@@ -263,11 +263,14 @@ export async function aggregateEvidence(args: {
 }) {
   const { common, detectors, output, signal } = args
   common.provenanceReport.taskId = args.taskId
-  const assets: Artifact[] = [...common.artifacts],
-    owned: Artifact[] = [],
-    evidence: Evidence[] = [],
-    regions: Region[] = [],
-    records: Json[] = []
+
+const assets: Artifact[] = [...common.artifacts],
+  owned: Artifact[] = [],
+  evidence: Evidence[] = [],
+  regions: Region[] = [],
+  records: Json[] = [],
+  aigcReports: EvidenceBundle['reports'] = []
+
   const index = new Map(assets.map((a) => [a.artifactId, a]))
   for (const detector of detectors) {
     signal.throwIfAborted()
@@ -280,18 +283,24 @@ export async function aggregateEvidence(args: {
       })
       continue
     }
-    const dto = detector.classification ?? detector.localization
+    const dto = detector.classification ?? detector.localization ?? detector.aigc
     if (!dto) throw new AppError('INFERENCE_FAILED', '已完成模型缺少报告。')
     const raw: unknown = dto.bundle
     assertEvidenceBundle(raw)
     const report = structuredClone(raw.reports[0])
+    const expectedModule = detector.backend === 'aigc' ? 'aigc' : 'manipulation'
     if (
       raw.reports.length !== 1 ||
-      report.moduleId !== 'manipulation' ||
+      report.moduleId !== expectedModule ||
       report.status !== 'completed' ||
       !report.result
     )
-      throw new AppError('INFERENCE_FAILED', '检测器未返回已完成的篡改模块报告。')
+      throw new AppError(
+        'INFERENCE_FAILED',
+        detector.backend === 'aigc'
+          ? 'AIGC 检测器未返回已完成的 AIGC 模块报告。'
+          : '检测器未返回已完成的篡改模块报告。'
+      )
     if (
       raw.image.imageId !== common.image.imageId ||
       raw.image.sha256 !== common.image.sha256 ||
@@ -352,8 +361,19 @@ export async function aggregateEvidence(args: {
       sourceReportSha256: digest(await readFile(join(output, reportUri))),
       checkpointSha256: report.extensions?.checkpointSha256,
       result: {
-        score: report.result.score,
+        ...(report.moduleId === 'manipulation' ? { score: report.result.score } : {}),
         ...(report.result.classification ? { classification: report.result.classification } : {}),
+        ...(detector.aigc
+          ? {
+              aigc: {
+                decision: detector.aigc.decision,
+                zScore: detector.aigc.zScore,
+                threshold: detector.aigc.threshold,
+                attributedSource: detector.aigc.attributedSource,
+                attributionScore: detector.aigc.attributionScore
+              }
+            }
+          : {}),
         ...(detector.localization
           ? {
               regionCount: detector.localization.regionCount,
@@ -362,12 +382,15 @@ export async function aggregateEvidence(args: {
           : {})
       }
     })
-    regions.push(
-      ...(report.result.regions ?? []).map((region) => ({
-        ...region,
-        detector: detector.backend
-      }))
-    )
+    if (detector.backend === 'aigc') aigcReports.push(report)
+    if (report.moduleId === 'manipulation') {
+      regions.push(
+        ...(report.result.regions ?? []).map((region) => ({
+          ...region,
+          detector: detector.backend
+        }))
+      )
+    }
     evidence.push(
       ...report.evidence.map((entry) => ({
         ...entry,
@@ -381,7 +404,8 @@ export async function aggregateEvidence(args: {
     )
     if (detector.localization) {
       detector.regionPreviews = []
-      for (const region of (report.result.regions ?? []).slice(0, 20)) {
+      const manipulationResult = report.moduleId === 'manipulation' ? report.result : null
+      for (const region of (manipulationResult?.regions ?? []).slice(0, 20)) {
         const crop =
           typeof region.cropArtifactId === 'string' ? index.get(region.cropArtifactId) : undefined
         if (!crop) continue
@@ -435,7 +459,10 @@ export async function aggregateEvidence(args: {
     limitations: [
       '整图筛查不证明具体局部篡改；定位响应和专家选择分数未经图像级校准。',
       '各模型掩码与分数独立保留，未进行平均或并集合并。',
-      '篡改模块未运行通用OCR、AIGC专用检测或VLM；来源和水印结果见独立provenance报告。'
+      'AIGC 检测由 FSD 独立提供，z-score 未经本项目校准；来源归因可能错误，且不定位生成区域。',
+      '篡改检测报告不运行通用OCR或VLM；来源与水印检查见独立provenance报告。'
+
+
     ],
     error: completed ? null : { code: 'ALL_DETECTORS_FAILED', message: '所有计划的检测均未完成。' },
     extensions: {
@@ -450,7 +477,7 @@ export async function aggregateEvidence(args: {
     purpose: 'analysis',
     createdAt: timestamp,
     image: common.image,
-    reports: [report, common.provenanceReport],
+    reports: [report, common.provenanceReport, ...aigcReports],
     artifacts: assets
   }
   const ajv = new Ajv({ allErrors: true, strict: false })

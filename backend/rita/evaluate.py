@@ -19,7 +19,8 @@ from evaluation import metrics, canonical_annotation
 sys.path.insert(0, str(ROOT / 'backend/rita'))
 from postprocess import decode_sequence
 
-PINNED_SOURCE_SHA256 = '599223ee738f81d5e3fa55cba881277b4aa7e4e97e40b9e60b2fa001cb0df4b4'
+#PINNED_SOURCE_SHA256 = '599223ee738f81d5e3fa55cba881277b4aa7e4e97e40b9e60b2fa001cb0df4b4'
+PINNED_SOURCE_SHA256 = '4ab0cb2a76ce537833589d12b54a4599322a5a5ba6a5277378d21c093c002c56'
 UPSTREAM_COMMIT = 'b50efcd5b4c41b8bfc69b0b10ce6230dcb67b983'
 
 

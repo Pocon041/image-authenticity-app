@@ -31,7 +31,8 @@ export interface AnalysisProgress {
 }
 
 export type ContentType = 'photo' | 'document' | 'unsure'
-export type DetectorBackend = 'sica' | 'rita' | 'rise'
+// [第三人任务] FSD 是联合流程的首个独立检测步骤。
+export type DetectorBackend = 'aigc' | 'sica' | 'rita' | 'rise'
 export interface WorkflowOptions {
   contentType: ContentType
   supplementFromTaskId?: string
@@ -48,6 +49,7 @@ export interface DetectorResult {
   error?: { code: string; message: string }
   classification?: NonNullable<AnalysisReport['classification']>
   localization?: NonNullable<AnalysisReport['localization']>
+  aigc?: NonNullable<AnalysisReport['aigc']>
   regionPreviews?: {
     regionId: string
     bboxXYWH: number[]
@@ -108,9 +110,20 @@ export interface AnalysisReport {
     bundlePath: string
     bundle: Record<string, unknown>
   }
+  // [第三人任务] FSD 返回 z-score，不将其伪装成概率；归因来源可能为空。
+  aigc?: {
+    decision: 'ai_generated' | 'non_ai' | 'inconclusive'
+    zScore: number
+    threshold: number
+    attributedSource: string | null
+    attributionScore: number | null
+    bundlePath: string
+    bundle: Record<string, unknown>
+  }
 }
 
-export type AnalysisBackend = 'workflow' | 'mock' | 'rita' | 'sica' | 'rise'
+// [第三人任务] 独立 FSD AIGC 检测入口。
+export type AnalysisBackend = 'workflow' | 'mock' | 'rita' | 'sica' | 'rise' | 'aigc'
 
 export interface DesktopAPI {
   openReportDirectory(taskId: string): Promise<Response<null>>

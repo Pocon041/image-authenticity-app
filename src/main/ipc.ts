@@ -81,6 +81,7 @@ export function registerDesktopIPC(
           backend !== 'rita' &&
           backend !== 'sica' &&
           backend !== 'rise' &&
+          backend !== 'aigc' &&
           backend !== 'workflow'
         )
           throw new AppError('INVALID_REQUEST', '未知的分析服务。')

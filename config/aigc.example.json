@@ -1,0 +1,8 @@
+﻿{
+  "pythonPath": ".venv-fsd/Scripts/python.exe",
+  "sourcePath": ".tools/fsd",
+  "device": "auto",
+  "threshold": -2.0,
+  "attribution": false,
+  "timeoutMs": 900000
+}

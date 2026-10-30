@@ -3,7 +3,7 @@ import { CheckCircle2, FileJson, Info, Layers, ScanLine, TriangleAlert } from 'l
 import type { AnalysisReport, DetectorBackend } from '../../../shared/contracts'
 import { ProvenanceSummary } from './ProvenanceSummary'
 
-const names = { sica: 'SICA', rita: 'RITA', rise: 'RiSE' }
+const names = { aigc: 'FSD', sica: 'SICA', rita: 'RITA', rise: 'RiSE' }
 
 export function WorkflowReport({
   report,
@@ -32,6 +32,7 @@ export function WorkflowReport({
   const active = available.find((item) => item.backend === selected) ?? available[0]
   const screening = workflow.detectors.find((item) => item.backend === 'sica')
   const classification = screening?.classification
+  const aigc = workflow.detectors.find((item) => item.backend === 'aigc')
   const canSupplement = workflow.detectors.some((item) => item.status !== 'completed')
   return (
     <div className="workflow-report" data-testid="analysis-report">
@@ -59,6 +60,25 @@ export function WorkflowReport({
           </div>
         </div>
       )}
+      {/* [第三人任务] FSD 检测结果先于原有整图筛查与局部定位展示。 */}
+      <section className="screening-section" aria-label="AI 生成检测">
+        <div className="section-label">
+          <ScanLine size={15} />
+          <h4>AI 生成检测</h4>
+          <span>FSD</span>
+        </div>
+        {aigc?.aigc ? (
+          <div className="screening-answer" data-testid="workflow-aigc-result">
+            <strong>{aigc.aigc.decision === 'ai_generated' ? '检测倾向 AI 生成' : aigc.aigc.decision === 'non_ai' ? '检测倾向真实图像' : '结果不确定'}</strong>
+            <p>FSD z-score：{aigc.aigc.zScore.toFixed(4)}（阈值 {aigc.aigc.threshold}；不是概率）</p>
+            <p>来源线索：{aigc.aigc.attributedSource ?? '未识别到受支持的生成器 / 来源未知'}</p>
+            {aigc.aigc.attributionScore !== null && <p>来源分数：{aigc.aigc.attributionScore.toFixed(4)}</p>}
+            <small>分数不是校准概率，不定位具体生成区域；结果可能受压缩、缩放及未知生成器影响。</small>
+          </div>
+        ) : (
+          <p className="detector-error">FSD 检测未完成，详情请查看下方检测状态。</p>
+        )}
+      </section>
       <section className="screening-section" aria-label="整图筛查">
         <div className="section-label">
           <ScanLine size={15} />
@@ -80,8 +100,10 @@ export function WorkflowReport({
           <span>按模型分别查看</span>
         </div>
         <div className="localization-tabs" role="group" aria-label="定位来源">
-          {workflow.detectors
-            .filter((item) => item.backend !== 'sica' && item.status === 'completed')
+
+        {workflow.detectors
+          .filter((item) => item.backend !== 'sica' && item.backend !== 'aigc' && item.status === 'completed')
+
             .map((item) => (
               <button
                 key={item.backend}

@@ -19,12 +19,13 @@ export function manipulationSummary(bundle: Record<string, any>, detectors: Dete
     const record = records.find((item: any) => item.backend === backend)
     return {
       id: backend,
-      name: backend === 'sica' ? 'SICA' : backend === 'rita' ? 'RITA' : 'RiSE',
+      name: backend === 'aigc' ? 'FSD' : backend === 'sica' ? 'SICA' : backend === 'rita' ? 'RITA' : 'RiSE',
       ...(record?.producer ? { version: record.producer.version } : {}),
       ...(record?.checkpointSha256 ? { checkpointSha256: record.checkpointSha256 } : {})
     }
   }
   const screening = detectors.find((item) => item.backend === 'sica')!
+  const aigc = detectors.find((item) => item.backend === 'aigc')!
   const errorSummary = (error: { code: string }) => ({
     code: error.code,
     message:
@@ -71,8 +72,22 @@ export function manipulationSummary(bundle: Record<string, any>, detectors: Dete
         : {}),
       ...(screening.error ? { error: errorSummary(screening.error) } : {})
     },
+    // [第三人任务] 联合报告在整图筛查前保留 FSD AIGC 结果。
+    aigc: {
+      model: model('aigc'),
+      status: aigc.status,
+      ...(aigc.aigc ? {
+        decision: aigc.aigc.decision,
+        zScore: aigc.aigc.zScore,
+        threshold: aigc.aigc.threshold,
+        attributedSource: aigc.aigc.attributedSource,
+        attributionScore: aigc.aigc.attributionScore
+      } : {}),
+      ...(aigc.error ? { error: errorSummary(aigc.error) } : {})
+    },
     localization: detectors
-      .filter((item) => item.backend !== 'sica')
+      // [第三人任务] FSD 结果写入单独的 aigc 字段，不计入最多两项的局部定位列表。
+      .filter((item) => item.backend !== 'sica' && item.backend !== 'aigc')
       .map((item) => {
         const own = bundle.artifacts.filter((asset: any) =>
           asset.uri.startsWith(`detectors/${item.backend}/`)

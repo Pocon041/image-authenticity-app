@@ -109,10 +109,21 @@ Windows 启动入口为 `start.cmd`；`run.cmd` 负责优先使用 `.tools/` 下
 
 ## 当前状态
 
+
+- 第三人 AIGC 初步接入（2026-10-28）：新增独立 FSD 本地分析入口、Python worker、结果视图与示例配置；不进入默认联合路由，不改变 SICA/RITA/RiSE。FSD 许可仅支持非商业用途。当前未安装/锁定 FSD 上游源码及依赖，权重仍由上游首次运行自动下载，尚未执行真实推理或验证协议；来源归因默认关闭。实现为待本机依赖准备后验证的开发接入，不视为已验收检测能力。详见 `docs/AIGC_FSD.md`。
+- FSD 首次权重下载故障修正（2026-10-29）：固定上游提交 `50f2eae06efdac2e5a33f407ca9a27a2295133ac`，Python 3.13 隔离环境及推理依赖已准备；发现上游缓存检查只看 `config.json`，下载超时遗留的临时权重导致缺文件加载错误。worker 现先逐个调用上游 `download_weights` 确保检测权重齐全，并提供下载/加载进度；任务超时至少15分钟。检测权重缓存现完整（约55MB）；worker 已对 `sample-001` 实际执行成功，输出 z-score `-2.6559`、默认阈值 `-2.0`，按 FSD 规则判为 `ai_generated`。TypeScript 检查通过；来源归因仍关闭，项目数据上的效果验证未做。
+- 联合分析加入 FSD（2026-10-29）：依用户明确要求，联合流程在 SICA 整图筛查及 RITA/RiSE 定位前先运行 FSD；其判断、z-score、阈值、来源线索状态写入联合简明 JSON 和完整报告，界面先显示 AIGC 结果。现有筛查/定位顺序和判定逻辑保持不变。尚待本机真实联合流程 Smoke 验证。
+- FSD 来源归因缓存修复（2026-10-29）：用户开启 attribution 后发现上游下载器将被代理提前 EOF 的 `source_gmms.pt`（181,669,504 字节）误当完整文件；官方 release 大小经 HEAD 核验为 206,992,755 字节。已续传补齐至准确长度，并在 worker 中新增长度校验/HTTP Range 续传。模型加载及真实图片推理通过；该图 FSD 检测为 ai_generated，但来源分类返回 `Real`，已在展示中改为未识别受支持生成器，原始标签与分数仍进 JSON 供审计。TypeScript 类型检查通过。
+
+- 2026-10-28 修正 SICA 固定源码 SHA256：原期望值与上游锁定提交 `def6e344ca3f18a2313adb6be3bd1f8fb8d27e7d` 实际文件不符；已直连下载核对实际 SHA256 为 `a59aef434979e822d728eb7634524faa8a9030c9714f4e9bfe2fa71101eece12`，更新 setup 脚本。尚未在用户主机复跑 setup。
+
 - yht 分支第一人模块 v0.1.0：完整联合包增加 provenance 报告及独立 `reports/provenance.json`。记录原文件 SHA-256、8位未缩放 sRGB 显示副本、EXIF/XMP/IPTC/GPS 摘要；检测 JPEG/PNG/WebP 的 C2PA 内嵌清单并通过 c2pa-python读取活动清单与签名验证状态；水印包括元数据关键词、中英文常见可见水印短语候选、图库标记、豆包/Seedream品牌或模型文字候选、通用“AI生成”文字候选和Stable Diffusion XL固定48位DWT-DCT载荷。OCR框使用 `display_image_pixels`，隐形载荷从原始解码像素检测；`extensions.mediaInput` 预留静态图/视频帧字段。
 - 水印与来源限制：OCR线索不能证明文本是水印；当前全图与四角放大区域均执行OCR，保留词表外识别文本、坐标、置信度及文本框颜色/尺寸/倾斜和周围亮度差等近似特征，再组合关键词、位置、跨位置重复与叠加样式规则形成候选。该启发式可能误报正文或装饰字，也可能漏掉OCR不可识别的内容；词表不会穷尽所有服务，视觉特征不证明生成来源。SDXL固定载荷可能被伪造，压缩/缩放/裁剪等可造成漏检，超过1200万像素的图片会标为未运行以避免耗时；不支持SynthID和通用隐形水印。无元数据不推断被剥离；无C2PA标记不排除外部凭证；签名/本地信任状态不等于内容真实。
 - 来源检查界面现在展示 C2PA `claim_generator_info.name`；旧版报告无此名称时回退展示 `claim_generator`。图片工作区的“图像预览”按钮可打开大图查看，支持点击遮罩或按 Esc 关闭。
 - `provenance:setup` 已改为使用项目统一 `.venv`，并安装 C2PA 0.38.0、RapidOCR 3.10.0、ONNX Runtime 1.31.1、OpenCV headless 4.14.0.94、PyWavelets 1.10.0 和 invisible-watermark 0.2.0。此前验证：Python语法编译、7项 provenance 合成像素/词表测试、C2PA/Pillow来源读取、8项C2PA容器、EXIF/XMP/IPTC元数据、3项水印元数据检查及TypeScript检查均通过。本轮可见水印候选新增中英文常见短语、图库标记、豆包/Seedream和通用“AI生成”文字；这些文字不能证明生成平台。真实图片上的检出准确率/鲁棒性尚未验收。发布包尚未封装Python运行时。无提交、无推送。
+
+
+
 - 启动修复：`start.cmd` 安装依赖时显式包含开发依赖（Electron 位于 devDependencies）；运行时准备脚本在 Electron npm 包缺失时输出安装命令提示，不再抛出未处理的 `MODULE_NOT_FOUND`。本轮仅做 Node 语法检查，未执行依赖安装或桌面启动。
 - v0.2.0已实现统一入口、照片/文档/不确定三种内容路由、串行模型调度、补充定位复用与部分失败处理。默认主报告为简明analysis.json，完整v1.0证据包保留；实际验证见下方联合版本记录。
 - 已接入 RiSE-9 RGB 独立文档定位模式，两张用户样例均在已知修改位置产生最大连通区域，真实 Electron Smoke 及既有模式回归通过；额外标记仍存在，不构成正式质量验收。具体见下方2026-10-28接入记录。

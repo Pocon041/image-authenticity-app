@@ -14,6 +14,8 @@ import { MockAnalysisService, type AnalysisContext, type AnalysisService } from 
 import { RiseAnalysisService } from './rise'
 import { WorkflowAnalysisService } from './workflow'
 import { SicaAnalysisService } from './sica'
+// [第三人任务] FSD 独立适配器。
+import { AigcAnalysisService } from './aigc'
 
 interface RitaConfig {
   pythonPath: string
@@ -118,6 +120,7 @@ export class RoutedAnalysisService implements AnalysisService {
   private readonly mock = new MockAnalysisService()
   private readonly sica = new SicaAnalysisService()
   private readonly rise = new RiseAnalysisService()
+  private readonly aigc = new AigcAnalysisService()
 
   async analyze(input: ImportedImage, context: AnalysisContext): Promise<AnalysisReport> {
     if (context.backend === 'workflow') {
@@ -127,6 +130,7 @@ export class RoutedAnalysisService implements AnalysisService {
           '联合分析暂在源码开发模式运行，发布包模型环境尚未配置。'
         )
       return new WorkflowAnalysisService(app.getAppPath(), {
+        aigc: this.aigc,
         sica: this.sica,
         rise: this.rise,
         rita: { analyze: (image, ctx) => this.analyze(image, { ...ctx, backend: 'rita' }) }
@@ -134,6 +138,7 @@ export class RoutedAnalysisService implements AnalysisService {
     }
     if (context.backend === 'sica') return this.sica.analyze(input, context)
     if (context.backend === 'rise') return this.rise.analyze(input, context)
+    if (context.backend === 'aigc') return this.aigc.analyze(input, context)
     if (context.backend !== 'rita') return this.mock.analyze(input, context)
     if (app.isPackaged)
       throw new AppError('MODEL_NOT_READY', 'RITA 当前在源码开发模式接入，发布包环境尚未配置。')
