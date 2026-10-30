@@ -8,10 +8,18 @@ import unittest
 import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
-from detect_watermark import SDXL_WATERMARK_BITS, visible_watermark, sdxl_invisible_watermark
+from detect_watermark import SDXL_WATERMARK_BITS, known_markers, visible_watermark, sdxl_invisible_watermark
 
 
 class PixelWatermarkTests(unittest.TestCase):
+    def test_common_chinese_watermark_phrases_are_candidates(self):
+        markers = known_markers('版权所有，未经授权请勿转载')
+        self.assertIn('generic_copyright_text', markers)
+        self.assertIn('generic_watermark_text', markers)
+
+    def test_ordinary_text_without_watermark_terms_is_not_reported(self):
+        self.assertEqual(known_markers('今天的天气很好，适合外出拍照'), [])
+
     def test_visible_keyword_candidate(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'visible.png'

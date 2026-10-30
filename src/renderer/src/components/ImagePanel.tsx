@@ -7,6 +7,7 @@ import {
   Sparkles,
   X
 } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import type { AnalysisWorkspace } from '../hooks/useAnalysisWorkspace'
 
 function formatSize(bytes: number): string {
@@ -16,6 +17,15 @@ function formatSize(bytes: number): string {
 }
 
 export function ImagePanel({ workspace: w }: { workspace: AnalysisWorkspace }) {
+  const [previewOpen, setPreviewOpen] = useState(false)
+  useEffect(() => {
+    if (!previewOpen) return
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setPreviewOpen(false)
+    }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => window.removeEventListener('keydown', closeOnEscape)
+  }, [previewOpen])
   const labels = {
     workflow: ['开始分析', '重新分析', '分析中…'],
     mock: ['开始模拟分析', '重新模拟分析', '模拟分析中…'],
@@ -58,8 +68,41 @@ export function ImagePanel({ workspace: w }: { workspace: AnalysisWorkspace }) {
             <small>PNG / JPG / WebP · 最大 20 MB</small>
           </div>
         )}
-        {w.image && <span className="preview-label">图像预览</span>}
+        {w.image && (
+          <button
+            type="button"
+            className="preview-label preview-open-button"
+            onClick={() => setPreviewOpen(true)}
+            aria-label="放大查看图像预览"
+          >
+            图像预览
+          </button>
+        )}
       </div>
+      {w.image && previewOpen && (
+        <div
+          className="image-preview-modal"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setPreviewOpen(false)
+          }}
+        >
+          <section
+            className="image-preview-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-label={`图像预览：${w.image.name}`}
+          >
+            <header>
+              <strong title={w.image.name}>{w.image.name}</strong>
+              <button type="button" aria-label="关闭图像预览" onClick={() => setPreviewOpen(false)}>
+                <X size={20} />
+              </button>
+            </header>
+            <img src={w.image.dataUrl} alt={`放大预览：${w.image.name}`} />
+          </section>
+        </div>
+      )}
       {w.image ? (
         <div className="image-details">
           <div className="file-title">

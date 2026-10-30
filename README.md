@@ -24,19 +24,19 @@ SICA 判真也继续定位；某个模型失败时保留其他模型的结果。
 cd D:\SRDP  # 改为你自己的项目目录
 git status --short
 git fetch origin
-git switch czh
-git pull --ff-only origin czh
+git switch main
+git pull --ff-only origin main
 .\run.cmd ci
 ```
 
-当前可复现的新版本在 **`czh` 分支**，不要求更新 `main`。如果 `git status` 显示你修改过源码，先保存或提交自己的工作，再切换/更新分支；不要用 `git reset --hard` 或 `git clean` 强行覆盖。
+当前可复现的新版本在 **`main` 分支**，已整合来源检查、篡改检测和共享报告协议。`czh` 保留第二人的开发记录。如果 `git status` 显示你修改过源码，先保存或提交自己的工作，再切换/更新分支；不要用 `git reset --hard` 或 `git clean` 强行覆盖。
 
 `run.cmd ci` 按锁文件更新 npm 依赖，不会删除 `weights/`、`config/*.local.json`、`.tools/` 或 `work/`。Electron 运行时若需补齐，会在启动前自动准备，并可复用本机缓存。
 
 如果原来使用的是 ZIP 或单独的 `SRDP.exe`，没有 `.git`，请将新版源码克隆到新目录，不要直接替换旧程序的 `app.asar`：
 
 ```powershell
-git clone --branch czh https://github.com/Pocon041/image-authenticity-app.git image-authenticity-app-v02
+git clone --branch main https://github.com/Pocon041/image-authenticity-app.git image-authenticity-app-v02
 cd image-authenticity-app-v02
 .\run.cmd ci
 ```
@@ -116,15 +116,13 @@ foreach ($modelName in @('rita', 'sica', 'rise')) {
 
 ### 6. 启动并验证
 
-首次接入第一人来源检查时，另行准备隔离环境（不会更改上述模型环境）：
+项目统一使用根目录 `.venv`。首次准备来源检查依赖时，在项目根目录执行：
 
 ```powershell
-# 复用上面创建的Python，也可填写已有Python的完整路径
-$env:PROVENANCE_PYTHON = (Resolve-Path .venv\Scripts\python.exe).Path
 .\run.cmd run provenance:setup
 ```
 
-来源依赖安装到 `.tools/provenance-venv`；缺少此环境时，APP仍生成基础图像信息及凭证容器扫描记录，并明确标记详细解析、水印像素检查未执行。实现与局限见 [PROVENANCE_V01.md](docs/PROVENANCE_V01.md)。
+来源依赖安装到项目统一的 `.venv`；缺少此环境时，APP仍生成基础图像信息及凭证容器扫描记录，并明确标记详细解析、水印像素检查未执行。实现与局限见 [PROVENANCE_V01.md](docs/PROVENANCE_V01.md)。
 
 ```powershell
 .\start.cmd
@@ -149,7 +147,7 @@ $env:PROVENANCE_PYTHON = (Resolve-Path .venv\Scripts\python.exe).Path
 
 ## 从零安装
 
-先安装 [Git for Windows](https://git-scm.com/downloads/win) 和 [Node.js 24 LTS](https://nodejs.org/en/download)，确认 `git --version`、`node --version` 可用，然后按上文克隆 `czh` 分支并完成 Python、源码、权重与配置步骤。Node 最低要求 22.12；新机器不依赖开发者私有的 `.tools/` 内容。
+先安装 [Git for Windows](https://git-scm.com/downloads/win) 和 [Node.js 24 LTS](https://nodejs.org/en/download)，确认 `git --version`、`node --version` 可用，然后按上文克隆 `main` 分支并完成 Python、源码、权重与配置步骤。Node 最低要求 22.12；新机器不依赖开发者私有的 `.tools/` 内容。
 
 首次 npm 安装和 Electron 准备需要网络；配置完成后的图片检测在本机进行。开发模式的 `127.0.0.1:5173` 仅是桌面界面的本机 Vite 服务，使用入口是 Electron 窗口。
 

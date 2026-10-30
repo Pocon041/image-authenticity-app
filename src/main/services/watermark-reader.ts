@@ -12,8 +12,8 @@ export async function inspectPixelWatermarks(args: {
 }): Promise<Json> {
   const python =
     process.platform === 'win32'
-      ? join(args.root, '.tools/provenance-venv/Scripts/python.exe')
-      : join(args.root, '.tools/provenance-venv/bin/python')
+      ? join(args.root, '.venv/Scripts/python.exe')
+      : join(args.root, '.venv/bin/python')
   const worker = join(args.root, 'backend/provenance/detect_watermark.py')
   if (!existsSync(python))
     return {

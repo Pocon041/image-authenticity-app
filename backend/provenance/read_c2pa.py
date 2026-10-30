@@ -2,6 +2,8 @@ import importlib.metadata
 import json
 import re
 import sys
+from collections.abc import Mapping
+from typing import Any
 
 from c2pa import Context, Reader
 from PIL import ExifTags, Image
@@ -115,7 +117,7 @@ def read_metadata(path):
             'ISOSpeedRatings', 'FocalLength'
         }
         exif_fields = {}
-        exif_groups = [exif]
+        exif_groups: list[Mapping[int, Any]] = [exif]
         if 34665 in exif:
             exif_groups.append(exif.get_ifd(34665))
         for group in exif_groups:

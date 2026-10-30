@@ -30,7 +30,7 @@
 ### 水印
 
 - 元数据文字：检查 EXIF/XMP/IPTC 中的 watermark、Digimarc、Adobe Stock、Shutterstock、Getty Images、iStock、Alamy、Dreamstime 和 Depositphotos 等候选字样。
-- 可见水印文字：RapidOCR 在规范显示图上匹配这些图库名称，以及 watermark、preview、sample 等通用词；命中会保留识别文字、置信值和 `display_image_pixels` 坐标框。它不能确认文字由水印叠加产生；低对比度、倾斜、遮挡、图形 Logo 和其他文字可能造成漏报或误报。
+- 可见水印文字与视觉特征：RapidOCR 识别全图和四角放大区域，保存词表外的所有识别文本、置信度、`display_image_pixels` 坐标、倾斜角、文本框尺寸比例、近似平均颜色、框内亮度范围及与周围区域的亮度差。规则层结合关键词、四角位置、相似文本跨位置重复、近似颜色/尺寸一致，以及倾斜且跨越图像主体的叠加线索，输出候选和对应规则。当前不分类真实字体；颜色和几何是OCR框级近似测量。上述启发式会把正文、装饰字或相似场景纹理误报成候选，也会漏掉低对比度或OCR未识别的图形水印，不能证明水印来源或生成平台。
 - 隐形载荷：在原始解码像素上使用 `invisible-watermark` 的 DWT-DCT 解码路径，精确匹配 Stability AI / Diffusers 公开的 Stable Diffusion XL 48 位固定载荷。超过 1200 万像素时为避免阻塞而不运行解码，不对输入缩放。匹配只说明解出的载荷与该公开常量一致，可被复制伪造；缩放、裁剪、压缩、色彩处理或尺寸太小会导致漏检。它不是通用 SD、SynthID 或其他 AI 水印检测器。
 
 子检查详情分别保留 `status`、`outcome`、方法和 limitation。`no_known_*` 表示当前已实现的检测器没有命中，不等于“没有水印”。
@@ -43,18 +43,18 @@
 run.cmd run provenance:setup
 ```
 
-脚本创建项目忽略的 `.tools/provenance-venv`，安装固定版本的 C2PA、Pillow、RapidOCR、ONNX Runtime、OpenCV headless、PyWavelets 和隐形水印解码器。`invisible-watermark` 以 `--no-deps` 安装，避免覆盖 RapidOCR 的 headless OpenCV 包；代码直接载入其 DWT-DCT 算法，绕过该包导入时加载的非必需 RivaGAN/PyTorch。
+脚本在项目统一的 `.venv` 中安装固定版本的 C2PA、Pillow、RapidOCR、ONNX Runtime、OpenCV headless、PyWavelets 和隐形水印解码器。`invisible-watermark` 以 `--no-deps` 安装，避免覆盖 RapidOCR 的 headless OpenCV 包；代码直接载入其 DWT-DCT 算法，绕过该包导入时加载的非必需 RivaGAN/PyTorch。
 
 来源报告随联合分析自动生成；完整 JSON 位于任务输出目录的 `bundle.json`，单模块副本位于 `reports/provenance.json`。
 
-当前是源码开发接入：发布目录尚未打包 `.tools/provenance-venv`、Python worker 和 OCR 模型，因此独立安装包中的 provenance 运行时部署仍需后续配置。
+当前是源码开发接入：发布目录尚未打包 `.venv`、Python worker 和 OCR 模型，因此独立安装包中的 provenance 运行时部署仍需后续配置。
 
 ## 上游方法
 
-本地整合补充了5项合成像素检查：可见水印关键词、平坦载体上的固定/非固定载荷、纹理载体的严格匹配语义、小图配置边界和超大图未扫描状态。纹理载体在本机往返出现过1位丢失，因此“已嵌入”不保证精确解码；实现没有放宽精确匹配，也不将近似匹配当作命中。这些检查不构成真实图片上的准确率或鲁棒性基准。
+本地整合补充了7项合成像素/词表检查：可见水印关键词、中英文常见短语与普通文本排除、平坦载体上的固定/非固定载荷、纹理载体的严格匹配语义、小图配置边界和超大图未扫描状态。纹理载体在本机往返出现过1位丢失，因此“已嵌入”不保证精确解码；实现没有放宽精确匹配，也不将近似匹配当作命中。这些检查不构成真实图片上的准确率或鲁棒性基准。
 
 ```powershell
-.tools/provenance-venv/Scripts/python.exe -m unittest discover -s backend/provenance -p test_*.py
+.venv/Scripts/python.exe -m unittest discover -s backend/provenance -p test_*.py
 ```
 
 - [C2PA Python SDK 用法](https://github.com/contentauth/c2pa-python/blob/main/docs/usage.md)

@@ -6,7 +6,7 @@ import { join, resolve } from 'node:path'
 import sharp from 'sharp'
 
 const root = resolve(import.meta.dirname, '..')
-const python = join(root, '.tools/provenance-venv/Scripts/python.exe')
+const python = join(root, '.venv/Scripts/python.exe')
 if (!existsSync(python)) {
   console.log('C2PA/Pillow source-reader integration: skipped (run provenance:setup first).')
   process.exit(0)
