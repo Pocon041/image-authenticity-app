@@ -4,7 +4,10 @@ export const IPC = {
   analyze: 'srdp:analysis:run',
   cancelAnalysis: 'srdp:analysis:cancel',
   progress: 'srdp:analysis:progress',
-  openReportDirectory: 'srdp:analysis:open-directory'
+  openReportDirectory: 'srdp:analysis:open-directory',
+  explain: 'srdp:analysis:explain', // 第四人新增
+  cancelExplain: 'srdp:analysis:cancel-explain', // 第四人新增
+  explanationProgress: 'srdp:analysis:explanation-progress' // 第四人新增
 } as const
 
 export type ErrorCode =
@@ -120,6 +123,8 @@ export interface AnalysisReport {
     bundlePath: string
     bundle: Record<string, unknown>
   }
+  // 第四人-解释模块的输出
+  explanation?: import('./protocol').ExplanationReport
 }
 
 // [第三人任务] 独立 FSD AIGC 检测入口。
@@ -136,5 +141,6 @@ export interface DesktopAPI {
     options?: WorkflowOptions
   ): Promise<Response<AnalysisReport>>
   cancelAnalysis(taskId: string): Promise<Response<boolean>>
+  explain(taskId: string): Promise<Response<import('./protocol').ExplanationReport>>
   onAnalysisProgress(listener: (progress: AnalysisProgress) => void): () => void
 }

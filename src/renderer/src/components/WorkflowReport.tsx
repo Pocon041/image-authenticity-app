@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
-import { CheckCircle2, FileJson, Info, Layers, ScanLine, TriangleAlert } from 'lucide-react'
+import { CheckCircle2, FileJson, Info, Layers, Loader2, MessageSquareText, ScanLine, TriangleAlert } from 'lucide-react'
 import type { AnalysisReport, DetectorBackend } from '../../../shared/contracts'
+import type { ExplanationReport } from '../../../shared/protocol'
 import { ProvenanceSummary } from './ProvenanceSummary'
 
 const names = { aigc: 'FSD', sica: 'SICA', rita: 'RITA', rise: 'RiSE' }
@@ -25,15 +26,44 @@ export function WorkflowReport({
   const [selected, setSelected] = useState<DetectorBackend>(initial)
   const [view, setView] = useState<'overlay' | 'original'>('overlay')
   const [folderError, setFolderError] = useState('')
+  
+  // 第四人：解释生成相关状态
+  const [explaining, setExplaining] = useState(false)
+  const [explanation, setExplanation] = useState<ExplanationReport | null>(null)
+  const [explainError, setExplainError] = useState('')
+
   useEffect(() => {
     setSelected(initial)
     setView('overlay')
+    // 切换图片时重置解释状态
+    setExplanation(null)
+    setExplainError('')
   }, [report.id])
+
   const active = available.find((item) => item.backend === selected) ?? available[0]
   const screening = workflow.detectors.find((item) => item.backend === 'sica')
   const classification = screening?.classification
   const aigc = workflow.detectors.find((item) => item.backend === 'aigc')
   const canSupplement = workflow.detectors.some((item) => item.status !== 'completed')
+
+  // 第四人：触发解释生成
+  const handleExplain = async () => {
+    setExplaining(true)
+    setExplainError('')
+    try {
+      const res = await window.desktop.explain(report.id)
+      if (res.ok) {
+        setExplanation(res.data)
+      } else {
+        setExplainError(res.error)
+      }
+    } catch (err) {
+      setExplainError(err instanceof Error ? err.message : '请求解释服务失败')
+    } finally {
+      setExplaining(false)
+    }
+  }
+
   return (
     <div className="workflow-report" data-testid="analysis-report">
       <div className="workflow-result-heading">
@@ -100,10 +130,8 @@ export function WorkflowReport({
           <span>按模型分别查看</span>
         </div>
         <div className="localization-tabs" role="group" aria-label="定位来源">
-
         {workflow.detectors
           .filter((item) => item.backend !== 'sica' && item.backend !== 'aigc' && item.status === 'completed')
-
             .map((item) => (
               <button
                 key={item.backend}
@@ -185,7 +213,95 @@ export function WorkflowReport({
           </button>
         )}
       </section>
+      
       <ProvenanceSummary bundle={workflow.bundle} />
+
+      {/* 第四人：综合解释生成区块 */}
+      <section className="explanation-section" aria-label="综合解释" style={{ marginTop: '20px', paddingTop: '20px', borderTop: '1px solid #eee' }}>
+        <div className="section-label">
+          <MessageSquareText size={15} />
+          <h4>综合解释分析</h4>
+        </div>
+        
+        {!explanation && !explaining && (
+          <div style={{ marginTop: '10px' }}>
+            <p style={{ fontSize: '0.9em', color: '#666', marginBottom: '10px' }}>
+              基于上述视觉检测和来源证据，由本地 VLM 模型生成易懂的综合判断。
+            </p>
+            <button className="primary-button" onClick={handleExplain} data-testid="explain-button">
+              生成智能解释
+            </button>
+          </div>
+        )}
+
+        {explaining && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px', color: '#0055ff' }}>
+            <Loader2 className="spin" size={18} />
+            <span>正在调用本地 VLM 模型生成解释，请稍候（最长约需两分钟）...</span>
+          </div>
+        )}
+
+        {explainError && (
+          <div className="workflow-flags" style={{ marginTop: '10px' }}>
+            <TriangleAlert size={17} />
+            <p>{explainError}</p>
+          </div>
+        )}
+
+                {explanation?.result && (
+          <div className="explanation-result" style={{ marginTop: '10px', background: '#2a2a35', padding: '15px', borderRadius: '8px', border: '1px solid #3f3f4e' }}>
+            {/* 如果是兜底模式，给出提示 */}
+            {explanation.mode === 'mock' && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#f5a623', fontSize: '0.85em', marginBottom: '12px' }}>
+                <TriangleAlert size={14} />
+                <span>VLM 连接失败或输出校验未通过，以下为本地规则引擎生成的保底解释。</span>
+              </div>
+            )}
+            
+            <div style={{ marginBottom: '15px' }}>
+              <strong style={{ color: '#fff' }}>最终判定：</strong>
+              <span style={{ 
+                marginLeft: '8px', 
+                padding: '2px 10px', 
+                borderRadius: '4px', 
+                color: '#000', // 文字强制黑色以便在亮色背景上显示
+                fontWeight: 'bold',
+                background: explanation.result.finalDecision === 'suspicious' ? '#f5a623' : explanation.result.finalDecision === 'no_anomaly_detected' ? '#4caf50' : '#9e9e9e'
+              }}>
+                {explanation.result.finalDecision === 'suspicious' ? '可疑 / 疑似伪造' : explanation.result.finalDecision === 'no_anomaly_detected' ? '未发现异常' : '无法确定 (Inconclusive)'}
+              </span>
+            </div>
+
+            <p style={{ lineHeight: '1.6', marginBottom: '15px', color: '#e0e0e0' }}>{explanation.result.analysis}</p>
+
+            {explanation.result.claims.length > 0 && (
+              <div style={{ marginBottom: '15px' }}>
+                <strong style={{ color: '#fff' }}>证据支撑：</strong>
+                <ul style={{ paddingLeft: '20px', marginTop: '5px', fontSize: '0.9em', color: '#b0b0b0' }}>
+                  {explanation.result.claims.map((claim, idx) => (
+                    <li key={idx}>
+                      {claim.text}
+                      <span style={{ color: '#888', fontSize: '0.85em', marginLeft: '6px' }}>({claim.evidenceIds.join(', ')})</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {explanation.result.unresolved.length > 0 && (
+              <div>
+                <strong style={{ color: '#ff6b6b' }}>未解决 / 缺失的信息：</strong>
+                <ul style={{ paddingLeft: '20px', marginTop: '5px', fontSize: '0.9em', color: '#b0b0b0' }}>
+                  {explanation.result.unresolved.map((item, idx) => (
+                    <li key={idx}>{item}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+      </section>
+
       <details className="detector-details">
         <summary>检测详情</summary>
         {classification && (
