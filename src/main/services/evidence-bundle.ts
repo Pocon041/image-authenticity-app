@@ -288,13 +288,19 @@ const assets: Artifact[] = [...common.artifacts],
     const raw: unknown = dto.bundle
     assertEvidenceBundle(raw)
     const report = structuredClone(raw.reports[0])
+    const expectedModule = detector.backend === 'aigc' ? 'aigc' : 'manipulation'
     if (
       raw.reports.length !== 1 ||
-      report.moduleId !== 'manipulation' ||
+      report.moduleId !== expectedModule ||
       report.status !== 'completed' ||
       !report.result
     )
-      throw new AppError('INFERENCE_FAILED', '检测器未返回已完成的篡改模块报告。')
+      throw new AppError(
+        'INFERENCE_FAILED',
+        detector.backend === 'aigc'
+          ? 'AIGC 检测器未返回已完成的 AIGC 模块报告。'
+          : '检测器未返回已完成的篡改模块报告。'
+      )
     if (
       raw.image.imageId !== common.image.imageId ||
       raw.image.sha256 !== common.image.sha256 ||
@@ -355,7 +361,7 @@ const assets: Artifact[] = [...common.artifacts],
       sourceReportSha256: digest(await readFile(join(output, reportUri))),
       checkpointSha256: report.extensions?.checkpointSha256,
       result: {
-        score: report.result.score,
+        ...(report.moduleId === 'manipulation' ? { score: report.result.score } : {}),
         ...(report.result.classification ? { classification: report.result.classification } : {}),
         ...(detector.aigc
           ? {
@@ -377,12 +383,14 @@ const assets: Artifact[] = [...common.artifacts],
       }
     })
     if (detector.backend === 'aigc') aigcReports.push(report)
-    regions.push(
-      ...(report.result.regions ?? []).map((region) => ({
-        ...region,
-        detector: detector.backend
-      }))
-    )
+    if (report.moduleId === 'manipulation') {
+      regions.push(
+        ...(report.result.regions ?? []).map((region) => ({
+          ...region,
+          detector: detector.backend
+        }))
+      )
+    }
     evidence.push(
       ...report.evidence.map((entry) => ({
         ...entry,
@@ -396,7 +404,8 @@ const assets: Artifact[] = [...common.artifacts],
     )
     if (detector.localization) {
       detector.regionPreviews = []
-      for (const region of (report.result.regions ?? []).slice(0, 20)) {
+      const manipulationResult = report.moduleId === 'manipulation' ? report.result : null
+      for (const region of (manipulationResult?.regions ?? []).slice(0, 20)) {
         const crop =
           typeof region.cropArtifactId === 'string' ? index.get(region.cropArtifactId) : undefined
         if (!crop) continue
