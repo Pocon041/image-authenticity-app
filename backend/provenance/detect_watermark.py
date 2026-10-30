@@ -120,6 +120,9 @@ def visible_position(box, width, height):
 
 
 def visual_features(image, points, bbox, width, height):
+    import cv2
+    import numpy as np
+
     left, top, box_width, box_height = bbox
     quad = points.reshape(-1, 2)
     angle = math.degrees(math.atan2(quad[1][1] - quad[0][1], quad[1][0] - quad[0][0]))
