@@ -10,7 +10,7 @@
 
 SICA 判真也继续定位；某个模型失败时保留其他模型的结果。支持取消、补充检查、原图/叠加切换及区域裁剪。HiFi-Net 已退出当前应用代码，历史效果记录保留在 [HIFI_EVALUATION.md](docs/HIFI_EVALUATION.md)。
 
-本阶段负责视觉检测与工程接入；OCR、来源凭证、AI 生成专用模块和最后的 VLM 综合解释尚未整合。模型标记是待核查线索，不能直接视为已证实篡改，当前不输出未经验证的综合真假概率。
+当前已整合第一人的来源/预处理模块：记录元数据、扫描内嵌C2PA凭证、检查元数据水印标记，并在独立环境就绪时执行可见水印关键词OCR与SDXL固定载荷解码。水印OCR不扩展为通用文字内容分析；AI生成专用模块和最后的VLM综合解释尚未整合。模型标记是待核查线索，不能直接视为已证实篡改，当前不输出未经验证的综合真假概率。
 
 ## 已安装基础版：如何增量升级
 
@@ -24,19 +24,19 @@ SICA 判真也继续定位；某个模型失败时保留其他模型的结果。
 cd D:\SRDP  # 改为你自己的项目目录
 git status --short
 git fetch origin
-git switch czh
-git pull --ff-only origin czh
+git switch main
+git pull --ff-only origin main
 .\run.cmd ci
 ```
 
-当前可复现的新版本在 **`czh` 分支**，不要求更新 `main`。如果 `git status` 显示你修改过源码，先保存或提交自己的工作，再切换/更新分支；不要用 `git reset --hard` 或 `git clean` 强行覆盖。
+当前可复现的新版本在 **`main` 分支**，已整合来源检查、篡改检测和共享报告协议。`czh` 保留第二人的开发记录。如果 `git status` 显示你修改过源码，先保存或提交自己的工作，再切换/更新分支；不要用 `git reset --hard` 或 `git clean` 强行覆盖。
 
 `run.cmd ci` 按锁文件更新 npm 依赖，不会删除 `weights/`、`config/*.local.json`、`.tools/` 或 `work/`。Electron 运行时若需补齐，会在启动前自动准备，并可复用本机缓存。
 
 如果原来使用的是 ZIP 或单独的 `SRDP.exe`，没有 `.git`，请将新版源码克隆到新目录，不要直接替换旧程序的 `app.asar`：
 
 ```powershell
-git clone --branch czh https://github.com/Pocon041/image-authenticity-app.git image-authenticity-app-v02
+git clone --branch main https://github.com/Pocon041/image-authenticity-app.git image-authenticity-app-v02
 cd image-authenticity-app-v02
 .\run.cmd ci
 ```
@@ -116,6 +116,14 @@ foreach ($modelName in @('rita', 'sica', 'rise')) {
 
 ### 6. 启动并验证
 
+项目统一使用根目录 `.venv`。首次准备来源检查依赖时，在项目根目录执行：
+
+```powershell
+.\run.cmd run provenance:setup
+```
+
+来源依赖安装到项目统一的 `.venv`；缺少此环境时，APP仍生成基础图像信息及凭证容器扫描记录，并明确标记详细解析、水印像素检查未执行。实现与局限见 [PROVENANCE_V01.md](docs/PROVENANCE_V01.md)。
+
 ```powershell
 .\start.cmd
 ```
@@ -129,7 +137,8 @@ foreach ($modelName in @('rita', 'sica', 'rise')) {
 联合任务保存在 `work/analysis-runs/<taskId>/`，APP 中可点击「打开报告文件夹」。
 
 - **`analysis.json`**：默认阅读及后续综合分析的简明报告，包含图片身份、模型来源、状态、分数、区域、掩码/裁剪路径、证据引用、分歧和限制。
-- **`bundle.json` / `report.json`**：兼容 v1.0 的完整证据包与单一篡改模块报告。
+- **`bundle.json` / `report.json`**：兼容v1.0的完整证据包及独立篡改报告；完整包同时包含manipulation和provenance两个模块。
+- **`reports/provenance.json`**：第一人来源、预处理、C2PA和水印检查报告；保持各子检查的未执行/失败状态，不以缺少凭证证明真假。
 - **`images/`、`detectors/`**：原文件副本、规范显示图、掩码、裁剪、浮点响应及内部诊断。
 
 源码清单、逐块专家分数和运行日志不塞入简明报告。交给第四阶段时保留整个目录；JSON 中的图片路径需要实际加载才能成为 VLM 的视觉输入。
@@ -138,7 +147,7 @@ foreach ($modelName in @('rita', 'sica', 'rise')) {
 
 ## 从零安装
 
-先安装 [Git for Windows](https://git-scm.com/downloads/win) 和 [Node.js 24 LTS](https://nodejs.org/en/download)，确认 `git --version`、`node --version` 可用，然后按上文克隆 `czh` 分支并完成 Python、源码、权重与配置步骤。Node 最低要求 22.12；新机器不依赖开发者私有的 `.tools/` 内容。
+先安装 [Git for Windows](https://git-scm.com/downloads/win) 和 [Node.js 24 LTS](https://nodejs.org/en/download)，确认 `git --version`、`node --version` 可用，然后按上文克隆 `main` 分支并完成 Python、源码、权重与配置步骤。Node 最低要求 22.12；新机器不依赖开发者私有的 `.tools/` 内容。
 
 首次 npm 安装和 Electron 准备需要网络；配置完成后的图片检测在本机进行。开发模式的 `127.0.0.1:5173` 仅是桌面界面的本机 Vite 服务，使用入口是 Electron 窗口。
 
@@ -168,8 +177,10 @@ foreach ($modelName in @('rita', 'sica', 'rise')) {
 - `src/main/`：文件读取、IPC、统一任务编排、Python 子进程与证据汇总。
 - `src/preload/`、`src/shared/`：最小桌面桥接、跨进程类型。
 - `src/renderer/`：React 工作台。
-- `backend/rita`、`sica`、`rise`：三个模型适配；`backend/common` 为共享评测工具。
+- `backend/rita`、`sica`、`rise`：三个检测模型适配；`backend/provenance`为第一人来源检查，`backend/common`为共享评测工具。
 - `config/`、`schemas/`、`docs/`：配置模板、报告约束和模块说明。
 - `scripts/`、`tests/`：运行准备、验证与真实桌面测试。
 
-阅读和维护 `AGENT.md`；公共图片身份、坐标和证据语义不得由单模块自行改变。`weights/`、`work/`、`.tools/`、`.venv/`、`node_modules/`、`out/`、`dist/` 和本机配置不提交。发布包中的 Python/权重分发、CPU 路径及更大规模独立质量评测尚未验收。
+阅读 `AGENT.md` 的四人共用规则和 `AGENTS.md` 的第二人模块说明；模块独有记录写AGENTS.md，共享协议与交接规则写AGENT.md。公共图片身份、坐标和证据语义不得由单模块自行改变。`weights/`、`work/`、`.tools/`、`.venv/`、`node_modules/`、`out/`、`dist/` 和本机配置不提交。发布包中的 Python/权重分发、CPU 路径及更大规模独立质量评测尚未验收。
+
+`yr_explanation`分支的四模块协议类型已合并，解释报告引用可与当前证据包衔接；VLM推理和解释界面尚未提交。接口约定见 [EXPLANATION_HANDOFF.md](docs/EXPLANATION_HANDOFF.md)。

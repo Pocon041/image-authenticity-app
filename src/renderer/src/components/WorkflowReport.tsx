@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { CheckCircle2, FileJson, Info, Layers, ScanLine, TriangleAlert } from 'lucide-react'
 import type { AnalysisReport, DetectorBackend } from '../../../shared/contracts'
+import { ProvenanceSummary } from './ProvenanceSummary'
 
 const names = { aigc: 'FSD', sica: 'SICA', rita: 'RITA', rise: 'RiSE' }
 
@@ -42,7 +43,7 @@ export function WorkflowReport({
           <p>
             {(report.elapsedMs / 1000).toFixed(1)} 秒 ·{' '}
             {workflow.status === 'completed'
-              ? '计划检查已完成'
+              ? '篡改检查已完成'
               : workflow.status === 'partial'
                 ? '部分检查未完成'
                 : '请检查检测环境'}
@@ -99,8 +100,10 @@ export function WorkflowReport({
           <span>按模型分别查看</span>
         </div>
         <div className="localization-tabs" role="group" aria-label="定位来源">
+
         {workflow.detectors
           .filter((item) => item.backend !== 'sica' && item.backend !== 'aigc' && item.status === 'completed')
+
             .map((item) => (
               <button
                 key={item.backend}
@@ -182,6 +185,7 @@ export function WorkflowReport({
           </button>
         )}
       </section>
+      <ProvenanceSummary bundle={workflow.bundle} />
       <details className="detector-details">
         <summary>检测详情</summary>
         {classification && (

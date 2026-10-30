@@ -4,12 +4,12 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const environment = join(root, '.tools/provenance-venv')
+const environment = join(root, '.venv')
 const python =
   process.platform === 'win32'
     ? join(environment, 'Scripts/python.exe')
     : join(environment, 'bin/python')
-const basePython = process.env.PROVENANCE_PYTHON || 'python'
+const basePython = process.env.PYTHON || 'python'
 
 function run(command, args) {
   const result = spawnSync(command, args, {

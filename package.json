@@ -24,6 +24,7 @@
     "aigc:setup": "node scripts/setup-fsd.mjs",
     "smoke:rise": "npm run build && node tests/rise-smoke.mjs",
     "test:workflow": "node tests/workflow-unit.mjs",
+    "test:protocol": "node tests/protocol-tests.mjs",
     "test:watermark": "node tests/watermark-metadata.mjs",
     "test:c2pa": "node tests/provenance-c2pa.mjs",
     "test:provenance-metadata": "node tests/provenance-metadata.mjs",

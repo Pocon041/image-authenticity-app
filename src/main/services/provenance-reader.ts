@@ -12,8 +12,8 @@ export async function inspectProvenanceSource(args: {
 }): Promise<Json> {
   const python =
     process.platform === 'win32'
-      ? join(args.root, '.tools/provenance-venv/Scripts/python.exe')
-      : join(args.root, '.tools/provenance-venv/bin/python')
+      ? join(args.root, '.venv/Scripts/python.exe')
+      : join(args.root, '.venv/bin/python')
   const worker = join(args.root, 'backend/provenance/read_c2pa.py')
   if (!existsSync(python))
     return {
@@ -39,6 +39,7 @@ export async function inspectProvenanceSource(args: {
     }, 30000)
     const abort = () => child.kill()
     args.signal.addEventListener('abort', abort, { once: true })
+    if (args.signal.aborted) abort()
     child.stdout.setEncoding('utf8').on('data', (chunk: string) => {
       stdout = (stdout + chunk).slice(-1_000_000)
     })

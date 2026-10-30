@@ -34,6 +34,7 @@
 
 - `analysis.json`：简明入口。
 - `bundle.json`、`report.json`：v1.0证据包与单一manipulation模块报告，含完整附件索引与哈希。
+- `reports/provenance.json`：独立来源/预处理模块报告，同时放入bundle.reports。来源与篡改检查分别保留状态，主界面的完成标记指篡改检测，不代表所有来源子检查都成功。
 - `images/`：原文件副本及规范显示图。
 - `detectors/<model>/`：该模型附件及原始报告，原始诊断信息保存在此处。
 - `run.json`：任务执行状态，包括取消记录。

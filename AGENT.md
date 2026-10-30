@@ -2,7 +2,7 @@
 
 GitHub 仓库名采用 `image-authenticity-app`，中文项目名称为“图像真实性分析桌面应用”。本地开发目录保留 `D:\SRDP`。
 远程仓库为 `https://github.com/Pocon041/image-authenticity-app`，主分支为 `main`。
-当前协议和联调工具的共享变更按用户要求在 `czh` 分支维护并推送，不直接修改远端 `main`。后续各模块的开发人员应创建独自的分支并提交
+公共可运行版本维护在 `main`，各模块在自己的分支开发。用户于2026-10-29授权将已验证的czh功能更新发布到main；整合时保留其他成员的更新，排除第二人专用AGENTS.md，遇到冲突先告知用户并等待确认。
 
 ## 项目目标与当前范围
 
@@ -19,7 +19,7 @@ GitHub 仓库名采用 `image-authenticity-app`，中文项目名称为“图像
 
 ## 维护要求
 
-- 本文件是项目约定的唯一正文。每次改变框架、目录、运行命令、接口或阶段范围时，同步更新本文件。
+- 本文件维护四人共用的框架、接口、报告协议和协作约定；模块独有实现、测试与工作记录维护在各自分支的AGENTS.md。共享内容对照main增量合并，不整份替换他人记录。
 - 每次交付前更新“当前状态”，记录已实现内容、实际验证结果和已知限制，不将计划记为完成。
 - 用户的新要求优先于这里已有的约定。
 
@@ -41,7 +41,7 @@ GitHub 仓库名采用 `image-authenticity-app`，中文项目名称为“图像
 - `src/preload/`：桌面桥接白名单。
 - `src/renderer/`：React 工作台与样式。
 - `src/shared/`：跨进程数据协议。
-- `src/shared/protocol.ts`：协议 v1.0 类型定义，对应 `schemas/bundle.schema.json`；四人报告交换共用，与 `contracts.ts` 中现有 UI 类型互相独立，通过 adapter 连接。
+- `src/shared/protocol.ts`：协议 v1.0 类型定义，对应 `schemas/report-bundle.schema.json`；四人报告交换共用，与 `contracts.ts` 中现有 UI 类型互相独立，通过 adapter 连接。
 - `docs/REPORT_PROTOCOL_V1.md`：第一阶段四人报告协议初稿；公共字段和坐标含义不能由单模块自行改变。
 - `docs/PROVENANCE_V01.md`：第一人来源报告结构、字段、安装和检测边界。
 - `backend/provenance/`：EXIF/C2PA解析及水印子进程，不共享或更改其他模型后端。
@@ -84,7 +84,7 @@ Windows 启动入口为 `start.cmd`；`run.cmd` 负责优先使用 `.tools/` 下
 - `run.cmd run sica:infer -- --image <path>`：使用本机 `config/sica.local.json` 执行真实二分类，写出 v1.0 单模块证据包。
 - `run.cmd run smoke:sica`：真实 Electron 中验证完整分类、缺权重、模式隔离和实际子进程取消。
 - `run.cmd run rise:setup` / `rise:infer` / `smoke:rise`：RiSE源码准备、真实单图与桌面检查。
-- `run.cmd run provenance:setup`：在 `.tools/provenance-venv` 安装 C2PA、图像元数据、RapidOCR 与水印检测依赖；不修改其他模型环境。
+- `run.cmd run provenance:setup`：在项目统一的 `.venv` 安装 C2PA、图像元数据、RapidOCR 与水印检测依赖。
 - `run.cmd run test:workflow` / `smoke:workflow`：联合编排逻辑与真实桌面流程检查。
 - `run.cmd run report:validate -- <analysis.json>`：简明报告Schema、身份、相对路径与引用校验。
 - `<配置的Python> backend/sica/evaluate.py --casia-root <划分清单目录> --output <目录>`：只读运行本地 CASIA 子集，阈值固定 0.5，记录每图预测和分组统计，不声称独立泛化。
@@ -109,15 +109,21 @@ Windows 启动入口为 `start.cmd`；`run.cmd` 负责优先使用 `.tools/` 下
 
 ## 当前状态
 
+
 - 第三人 AIGC 初步接入（2026-10-28）：新增独立 FSD 本地分析入口、Python worker、结果视图与示例配置；不进入默认联合路由，不改变 SICA/RITA/RiSE。FSD 许可仅支持非商业用途。当前未安装/锁定 FSD 上游源码及依赖，权重仍由上游首次运行自动下载，尚未执行真实推理或验证协议；来源归因默认关闭。实现为待本机依赖准备后验证的开发接入，不视为已验收检测能力。详见 `docs/AIGC_FSD.md`。
 - FSD 首次权重下载故障修正（2026-10-29）：固定上游提交 `50f2eae06efdac2e5a33f407ca9a27a2295133ac`，Python 3.13 隔离环境及推理依赖已准备；发现上游缓存检查只看 `config.json`，下载超时遗留的临时权重导致缺文件加载错误。worker 现先逐个调用上游 `download_weights` 确保检测权重齐全，并提供下载/加载进度；任务超时至少15分钟。检测权重缓存现完整（约55MB）；worker 已对 `sample-001` 实际执行成功，输出 z-score `-2.6559`、默认阈值 `-2.0`，按 FSD 规则判为 `ai_generated`。TypeScript 检查通过；来源归因仍关闭，项目数据上的效果验证未做。
 - 联合分析加入 FSD（2026-10-29）：依用户明确要求，联合流程在 SICA 整图筛查及 RITA/RiSE 定位前先运行 FSD；其判断、z-score、阈值、来源线索状态写入联合简明 JSON 和完整报告，界面先显示 AIGC 结果。现有筛查/定位顺序和判定逻辑保持不变。尚待本机真实联合流程 Smoke 验证。
 - FSD 来源归因缓存修复（2026-10-29）：用户开启 attribution 后发现上游下载器将被代理提前 EOF 的 `source_gmms.pt`（181,669,504 字节）误当完整文件；官方 release 大小经 HEAD 核验为 206,992,755 字节。已续传补齐至准确长度，并在 worker 中新增长度校验/HTTP Range 续传。模型加载及真实图片推理通过；该图 FSD 检测为 ai_generated，但来源分类返回 `Real`，已在展示中改为未识别受支持生成器，原始标签与分数仍进 JSON 供审计。TypeScript 类型检查通过。
 
 - 2026-10-28 修正 SICA 固定源码 SHA256：原期望值与上游锁定提交 `def6e344ca3f18a2313adb6be3bd1f8fb8d27e7d` 实际文件不符；已直连下载核对实际 SHA256 为 `a59aef434979e822d728eb7634524faa8a9030c9714f4e9bfe2fa71101eece12`，更新 setup 脚本。尚未在用户主机复跑 setup。
-- yht 分支第一人模块 v0.1.0：完整联合包增加 provenance 报告及独立 `reports/provenance.json`。记录原文件 SHA-256、8位未缩放 sRGB 显示副本、EXIF/XMP/IPTC/GPS 摘要；检测 JPEG/PNG/WebP 的 C2PA 内嵌清单并通过 c2pa-python读取活动清单与签名验证状态；水印包括元数据关键词、RapidOCR图库标记候选和Stable Diffusion XL固定48位DWT-DCT载荷。OCR框使用 `display_image_pixels`，隐形载荷从原始解码像素检测；`extensions.mediaInput` 预留静态图/视频帧字段。
-- 水印与来源限制：OCR线索不能证明文本是水印；SDXL固定载荷可能被伪造，压缩/缩放/裁剪等可造成漏检，超过1200万像素的图片会标为未运行以避免耗时；不支持SynthID和通用隐形水印。无元数据不推断被剥离；无C2PA标记不排除外部凭证；签名/本地信任状态不等于内容真实。
-- 新增 `provenance:setup` 安装命令及 `docs/PROVENANCE_V01.md`。本机隔离 venv 已成功安装 C2PA 0.38.0、RapidOCR 3.10.0、ONNX Runtime 1.31.1、OpenCV headless 4.14.0.94、PyWavelets 1.10.0 和 invisible-watermark 0.2.0；未安装PyTorch、未改其他模型Python环境。TypeScript检查和Python语法编译通过；未用真实图片端到端验证新水印检测，也未运行回归测试。发布包尚未封装Python运行时。无提交、无推送。
+
+- yht 分支第一人模块 v0.1.0：完整联合包增加 provenance 报告及独立 `reports/provenance.json`。记录原文件 SHA-256、8位未缩放 sRGB 显示副本、EXIF/XMP/IPTC/GPS 摘要；检测 JPEG/PNG/WebP 的 C2PA 内嵌清单并通过 c2pa-python读取活动清单与签名验证状态；水印包括元数据关键词、中英文常见可见水印短语候选、图库标记、豆包/Seedream品牌或模型文字候选、通用“AI生成”文字候选和Stable Diffusion XL固定48位DWT-DCT载荷。OCR框使用 `display_image_pixels`，隐形载荷从原始解码像素检测；`extensions.mediaInput` 预留静态图/视频帧字段。
+- 水印与来源限制：OCR线索不能证明文本是水印；当前全图与四角放大区域均执行OCR，保留词表外识别文本、坐标、置信度及文本框颜色/尺寸/倾斜和周围亮度差等近似特征，再组合关键词、位置、跨位置重复与叠加样式规则形成候选。该启发式可能误报正文或装饰字，也可能漏掉OCR不可识别的内容；词表不会穷尽所有服务，视觉特征不证明生成来源。SDXL固定载荷可能被伪造，压缩/缩放/裁剪等可造成漏检，超过1200万像素的图片会标为未运行以避免耗时；不支持SynthID和通用隐形水印。无元数据不推断被剥离；无C2PA标记不排除外部凭证；签名/本地信任状态不等于内容真实。
+- 来源检查界面现在展示 C2PA `claim_generator_info.name`；旧版报告无此名称时回退展示 `claim_generator`。图片工作区的“图像预览”按钮可打开大图查看，支持点击遮罩或按 Esc 关闭。
+- `provenance:setup` 已改为使用项目统一 `.venv`，并安装 C2PA 0.38.0、RapidOCR 3.10.0、ONNX Runtime 1.31.1、OpenCV headless 4.14.0.94、PyWavelets 1.10.0 和 invisible-watermark 0.2.0。此前验证：Python语法编译、7项 provenance 合成像素/词表测试、C2PA/Pillow来源读取、8项C2PA容器、EXIF/XMP/IPTC元数据、3项水印元数据检查及TypeScript检查均通过。本轮可见水印候选新增中英文常见短语、图库标记、豆包/Seedream和通用“AI生成”文字；这些文字不能证明生成平台。真实图片上的检出准确率/鲁棒性尚未验收。发布包尚未封装Python运行时。无提交、无推送。
+
+
+
 - 启动修复：`start.cmd` 安装依赖时显式包含开发依赖（Electron 位于 devDependencies）；运行时准备脚本在 Electron npm 包缺失时输出安装命令提示，不再抛出未处理的 `MODULE_NOT_FOUND`。本轮仅做 Node 语法检查，未执行依赖安装或桌面启动。
 - v0.2.0已实现统一入口、照片/文档/不确定三种内容路由、串行模型调度、补充定位复用与部分失败处理。默认主报告为简明analysis.json，完整v1.0证据包保留；实际验证见下方联合版本记录。
 - 已接入 RiSE-9 RGB 独立文档定位模式，两张用户样例均在已知修改位置产生最大连通区域，真实 Electron Smoke 及既有模式回归通过；额外标记仍存在，不构成正式质量验收。具体见下方2026-10-28接入记录。
@@ -387,3 +393,24 @@ Windows 启动入口为 `start.cmd`；`run.cmd` 负责优先使用 `.tools/` 下
 - 发布提交 `764ac72` 已快进整合至本地czh并成功push至origin/czh，远端ls-remote核对SHA为 `764ac7259491bc14e6223cd7964a2e6caacd0e44`，main未修改。首次GitHub直连超时，使用本机现有Git代理配置重试成功，未改写用户全局代理。
 - 增量复现已在独立临时worktree验证：从基础版 `091d906` 安装npm依赖，快进到 `764ac72` 后再次npm ci，类型检查、9组编排测试、构建与真实start.cmd启动均通过。配置生成命令仅创建缺失项、保留已有项的行为已核对；未重装或修改本机模型Python环境。结果存于 `work/cleanup-20261028/upgrade-verification.json`，临时worktree在保存结果后通过git worktree remove移除。
 - 清理后的真实联合Smoke8组、1400/1060布局检查、模拟15项和默认start.cmd启动3项通过。当前仓库工作区已整理为可提交源码，权重、图片、本机配置、运行结果均保持Git忽略。本条收尾文档单独提交并同步到czh。
+
+## 共用文档与模块文档的合并规则（2026-10-29）
+
+- 用户明确：AGENT.md是四人共用文件，更新应保留main已有内容，只增量补充已核对的共用变更；不使用某个模块重组后的整份文件替换main。上方原有历史记录继续保留，后续新增的模块独有日志不再写入本文件。
+- AGENTS.md由各模块在自己的分支维护。第二人专用内容保留在czh/个人分支，不合入main；main现有的通用入口文件保持原样。由于文件已被Git跟踪，添加.gitignore不能排除其分支合并差异。
+- 后续发布功能到main时，从最新main建立整合分支，选择功能变更并排除AGENTS.md；AGENT.md单独审阅并增量合并，不直接整条合并包含个人文档变更的czh分支。此前文档规则调整只在czh发布；2026-10-29用户另行授权发布到main，见下方整合记录。
+
+## 当前共用接口与本地联调补充（2026-10-29）
+
+- 本地czh已包含远端main截至e1e59b4的yht来源模块，同时保留第四人的protocol.ts类型与本地共用校验适配。标准定义为schemas/report-bundle.schema.json；界面contracts.ts中的AnalysisReport仍是独立DTO。
+- 当前bundle.json含独立manipulation和provenance报告，analysis.json是简明篡改视图，不是EvidenceBundle。正式引用的reportId/evidenceId沿用完整包，按moduleId读取，不依赖报告排列顺序；交接见docs/EXPLANATION_HANDOFF.md。
+- 共用校验复用Schema，校验status/result/error和confidence来源/校准状态；validateExplanationReport(report)只校验结构，显式传入上游数组才校验引用，[]不等于省略。引用校验不证明解释正确；当前未接入VLM或生成解释占位结果。
+- 来源依赖在项目统一 `.venv` 安装；可见水印OCR只提供中英文关键词候选，SDXL载荷仅覆盖公开固定配置。缺少元数据/凭证/水印不证明真假，未运行/失败状态不能写成未检出。
+- 本地接口联调、启动和报告引用检查已完成，实际模型质量及模块细节见各自AGENTS.md/模块文档。main原有记录未被删除或重排；后续需更新共享现状时在对应位置作小范围修改或增补。
+
+## main功能整合与发布验证（2026-10-29）
+
+- 用户授权将czh现有功能发布到main，并要求发生冲突时先告知。以最新origin/main（e1e59b4）建立integrate/main-20261029，选择czh截至dfd3862的功能与共享文档差异；补丁检查和应用均无冲突，无文件删除，不整体合并第二人的个人记录。
+- main根目录AGENTS.md与整合前完全一致；AGENT.md保留原有历史，仅增量维护共用规则、接口和本次验证。README的更新、克隆及从零安装入口统一为main，各成员仍在个人分支开发。
+- 功能代码与已验证czh一致：保留yht来源模块、独立manipulation/provenance报告、共享Schema与解释引用校验，以及简洁来源展示和取消处理。未新增模型、训练、通用OCR或VLM推理，未更改模型阈值。
+- 本整合版本通过生产构建（含类型检查）、9组工作流测试、6组协议测试，以及实际start.cmd启动3项检查。本轮未重跑模型准确率评测；Python、模型权重与本机配置仍需按README准备，不随Git分发。
