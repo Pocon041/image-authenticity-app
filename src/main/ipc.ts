@@ -4,6 +4,9 @@ import { IPC, type Response, type ImageAsset, type WorkflowOptions } from '../sh
 import { AppError, failure } from './errors'
 import { importImage } from './image-import'
 import type { AnalysisSession } from './services/analysis-session'
+import { generateExplanation } from './services/explanation'
+import type { EvidenceBundle, ExplanationReport } from '../shared/protocol'
+
 
 export function registerDesktopIPC(
   getWindow: () => BrowserWindow | null,
@@ -143,4 +146,29 @@ export function registerDesktopIPC(
       }
     }
   )
+  ipcMain.handle(
+    IPC.explain,
+    async (event, taskId: unknown): Promise<Response<ExplanationReport>> => {
+      try {
+        requireWindow(event)
+        validateId(taskId)
+
+        // 从当前会话获取历史分析报告
+        const report = session.reportForTask(taskId as string)
+        if (!report || !report.workflow?.bundle) {
+          throw new AppError('INVALID_REQUEST', '未找到该任务的证据包，请先完成联合分析。')
+        }
+
+        // 提取并断言为 EvidenceBundle
+        const bundle = report.workflow.bundle as unknown as EvidenceBundle
+
+        // 调用解释生成服务（内部已包含 Ollama 调用与模板兜底）
+        const explanation = await generateExplanation(bundle, taskId as string)
+        
+        return { ok: true, data: explanation }
+      } catch (error) {
+        return failure(error)
+      }
+    }
+  )  
 }
