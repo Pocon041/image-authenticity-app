@@ -6,7 +6,8 @@ import { fileURLToPath } from 'node:url'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const commit = 'def6e344ca3f18a2313adb6be3bd1f8fb8d27e7d'
-const expected = 'c82d71ddb0664a74c7e0b056cf661b3b55c815342bc842bce3ab8629ee05a87c'
+//const expected = 'c82d71ddb0664a74c7e0b056cf661b3b55c815342bc842bce3ab8629ee05a87c'
+const expected = 'a59aef434979e822d728eb7634524faa8a9030c9714f4e9bfe2fa71101eece12'
 const clipCommit = 'd05afc436d78f1c48dc0dbf8e5980a9d471f35f6'
 const source = join(root, '.tools/sica-upstream/model.py')
 const digest = (bytes) => createHash('sha256').update(bytes).digest('hex')

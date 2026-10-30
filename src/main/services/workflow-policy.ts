@@ -1,14 +1,15 @@
 import type { ContentType, DetectorBackend, DetectorResult } from '../../shared/contracts'
 
 export const detectorNames: Record<DetectorBackend, string> = {
+  aigc: 'FSD AI 生成检测',
   sica: 'SICA',
   rita: 'RITA',
   rise: 'RiSE'
 }
 export function plannedDetectors(type: ContentType, supplement = false): DetectorBackend[] {
-  if (type === 'unsure') return ['sica', 'rita', 'rise']
+  if (type === 'unsure') return ['aigc', 'sica', 'rita', 'rise']
   const primary = type === 'photo' ? 'rita' : 'rise'
-  return supplement ? ['sica', primary, primary === 'rita' ? 'rise' : 'rita'] : ['sica', primary]
+  return supplement ? ['aigc', 'sica', primary, primary === 'rita' ? 'rise' : 'rita'] : ['aigc', 'sica', primary]
 }
 export function workflowFlags(detectors: DetectorResult[]): string[] {
   const flags: string[] = []

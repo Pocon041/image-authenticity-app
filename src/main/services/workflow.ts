@@ -102,7 +102,7 @@ export class WorkflowAnalysisService implements AnalysisService {
           if (
             result.mode !== 'local' ||
             result.imageId !== input.asset.id ||
-            (backend === 'sica' ? !result.classification : !result.localization)
+            (backend === 'aigc' ? !result.aigc : backend === 'sica' ? !result.classification : !result.localization)
           )
             throw new AppError('INFERENCE_FAILED', '检测器返回了不完整或非真实报告。')
           detectors.push({
@@ -110,6 +110,7 @@ export class WorkflowAnalysisService implements AnalysisService {
             status: 'completed',
             elapsedMs: Math.round(performance.now() - phaseStarted),
             ...(result.classification ? { classification: result.classification } : {}),
+            ...(result.aigc ? { aigc: result.aigc } : {}),
             ...(result.localization ? { localization: result.localization } : {})
           })
           steps[index].status = 'completed'
@@ -128,7 +129,7 @@ export class WorkflowAnalysisService implements AnalysisService {
         }
         await manifest('running')
       }
-      for (const backend of ['sica', 'rita', 'rise'] as const)
+      for (const backend of ['aigc', 'sica', 'rita', 'rise'] as const)
         if (!planned.includes(backend)) detectors.push({ backend, status: 'not_run', elapsedMs: 0 })
       const flags = workflowFlags(detectors)
       notify(94, '整理可追溯证据与附件')

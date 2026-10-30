@@ -9,6 +9,7 @@ export function App() {
   const local = workspace.backend !== 'mock'
   const sica = workspace.backend === 'sica'
   const rise = workspace.backend === 'rise'
+  const aigc = workspace.backend === 'aigc'
   const workflow = workspace.backend === 'workflow'
   const steps = [
     { number: '01', label: '导入图片', complete: !!workspace.image },
@@ -20,6 +21,8 @@ export function App() {
           ? 'SICA 分类'
           : rise
             ? 'RiSE 定位'
+            : aigc
+              ? 'FSD AI 生成检测'
             : local
               ? 'RITA 定位'
               : '模拟分析',
@@ -40,7 +43,9 @@ export function App() {
             <FlaskConical size={15} />
             {workflow
               ? '本地联合分析'
-              : sica
+              : aigc
+                ? 'FSD AI 生成检测'
+                : sica
                 ? 'SICA 图像二分类'
                 : rise
                   ? 'RiSE 文档定位'
@@ -58,6 +63,8 @@ export function App() {
               ? 'SICA 只给出整图真假分类，不识别伪造类型或定位区域。分数未经本项目校准，full 权重的效果记录不作独立泛化证明。'
               : rise
                 ? 'RiSE 对文档执行全图分块视觉定位，显示模型标记的可疑区域；未检出不代表真实，当前不提供整图真实性结论。'
+                : aigc
+                  ? 'FSD 在本地判断图片的 AI 生成倾向，展示模型分数与阈值；分数不是概率，不定位具体生成区域。来源归因默认关闭，结果尚未在本项目目标图片上完成效果验证。'
                 : local
                   ? 'RITA 模式使用本机官方权重，未配置时会提示错误；此模式不执行 AI 检测或 VLM，整图阈值仍需验证。'
                   : '当前为 Smoke 测试版本。所有分析描述均为模拟内容，未接入检测模型或语言模型。'}
@@ -136,6 +143,8 @@ export function App() {
           >
             RiSE 文档定位
           </button>
+          {/* [第三人任务] FSD 独立 AIGC 检测入口。 */}
+          <button aria-pressed={workspace.backend === 'aigc'} disabled={workspace.busy} onClick={() => workspace.selectBackend('aigc')}>FSD AI 生成检测</button>
         </div>
       </details>
     </WorkspaceLayout>

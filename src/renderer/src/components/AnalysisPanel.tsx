@@ -12,6 +12,8 @@ function backendName(backend?: AnalysisBackend): string {
         ? 'SICA'
         : backend === 'rita'
           ? 'RITA'
+          : backend === 'aigc'
+            ? 'FSD AIGC'
           : '模拟'
 }
 
@@ -25,7 +27,9 @@ function ReportContent({ report }: { report: AnalysisReport }) {
           <h3>{report.title}</h3>
           <span>
             耗时 {(report.elapsedMs / 1000).toFixed(1)} 秒 ·{' '}
-            {report.mode === 'local'
+          {report.backend === 'aigc'
+            ? '本地 FSD AI 生成检测'
+            : report.mode === 'local'
               ? rise
                 ? '本地 RiSE 文档定位'
                 : report.backend === 'sica'
@@ -56,6 +60,18 @@ function ReportContent({ report }: { report: AnalysisReport }) {
             </pre>
           </details>
           <p className="bundle-path">报告保存于：{report.classification.bundlePath}</p>
+        </div>
+      )}
+      {report.aigc && (
+        <div className="localization-result" data-testid="aigc-result">
+          <h4>AI 生成检测 · FSD</h4>
+          <p>模型判断：{report.aigc.decision === 'ai_generated' ? '检测倾向 AI 生成' : report.aigc.decision === 'non_ai' ? '检测倾向真实图像' : '结果不确定'}</p>
+          <p>FSD z-score：{report.aigc.zScore.toFixed(4)}（判定阈值 {report.aigc.threshold}；不是概率）</p>
+          <p>生成来源线索：{report.aigc.attributedSource ?? '未识别到受支持的生成器 / 来源未知'}</p>
+          {report.aigc.attributionScore !== null && <p>来源匹配分数：{report.aigc.attributionScore.toFixed(4)}（未经本项目校准）</p>}
+          <p>该分数反映模型取证残差特征，不定位具体生成区域；压缩、缩放或未知生成器可能影响结果。</p>
+          <details><summary>查看 FSD JSON 报告</summary><pre>{JSON.stringify(report.aigc.bundle, null, 2)}</pre></details>
+          <p className="bundle-path">报告保存于：{report.aigc.bundlePath}</p>
         </div>
       )}
       <div className="summary">
@@ -170,6 +186,8 @@ export function AnalysisPanel({ workspace: w }: { workspace: AnalysisWorkspace }
                     <span>
                       {step.backend === 'sica'
                         ? 'SICA · 整图筛查'
+                        : step.backend === 'aigc'
+                          ? 'FSD · AI 生成检测'
                         : step.backend === 'rita'
                           ? 'RITA · 图像定位'
                           : 'RiSE · 文档定位'}
@@ -220,6 +238,8 @@ export function AnalysisPanel({ workspace: w }: { workspace: AnalysisWorkspace }
                   ? '选择图片后运行 RiSE 文档定位。\n将自动分块覆盖整张图片。'
                   : w.backend === 'sica'
                     ? '选择图片后运行 SICA 二分类。\n需要配置 Python 和官方权重。'
+                    : w.backend === 'aigc'
+                      ? '此模式只运行 FSD AI 生成检测；需要配置本地 Python 与模型权重。'
                     : w.backend === 'rita'
                       ? '选择图片后启动本地 RITA 定位。\n需要配置 Python 和官方权重。'
                       : w.image
@@ -241,6 +261,12 @@ export function AnalysisPanel({ workspace: w }: { workspace: AnalysisWorkspace }
                     <Check size={13} />
                     模型分歧保留
                   </span>
+                </>
+              ) : w.backend === 'aigc' ? (
+                <>
+                  <span><Check size={13} />AI 生成倾向检测</span>
+                  <span><Check size={13} />FSD 取证分数与阈值</span>
+                  <span><Check size={13} />本机生成来源归因可选</span>
                 </>
               ) : (
                 <>
@@ -266,6 +292,8 @@ export function AnalysisPanel({ workspace: w }: { workspace: AnalysisWorkspace }
                   ? '此模式只运行视觉定位，不执行 OCR 或 VLM'
                   : w.backend === 'sica'
                     ? '此模式只运行整图分类，不生成掩码或 VLM 解释'
+                    : w.backend === 'aigc'
+                      ? 'FSD 不输出生成区域；来源归因默认关闭，未知来源不会猜测。'
                     : w.backend === 'rita'
                       ? '此模式仅运行篡改定位，其他模块未执行'
                       : '以上能力当前均未接入模型'}

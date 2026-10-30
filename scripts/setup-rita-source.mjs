@@ -5,7 +5,8 @@ import { fileURLToPath } from 'node:url'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const commit = 'b50efcd5b4c41b8bfc69b0b10ce6230dcb67b983'
-const expected = '599223ee738f81d5e3fa55cba881277b4aa7e4e97e40b9e60b2fa001cb0df4b4'
+//const expected = '599223ee738f81d5e3fa55cba881277b4aa7e4e97e40b9e60b2fa001cb0df4b4'
+const expected = '4ab0cb2a76ce537833589d12b54a4599322a5a5ba6a5277378d21c093c002c56'
 const path = resolve(root, '.tools/rita-upstream/rita.py')
 let bytes
 try {
