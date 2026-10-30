@@ -45,12 +45,18 @@ const input = {
 }
 const checks = []
 
-function fixtureServices({ decision = 'real', fail = [], tamper = false, abort } = {}) {
+function fixtureServices({
+  decision = 'real',
+  fail = [],
+  tamper = false,
+  abort,
+  includeAigc = false
+} = {}) {
   const calls = []
   let active = 0,
     maximum = 0
   const services = Object.fromEntries(
-    ['sica', 'rita', 'rise'].map((backend) => [
+    (includeAigc ? ['aigc', 'sica', 'rita', 'rise'] : ['sica', 'rita', 'rise']).map((backend) => [
       backend,
       {
         async analyze(image, context) {
@@ -127,7 +133,7 @@ function fixtureServices({ decision = 'real', fail = [], tamper = false, abort }
             await writeFile(join(directory, display.uri), displayBytes)
             const own = [],
               regions = []
-            if (backend !== 'sica') {
+            if (backend !== 'sica' && backend !== 'aigc') {
               const mask = await sharp({
                 create: { width: 16, height: 12, channels: 3, background: 'white' }
               })
@@ -155,7 +161,7 @@ function fixtureServices({ decision = 'real', fail = [], tamper = false, abort }
             const report = {
               schemaVersion: '1.0',
               reportId: id,
-              moduleId: 'manipulation',
+              moduleId: backend === 'aigc' ? 'aigc' : 'manipulation',
               imageId: image.imageId,
               taskId: context.taskId,
               mode: 'local',
@@ -164,7 +170,21 @@ function fixtureServices({ decision = 'real', fail = [], tamper = false, abort }
               createdAt: new Date().toISOString(),
               elapsedMs: 1,
               inputReportIds: [],
-              result: { decision: 'inconclusive', score: null, regions, operationHints: [] },
+              result:
+                backend === 'aigc'
+                  ? {
+                      decision: 'ai_generated',
+                      score: {
+                        name: 'fsd_z_score',
+                        value: -2.5,
+                        positiveClass: 'ai_generated',
+                        calibrated: false
+                      },
+                      threshold: -2,
+                      attribution: null,
+                      clues: []
+                    }
+                  : { decision: 'inconclusive', score: null, regions, operationHints: [] },
               evidence: [
                 {
                   evidenceId: `${id}:evidence`,
@@ -198,26 +218,37 @@ function fixtureServices({ decision = 'real', fail = [], tamper = false, abort }
               id,
               imageId: image.imageId,
               mode: 'local',
-              ...(backend === 'sica'
+              ...(backend === 'aigc'
                 ? {
-                    classification: {
+                    aigc: {
                       ...shared,
-                      decision,
-                      score: decision === 'real' ? 0.1 : 0.9,
-                      threshold: 0.5,
-                      checkpointVariant: 'test-only'
+                      decision: 'ai_generated',
+                      zScore: -2.5,
+                      threshold: -2,
+                      attributedSource: null,
+                      attributionScore: null
                     }
                   }
-                : {
-                    localization: {
-                      ...shared,
-                      decision: 'inconclusive',
-                      score: null,
-                      regionCount: 1,
-                      manipulatedAreaFraction: 0.1,
-                      overlayDataUrl: input.asset.dataUrl
+                : backend === 'sica'
+                  ? {
+                      classification: {
+                        ...shared,
+                        decision,
+                        score: decision === 'real' ? 0.1 : 0.9,
+                        threshold: 0.5,
+                        checkpointVariant: 'test-only'
+                      }
                     }
-                  })
+                  : {
+                      localization: {
+                        ...shared,
+                        decision: 'inconclusive',
+                        score: null,
+                        regionCount: 1,
+                        manipulatedAreaFraction: 0.1,
+                        overlayDataUrl: input.asset.dataUrl
+                      }
+                    })
             }
           } finally {
             active--
@@ -244,6 +275,35 @@ function context(contentType, extra = {}) {
     ...extra
   }
 }
+
+const aigcFixture = fixtureServices({ includeAigc: true })
+const withAigc = await new WorkflowAnalysisService(root, aigcFixture.services).analyze(
+  input,
+  context('unsure')
+)
+assert.equal(withAigc.workflow.status, 'completed')
+assert.deepEqual(aigcFixture.calls, ['aigc', 'sica', 'rita', 'rise'])
+const aigcBundle = withAigc.workflow.bundle
+const aigcReport = aigcBundle.reports.find((report) => report.moduleId === 'aigc')
+const manipulationReport = aigcBundle.reports.find((report) => report.moduleId === 'manipulation')
+assert.equal(aigcReport.result.score.value, -2.5)
+assert.equal(aigcReport.evidence.length, 1)
+const evidenceIds = aigcBundle.reports.flatMap((report) =>
+  report.evidence.map((entry) => entry.evidenceId)
+)
+assert.equal(
+  new Set(evidenceIds).size,
+  evidenceIds.length,
+  'Evidence IDs must have a single owner across reports'
+)
+assert.equal(
+  manipulationReport.evidence.some(
+    (entry) => entry.evidenceId === aigcReport.evidence[0].evidenceId
+  ),
+  false
+)
+assert.equal(withAigc.workflow.summary.aigc.zScore, -2.5)
+checks.push('completed AIGC retains its independent report and globally unique evidence IDs')
 
 const photo = fixtureServices()
 const photoReport = await new WorkflowAnalysisService(root, photo.services).analyze(

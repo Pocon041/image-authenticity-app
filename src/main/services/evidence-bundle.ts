@@ -390,18 +390,18 @@ const assets: Artifact[] = [...common.artifacts],
           detector: detector.backend
         }))
       )
+      evidence.push(
+        ...report.evidence.map((entry) => ({
+          ...entry,
+          data: {
+            ...entry.data,
+            detector: detector.backend,
+            producer: report.producer,
+            sourceReportId: report.reportId
+          }
+        }))
+      )
     }
-    evidence.push(
-      ...report.evidence.map((entry) => ({
-        ...entry,
-        data: {
-          ...entry.data,
-          detector: detector.backend,
-          producer: report.producer,
-          sourceReportId: report.reportId
-        }
-      }))
-    )
     if (detector.localization) {
       detector.regionPreviews = []
       const manipulationResult = report.moduleId === 'manipulation' ? report.result : null
