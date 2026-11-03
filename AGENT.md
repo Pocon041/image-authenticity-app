@@ -125,7 +125,7 @@ Electron 45 延迟下载导致首次启动出现 `Electron uninstall` 的修复�
 - 当前 APP 图片 ID 使用原始字节 SHA256，重复导入保持一致；主进程保留原始字节快照。
 - `bundle.json` 含独立 `manipulation` 和 `provenance` 报告；`analysis.json` 是简明篡改视图，不是 `EvidenceBundle`。
 - 正式引用的 `reportId` / `evidenceId` 沿用完整包，按 `moduleId` 读取，不依赖报告排列顺序；交接见 `docs/EXPLANATION_HANDOFF.md`。
-- 共用校验复用 Schema，校验 `status` / `result` / `error` 和 confidence 来源/校准状态；`validateExplanationReport(report)` 只校验结构，显式传入上游数组才校验引用，`[]` 不等于省略。引用校验不证明解释正确；当前未接入 VLM 或生成解释占位结果。
+- 共用校验复用 Schema，校验 `status` / `result` / `error` 和 confidence 来源/校准状态；`validateExplanationReport(report)` 只校验结构，显式传入上游数组才校验引用，`[]` 不等于省略。引用校验不证明解释正确；解释模块已接入本地 Ollama VLM，结构化字段由代码装配，VLM 只生成分区短句，失败时降级为规则模板。
 - 来源依赖在项目统一 `.venv` 安装；可见水印 OCR 只提供中英文关键词候选，SDXL 载荷仅覆盖公开固定配置。缺少元数据/凭证/水印不证明真假，未运行/失败状态不能写成未检出。
 
 ## 8. 当前状态摘要
@@ -139,7 +139,7 @@ Electron 45 延迟下载导致首次启动出现 `Electron uninstall` 的修复�
 - README 已按 `image-authenticity-app` 重写，包含结构、协作边界、启动命令、从基础版增量升级步骤和后续接入位置。
 - 第一阶段报告协议 v1.0 初稿、共享 JSON Schema、样例生成与校验脚本已补齐。
 - 第一阶段材料已整理 12 张原文件，三份原生标注单独保存，唯一 `vlm-input.example.json` 面向 IMD2020 修复样本；材料通过文件级校验。
-- 第四人解释模块已接入：提供 `generateExplanation` 服务，消费前三人证据包，支持本地 Ollama VLM（JSON Schema 约束）生成智能解释，并在 VLM 调用失败时降级为规则模板兜底；已打通 IPC 通道与前端界面展示。
+- 第四人解释模块已接入：`generateExplanation` 消费前三人证据包；`finalDecision` / `confidence` / `claims` / `unresolved` 由代码从上游证据确定性装配，VLM 只按分区事实生成 6 段短句（JSON Schema，无数组），逐段做角色/绝对化校验，失败段落用规则文本回填；整体 VLM 失败时降级为规则模板。已打通 IPC 通道与前端界面展示。模型名、Ollama 地址、`num_ctx`/`num_predict`/送图上限由 `config/explanation.local.json`（模板 `config/explanation.example.json`）驱动，优先级为显式参数 > `OLLAMA_HOST` > local > example > 内置默认，改配置无需重启；配置缺失时逐级回退而非报错。
 - SICA 独立二分类模式、RITA 独立定位模式、RiSE-9 RGB 独立文档定位模式、FSD 独立 AIGC 分析入口均已接入；HiFi-Net 运行入口已移除，不参与联合流程。
 - 联合流程已加入 FSD：在 SICA 整图筛查及 RITA/RiSE 定位前先运行 FSD；其判断、z-score、阈值、来源线索状态写入联合简明 JSON 和完整报告，界面先显示 AIGC 结果。
 - 第一人来源模块 v0.1.0：完整联合包增加 `provenance` 报告及独立 `reports/provenance.json`；记录原文件 SHA-256、显示副本、EXIF/XMP/IPTC/GPS 摘要、C2PA 活动清单与签名验证状态、可见水印候选和 SDXL 固定 48 位 DWT-DCT 载荷。
@@ -156,12 +156,14 @@ Electron 45 延迟下载导致首次启动出现 `Electron uninstall` 的修复�
 - RiSE：RiSE-9 RGB 真实权重 868 项 strict=True 加载；两张用户样例均在已知修改位置产生最大连通区域，真实 Electron Smoke 7 组通过；额外标记仍存在，不构成正式质量验收。
 - FSD：固定上游提交，Python 3.13 隔离环境及推理依赖已准备；检测权重缓存完整，worker 已对 `sample-001` 实际执行成功（z-score `-2.6559`、默认阈值 `-2.0`，按 FSD 规则判为 `ai_generated`）；来源归因缓存长度校验与 HTTP Range 续传已加入，模型加载及真实图片推理通过。项目数据上的效果验证未做，联合流程真实 Smoke 尚待验证。
 - Provenance：Python 语法编译、7 项 provenance 合成像素/词表测试、C2PA/Pillow 来源读取、8 项 C2PA 容器、EXIF/XMP/IPTC 元数据、3 项水印元数据检查及 TypeScript 检查通过。真实图片上的检出准确率/鲁棒性尚未验收；发布包尚未封装 Python 运行时。
+- 第四人解释模块（方案 G）：7/7 样本 `mode=local`、`done_reason=stop` 无截断；`claims=7`、重复 claim=0、跨类引用=0；`validateExplanationReport` 全部通过；单样本 8–16s，7 样本合计 72.5s（RTX 3050 Ti 4GB，Qwen3-VL-2B）。
 - 既有模拟主流程、RITA 入口、SICA、RiSE 和联合流程 Smoke 已做过回归；具体项数和历史结果见对应模块文档/工作记录。
 
 ### 已知限制
 
 - 尚无校准整图阈值时 `decision=inconclusive`；响应分数、距离、LPC confidence 等均不能冒充校准概率。
 - SICA 的 `fake` 不等同局部篡改；RITA 真实图误报面积较高，图像级分类弱；RiSE 文档样例有额外标记，质量未验收；FSD 联合流程 Smoke 与项目数据效果验证未完成。
+- 解释模块使用 2B VLM，主要能力是复述分区事实；跨模块综合、复杂推理与开放式追问仍受模型能力限制，解释文本为辅助描述，不构成鉴定结论。
 - HiFi-Net 已移除运行入口，不参与当前联合流程；历史评测仅作归档。
 - 来源限制：OCR 线索不能证明文本是水印；当前 OCR 可能误报正文或装饰字，也可能漏掉不可识别内容；词表不穷尽所有服务，视觉特征不证明生成来源。SDXL 固定载荷可能被伪造，压缩/缩放/裁剪可造成漏检，超过 1200 万像素标为未运行；不支持 SynthID 和通用隐形水印。无元数据不推断被剥离；无 C2PA 标记不排除外部凭证；签名/本地信任状态不等于内容真实。
 - 发布包 Python/权重分发、CPU 性能、整图阈值、大规模独立文档质量验收仍未完成；Windows 应用目录曾生成，但打包后隐藏窗口截图步骤曾超时，尚未通过发布验收。

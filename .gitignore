@@ -18,4 +18,8 @@ config/hifi.local.json
 config/hifi.loc.local.json
 config/rise.local.json
 config/aigc.local.json
+config/explanation.local.json
 __pycache__/
+分工.md
+.workbuddy/memory/2026-11-03.md
+.workbuddy/memory/2026-11-04.md
