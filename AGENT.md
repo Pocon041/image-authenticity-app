@@ -104,6 +104,7 @@ Windows 启动入口为 `start.cmd`；`run.cmd` 负责优先使用 `.tools/` 下
 - `run.cmd run smoke:sica`：真实 Electron 中验证完整分类、缺权重、模式隔离和实际子进程取消。
 - `run.cmd run rise:setup` / `rise:infer` / `smoke:rise`：RiSE 源码准备、真实单图与桌面检查。
 - `run.cmd run provenance:setup`：在项目统一的 `.venv` 安装 C2PA、图像元数据、RapidOCR 与水印检测依赖。
+- `run.cmd run explanation:setup -- --model <本地Ollama标签>`：生成 Git 忽略的本地 Qwen3-VL/Ollama 配置；只写配置，不下载模型，不修改云端解释接口。
 - `run.cmd run test:workflow` / `smoke:workflow`：联合编排逻辑与真实桌面流程检查。
 - `run.cmd run report:validate -- <analysis.json>`：简明报告 Schema、身份、相对路径与引用校验。
 - `<配置的Python> backend/sica/evaluate.py --casia-root <划分清单目录> --output <目录>`：只读运行本地 CASIA 子集，阈值固定 0.5，记录每图预测和分组统计，不声称独立泛化。
@@ -142,6 +143,7 @@ Electron 45 延迟下载导致首次启动出现 `Electron uninstall` 的修复�
 - 第一阶段报告协议 v1.0 初稿、共享 JSON Schema、样例生成与校验脚本已补齐。
 - 第一阶段材料已整理 12 张原文件，三份原生标注单独保存，唯一 `vlm-input.example.json` 面向 IMD2020 修复样本；材料通过文件级校验。
 - 第四人解释模块已接入：`generateExplanation` 消费前三人证据包；`finalDecision` / `confidence` / `claims` / `unresolved` 由代码从上游证据确定性装配，VLM 只按分区事实生成 6 段短句（JSON Schema，无数组），逐段做角色/绝对化校验，失败段落用规则文本回填；整体 VLM 失败时降级为规则模板。已打通 IPC 通道与前端界面展示。模型名、Ollama 地址、`num_ctx`/`num_predict`/送图上限由 `config/explanation.local.json`（模板 `config/explanation.example.json`）驱动，优先级为显式参数 > `OLLAMA_HOST` > local > example > 内置默认，改配置无需重启；配置缺失时逐级回退而非报错。
+- 本地解释默认使用 `srdp-qwen3-vl-2b`（由 `Qwen/Qwen3-VL-2B-Instruct-GGUF` 导入 Ollama 的本地标签）；`explanation:setup` 只生成 Git 忽略的本机配置，不下载模型。原有 `generateExplanation` 的 `modelName` / `ollamaHost` 参数和云端 host/model 配置继续保留。
 - SICA 独立二分类模式、RITA 独立定位模式、RiSE-9 RGB 独立文档定位模式、FSD 独立 AIGC 分析入口均已接入；HiFi-Net 运行入口已移除，不参与联合流程。
 - 联合流程已加入 FSD：在 SICA 整图筛查及 RITA/RiSE 定位前先运行 FSD；其判断、z-score、阈值、来源线索状态写入联合简明 JSON 和完整报告，界面先显示 AIGC 结果。
 - 第一人来源模块 v0.1.0：完整联合包增加 `provenance` 报告及独立 `reports/provenance.json`；记录原文件 SHA-256、显示副本、EXIF/XMP/IPTC/GPS 摘要、C2PA 活动清单与签名验证状态、可见水印候选和 SDXL 固定 48 位 DWT-DCT 载荷。

@@ -78,7 +78,7 @@ npx tsx work/test-all-bundles.ts --model <name> --host <url>
 
 | 字段 | 含义 | 类型 | 默认值 |
 |---|---|---|---|
-| `model` | Ollama 模型名 | 非空字符串 | `modelscope.cn/Qwen/Qwen3-VL-2B-Instruct-GGUF` |
+| `model` | Ollama 模型名；默认是从 `Qwen/Qwen3-VL-2B-Instruct-GGUF` 导入的本地标签 | 非空字符串 | `srdp-qwen3-vl-2b` |
 | `host` | Ollama 地址 | 合法 URL（无协议头时按 `http://` 补全） | `http://127.0.0.1:11434` |
 | `numCtx` | 上下文窗口 `num_ctx` | 正整数 | `8192` |
 | `numPredict` | 输出上限 `num_predict` | 正整数 | `1200` |
@@ -97,6 +97,17 @@ npx tsx work/test-all-bundles.ts --model <name> --host <url>
 3. `config/explanation.local.json`；若设置了 `SRDP_EXPLANATION_CONFIG`，则用它指定的路径替代该文件（语义与 `SRDP_RITA_CONFIG` 一致，不新增配置层）。
 4. `config/explanation.example.json`。
 5. 代码内置默认值。
+
+### 本地 Qwen3-VL 配置
+
+当前默认走本机 Ollama。先将 `Qwen/Qwen3-VL-2B-Instruct-GGUF` 导入 Ollama，并在 `ollama list` 中确认实际标签；如果使用 `srdp-qwen3-vl-2b`，可以运行：
+
+```powershell
+ollama serve
+.\run.cmd run explanation:setup -- --model srdp-qwen3-vl-2b
+```
+
+`explanation:setup` 只创建 Git 忽略的 `config/explanation.local.json`，不会下载模型或连接远程服务。图片解释时 Electron 只请求 `http://127.0.0.1:11434/api/chat`。已有云端调用仍可使用：把 `host` 和 `model` 配置为原来的服务地址与模型，或通过 `generateExplanation` 的显式参数传入，不会被本地配置逻辑删除。
 
 每次调用 `generateExplanation` 都会重新读文件，**改完 JSON 保存即可，下一次分析生效，不用重启应用**。文件缺失、JSON 非法或字段类型不对时逐级回退，只影响出错的那个字段，不抛错——这与 rita/sica/rise/aigc「local 缺失即 `MODEL_NOT_READY`」不同：解释模块是最后一步，配置不全也应能退化运行。例外是**显式参数**：传入 `null`、空串或非法 URL 会直接抛错，不做静默回退，避免掩盖调用方 bug。
 

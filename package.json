@@ -30,6 +30,7 @@
     "test:provenance-metadata": "node tests/provenance-metadata.mjs",
     "test:provenance-reader": "node tests/provenance-reader.mjs",
     "provenance:setup": "node scripts/setup-provenance.mjs",
+    "explanation:setup": "node scripts/setup-explanation-local.mjs",
     "report:validate": "node scripts/validate-manipulation-summary.mjs",
     "smoke:workflow": "npm run build && node tests/workflow-smoke.mjs",
     "smoke:sica": "npm run build && node tests/sica-smoke.mjs",
