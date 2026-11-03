@@ -10,7 +10,7 @@ import type {
 export function useAnalysisWorkspace() {
   const [image, setImage] = useState<ImageAsset | null>(null)
   const [backend, setBackend] = useState<AnalysisBackend>('workflow')
-  const [contentType, setContentType] = useState<ContentType>('unsure')
+  const [contentType, setContentType] = useState<ContentType | 'auto'>('auto')
   const [report, setReport] = useState<AnalysisReport | null>(null)
   const [progress, setProgress] = useState<AnalysisProgress | null>(null)
   const [status, setStatus] = useState<'idle' | 'picking' | 'running' | 'cancelling'>('idle')
@@ -131,7 +131,7 @@ export function useAnalysisWorkspace() {
   return {
     backend,
     contentType,
-    selectContentType(next: ContentType) {
+    selectContentType(next: ContentType | 'auto') {
       if (locked.current) return
       setContentType(next)
       setReport(null)

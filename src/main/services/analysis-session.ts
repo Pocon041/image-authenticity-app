@@ -58,7 +58,8 @@ export class AnalysisSession {
         !this.previousReport?.workflow ||
         this.previousReport.id !== workflowOptions.supplementFromTaskId ||
         this.previousReport.imageId !== imageId ||
-        this.previousReport.workflow.contentType !== workflowOptions.contentType)
+        (workflowOptions.contentType !== 'auto' &&
+          this.previousReport.workflow.contentType !== workflowOptions.contentType))
     )
       throw new AppError('STALE_IMAGE', '补充分析的报告已失效，请重新开始分析。')
     const task = { taskId, controller: new AbortController() }

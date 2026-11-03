@@ -146,19 +146,22 @@ export function ImagePanel({ workspace: w }: { workspace: AnalysisWorkspace }) {
             value={w.contentType}
             disabled={w.busy}
             onChange={(event) =>
-              w.selectContentType(event.target.value as 'photo' | 'document' | 'unsure')
+              w.selectContentType(event.target.value as 'auto' | 'photo' | 'document' | 'unsure')
             }
           >
+            <option value="auto">自动路由（推荐）</option>
             <option value="photo">普通照片</option>
             <option value="document">文档 / 票据 / 截图</option>
             <option value="unsure">不确定 / 混合内容</option>
           </select>
           <small data-testid="route-plan">
-            {w.contentType === 'document'
-              ? '包括拍摄的小票和文字截图。'
-              : w.contentType === 'photo'
-                ? '适用于人物、物品和自然场景。'
-                : '将运行两种定位检查，耗时稍长。'}
+            {w.contentType === 'auto'
+              ? '预处理后自动判定类型并选择检测器；低置信度时运行全部检测。'
+              : w.contentType === 'document'
+                ? '包括拍摄的小票和文字截图。'
+                : w.contentType === 'photo'
+                  ? '适用于人物、物品和自然场景。'
+                  : '将运行两种定位检查，耗时稍长。'}
           </small>
         </div>
       )}

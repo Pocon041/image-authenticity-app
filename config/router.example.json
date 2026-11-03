@@ -1,0 +1,10 @@
+{
+  "pythonPath": "python",
+  "clipSourcePath": ".tools/openai-clip",
+  "checkpointPath": "weights/sica/sica_weight_train.pth",
+  "checkpointSha256": null,
+  "checkpointVariant": "train",
+  "device": "auto",
+  "marginThreshold": 0.15,
+  "timeoutMs": 180000
+}

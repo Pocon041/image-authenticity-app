@@ -13,7 +13,7 @@ await mkdir(temporary, { recursive: true })
 await build({
   input: join(root, 'src/main/services/workflow.ts'),
   platform: 'node',
-  external: [/^node:/, 'sharp', 'ajv', 'ajv-formats'],
+  external: [/^node:/, 'sharp', 'ajv', 'ajv-formats', 'electron'],
   output: { file: join(temporary, 'workflow.mjs'), format: 'esm' }
 })
 await build({
@@ -45,12 +45,18 @@ const input = {
 }
 const checks = []
 
-function fixtureServices({ decision = 'real', fail = [], tamper = false, abort } = {}) {
+function fixtureServices({
+  decision = 'real',
+  fail = [],
+  tamper = false,
+  abort,
+  includeAigc = false
+} = {}) {
   const calls = []
   let active = 0,
     maximum = 0
   const services = Object.fromEntries(
-    ['sica', 'rita', 'rise'].map((backend) => [
+    (includeAigc ? ['aigc', 'sica', 'rita', 'rise'] : ['sica', 'rita', 'rise']).map((backend) => [
       backend,
       {
         async analyze(image, context) {
@@ -127,7 +133,7 @@ function fixtureServices({ decision = 'real', fail = [], tamper = false, abort }
             await writeFile(join(directory, display.uri), displayBytes)
             const own = [],
               regions = []
-            if (backend !== 'sica') {
+            if (backend !== 'sica' && backend !== 'aigc') {
               const mask = await sharp({
                 create: { width: 16, height: 12, channels: 3, background: 'white' }
               })
@@ -155,7 +161,7 @@ function fixtureServices({ decision = 'real', fail = [], tamper = false, abort }
             const report = {
               schemaVersion: '1.0',
               reportId: id,
-              moduleId: 'manipulation',
+              moduleId: backend === 'aigc' ? 'aigc' : 'manipulation',
               imageId: image.imageId,
               taskId: context.taskId,
               mode: 'local',
@@ -164,7 +170,21 @@ function fixtureServices({ decision = 'real', fail = [], tamper = false, abort }
               createdAt: new Date().toISOString(),
               elapsedMs: 1,
               inputReportIds: [],
-              result: { decision: 'inconclusive', score: null, regions, operationHints: [] },
+              result:
+                backend === 'aigc'
+                  ? {
+                      decision: 'ai_generated',
+                      score: {
+                        name: 'fsd_z_score',
+                        value: -2.5,
+                        positiveClass: 'ai_generated',
+                        calibrated: false
+                      },
+                      threshold: -2,
+                      attribution: null,
+                      clues: []
+                    }
+                  : { decision: 'inconclusive', score: null, regions, operationHints: [] },
               evidence: [
                 {
                   evidenceId: `${id}:evidence`,
@@ -198,26 +218,37 @@ function fixtureServices({ decision = 'real', fail = [], tamper = false, abort }
               id,
               imageId: image.imageId,
               mode: 'local',
-              ...(backend === 'sica'
+              ...(backend === 'aigc'
                 ? {
-                    classification: {
+                    aigc: {
                       ...shared,
-                      decision,
-                      score: decision === 'real' ? 0.1 : 0.9,
-                      threshold: 0.5,
-                      checkpointVariant: 'test-only'
+                      decision: 'ai_generated',
+                      zScore: -2.5,
+                      threshold: -2,
+                      attributedSource: null,
+                      attributionScore: null
                     }
                   }
-                : {
-                    localization: {
-                      ...shared,
-                      decision: 'inconclusive',
-                      score: null,
-                      regionCount: 1,
-                      manipulatedAreaFraction: 0.1,
-                      overlayDataUrl: input.asset.dataUrl
+                : backend === 'sica'
+                  ? {
+                      classification: {
+                        ...shared,
+                        decision,
+                        score: decision === 'real' ? 0.1 : 0.9,
+                        threshold: 0.5,
+                        checkpointVariant: 'test-only'
+                      }
                     }
-                  })
+                  : {
+                      localization: {
+                        ...shared,
+                        decision: 'inconclusive',
+                        score: null,
+                        regionCount: 1,
+                        manipulatedAreaFraction: 0.1,
+                        overlayDataUrl: input.asset.dataUrl
+                      }
+                    })
             }
           } finally {
             active--
@@ -244,6 +275,35 @@ function context(contentType, extra = {}) {
     ...extra
   }
 }
+
+const aigcFixture = fixtureServices({ includeAigc: true })
+const withAigc = await new WorkflowAnalysisService(root, aigcFixture.services).analyze(
+  input,
+  context('unsure')
+)
+assert.equal(withAigc.workflow.status, 'completed')
+assert.deepEqual(aigcFixture.calls, ['aigc', 'sica', 'rita', 'rise'])
+const aigcBundle = withAigc.workflow.bundle
+const aigcReport = aigcBundle.reports.find((report) => report.moduleId === 'aigc')
+const manipulationReport = aigcBundle.reports.find((report) => report.moduleId === 'manipulation')
+assert.equal(aigcReport.result.score.value, -2.5)
+assert.equal(aigcReport.evidence.length, 1)
+const evidenceIds = aigcBundle.reports.flatMap((report) =>
+  report.evidence.map((entry) => entry.evidenceId)
+)
+assert.equal(
+  new Set(evidenceIds).size,
+  evidenceIds.length,
+  'Evidence IDs must have a single owner across reports'
+)
+assert.equal(
+  manipulationReport.evidence.some(
+    (entry) => entry.evidenceId === aigcReport.evidence[0].evidenceId
+  ),
+  false
+)
+assert.equal(withAigc.workflow.summary.aigc.zScore, -2.5)
+checks.push('completed AIGC retains its independent report and globally unique evidence IDs')
 
 const photo = fixtureServices()
 const photoReport = await new WorkflowAnalysisService(root, photo.services).analyze(
@@ -316,6 +376,78 @@ assert.deepEqual(supplement.calls, ['rise'])
 assert.equal(supplemented.workflow.detectors.filter((d) => d.reused).length, 2)
 checks.push('supplement runs only missing detector and preserves completed evidence')
 
+const autoPhoto = fixtureServices()
+const autoPhotoReport = await new WorkflowAnalysisService(root, autoPhoto.services, async () => ({
+  mode: 'auto',
+  status: 'completed',
+  decision: 'photo',
+  scores: { photo: 0.9, document: 0.1 },
+  margin: 0.8,
+  marginThreshold: 0.1,
+  elapsedMs: 12
+})).analyze(input, context('auto'))
+assert.deepEqual(autoPhoto.calls, ['sica', 'rita'])
+assert.equal(autoPhotoReport.workflow.contentType, 'photo')
+assert.equal(autoPhotoReport.workflow.routing.decision, 'photo')
+assert.equal(autoPhotoReport.workflow.routing.scores.photo, 0.9)
+assert.equal(autoPhotoReport.workflow.summary.routing.status, 'completed')
+assert.equal(autoPhotoReport.workflow.summary.contentType, 'photo')
+checks.push('auto routing follows the routed photo plan and records routing evidence')
+
+const autoUnsure = fixtureServices()
+await new WorkflowAnalysisService(root, autoUnsure.services, async () => ({
+  mode: 'auto',
+  status: 'completed',
+  decision: 'unsure',
+  scores: { photo: 0.5, document: 0.5 },
+  margin: 0,
+  marginThreshold: 0.1,
+  elapsedMs: 10
+})).analyze(input, context('auto'))
+assert.deepEqual(autoUnsure.calls, ['sica', 'rita', 'rise'])
+checks.push('low-confidence routing runs the full detector set')
+
+const autoFailed = fixtureServices({ includeAigc: true })
+const routedCalls = { count: 0 }
+const autoFailedReport = await new WorkflowAnalysisService(
+  root,
+  autoFailed.services,
+  async () => {
+    routedCalls.count++
+    throw new Error('route down')
+  }
+).analyze(input, context('auto'))
+assert.equal(routedCalls.count, 1)
+assert.deepEqual(autoFailed.calls, ['aigc', 'sica', 'rita', 'rise'])
+assert.equal(autoFailedReport.workflow.status, 'completed')
+assert.equal(autoFailedReport.workflow.routing.status, 'failed')
+assert.equal(autoFailedReport.workflow.routing.decision, 'unsure')
+assert.equal(autoFailedReport.workflow.summary.routing.error.code, 'INFERENCE_FAILED')
+checks.push('router failure falls back to the full detector set and is recorded')
+
+const manual = fixtureServices()
+const manualCalls = { count: 0 }
+const manualReport = await new WorkflowAnalysisService(
+  root,
+  manual.services,
+  async () => {
+    manualCalls.count++
+    return {
+      mode: 'auto',
+      status: 'completed',
+      decision: 'photo',
+      scores: { photo: 1, document: 0 },
+      margin: 1,
+      marginThreshold: 0.1,
+      elapsedMs: 1
+    }
+  }
+).analyze(input, context('document'))
+assert.equal(manualCalls.count, 0)
+assert.equal(manualReport.workflow.routing.mode, 'manual')
+assert.equal(manualReport.workflow.routing.status, 'skipped')
+checks.push('manual content type skips the router and records a manual routing entry')
+
 const failed = fixtureServices({ fail: ['sica', 'rita', 'rise'] })
 const failedReport = await new WorkflowAnalysisService(root, failed.services).analyze(
   input,
@@ -355,11 +487,34 @@ await assert.rejects(
 checks.push('artifact corruption is rejected')
 
 const sessionFixture = fixtureServices()
-const session = new AnalysisSession(new WorkflowAnalysisService(root, sessionFixture.services))
+const session = new AnalysisSession(
+  new WorkflowAnalysisService(root, sessionFixture.services, async () => ({
+    mode: 'auto',
+    status: 'completed',
+    decision: 'document',
+    scores: { photo: 0.2, document: 0.8 },
+    margin: 0.6,
+    marginThreshold: 0.1,
+    elapsedMs: 5
+  }))
+)
 session.selectImage(input)
-await session.analyze(input.asset.id, randomUUID(), () => {}, 'workflow', {
-  contentType: 'document'
-})
+const sessionFirst = await session.analyze(
+  input.asset.id,
+  randomUUID(),
+  () => {},
+  'workflow',
+  { contentType: 'document' }
+)
+const sessionSupplement = await session.analyze(
+  input.asset.id,
+  randomUUID(),
+  () => {},
+  'workflow',
+  { contentType: 'auto', supplementFromTaskId: sessionFirst.id }
+)
+assert.equal(sessionSupplement.workflow.routing.mode, 'auto')
+assert.equal(sessionSupplement.workflow.routing.decision, 'document')
 await assert.rejects(
   session.analyze(input.asset.id, randomUUID(), () => {}, 'workflow', {
     contentType: 'document',
@@ -367,7 +522,7 @@ await assert.rejects(
   }),
   /已失效/
 )
-checks.push('session rejects stale supplement references')
+checks.push('session rejects stale supplement references and accepts auto supplements')
 
 await writeFile(
   join(temporary, 'result.json'),

@@ -37,8 +37,19 @@ export type ContentType = 'photo' | 'document' | 'unsure'
 // [第三人任务] FSD 是联合流程的首个独立检测步骤。
 export type DetectorBackend = 'aigc' | 'sica' | 'rita' | 'rise'
 export interface WorkflowOptions {
-  contentType: ContentType
+  contentType: ContentType | 'auto'
   supplementFromTaskId?: string
+}
+// 预处理后的内容路由证据：只决定检测器组合，不构成篡改结论。
+export interface WorkflowRouting {
+  mode: 'auto' | 'manual'
+  status: 'completed' | 'failed' | 'skipped'
+  decision: ContentType | null
+  scores: { photo: number; document: number } | null
+  margin: number | null
+  marginThreshold: number | null
+  elapsedMs: number
+  error?: { code: string; message: string }
 }
 export interface WorkflowStep {
   backend: DetectorBackend
@@ -71,6 +82,7 @@ export interface WorkflowResult {
   summaryPath: string
   summary: Record<string, unknown>
   previousTaskId?: string
+  routing?: WorkflowRouting
 }
 
 export interface ImageAsset {

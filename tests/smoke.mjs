@@ -56,6 +56,7 @@ try {
         'cancelAnalysis',
         'chooseImage',
         'clearImage',
+        'explain',
         'onAnalysisProgress',
         'openReportDirectory'
       ]

@@ -11,20 +11,22 @@ import type { ImportedImage } from '../image-import'
 import type { AnalysisContext, AnalysisService } from './analysis'
 import { aggregateEvidence, prepareWorkflowInput } from './evidence-bundle'
 import { detectorNames, plannedDetectors, workflowFlags } from './workflow-policy'
+import { routeContentType } from './router'
+import type { ContentType, WorkflowRouting } from '../../shared/contracts'
 
 export class WorkflowAnalysisService implements AnalysisService {
   constructor(
     private readonly root: string,
-    private readonly services: Record<DetectorBackend, AnalysisService>
+    private readonly services: Record<DetectorBackend, AnalysisService>,
+    private readonly route: typeof routeContentType = routeContentType
   ) {}
 
   async analyze(input: ImportedImage, context: AnalysisContext): Promise<AnalysisReport> {
     const started = performance.now()
     const options = context.workflowOptions
-    if (!options || !['photo', 'document', 'unsure'].includes(options.contentType))
+    if (!options || !['photo', 'document', 'unsure', 'auto'].includes(options.contentType))
       throw new AppError('INVALID_REQUEST', '图片类型无效。')
     const previous = context.previousReport?.workflow
-    const planned = plannedDetectors(options.contentType, !!previous)
     const output = join(this.root, 'work/analysis-runs', context.taskId)
     await mkdir(join(this.root, 'work/analysis-runs'), { recursive: true })
     try {
@@ -33,7 +35,7 @@ export class WorkflowAnalysisService implements AnalysisService {
       throw new AppError('INVALID_REQUEST', '任务ID已使用，请重新开始。')
     }
     const detectors: DetectorResult[] = []
-    const steps: WorkflowStep[] = planned.map((backend) => ({ backend, status: 'pending' }))
+    const steps: WorkflowStep[] = []
     const notify = (percent: number, label: string) =>
       context.onProgress({
         taskId: context.taskId,
@@ -43,6 +45,8 @@ export class WorkflowAnalysisService implements AnalysisService {
         label,
         steps: steps.map((step) => ({ ...step }))
       })
+    let resolvedType: ContentType = 'unsure'
+    let routing: WorkflowRouting | undefined
     const manifest = async (status: string) =>
       writeFile(
         join(output, 'run.json'),
@@ -50,7 +54,9 @@ export class WorkflowAnalysisService implements AnalysisService {
           {
             taskId: context.taskId,
             imageId: input.asset.id,
-            contentType: options.contentType,
+            selection: options.contentType,
+            contentType: resolvedType,
+            routing: routing ?? null,
             previousTaskId: options.supplementFromTaskId ?? null,
             status,
             steps
@@ -63,6 +69,58 @@ export class WorkflowAnalysisService implements AnalysisService {
       context.signal.throwIfAborted()
       notify(1, '检查来源信息与图像预处理')
       const common = await prepareWorkflowInput(input, output, this.root, context.signal)
+      if (options.contentType === 'auto') {
+        const routeStarted = performance.now()
+        notify(2, '图像预处理完成，自动判定内容类型')
+        try {
+          routing = await this.route({
+            root: this.root,
+            output,
+            taskId: context.taskId,
+            artifacts: common.artifacts,
+            image: common.image,
+            context: {
+              ...context,
+              onProgress: (progress) =>
+                notify(
+                  2 + Math.round((3 * progress.percent) / 100),
+                  `内容路由 · ${progress.label}`
+                )
+            }
+          })
+          resolvedType = routing.decision ?? 'unsure'
+        } catch (error) {
+          if (context.signal.aborted) throw error
+          routing = {
+            mode: 'auto',
+            status: 'failed',
+            decision: 'unsure',
+            scores: null,
+            margin: null,
+            marginThreshold: null,
+            elapsedMs: Math.round(performance.now() - routeStarted),
+            error: {
+              code: error instanceof AppError ? error.code : 'INFERENCE_FAILED',
+              message: error instanceof Error ? error.message : '内容路由未完成。'
+            }
+          }
+          resolvedType = 'unsure'
+        }
+        notify(5, `内容路由判定：${routing?.status === 'failed' ? '未完成，运行全部检测' : resolvedType === 'unsure' ? '不确定，运行全部检测' : resolvedType === 'photo' ? '普通照片' : '文档 / 票据 / 截图'}`)
+      } else {
+        resolvedType = options.contentType
+        routing = {
+          mode: 'manual',
+          status: 'skipped',
+          decision: resolvedType,
+          scores: null,
+          margin: null,
+          marginThreshold: null,
+          elapsedMs: 0
+        }
+      }
+      const planned = plannedDetectors(resolvedType, !!previous)
+      steps.push(...planned.map((backend) => ({ backend, status: 'pending' as const })))
       await manifest('running')
       for (let index = 0; index < planned.length; index++) {
         context.signal.throwIfAborted()
@@ -137,7 +195,8 @@ export class WorkflowAnalysisService implements AnalysisService {
         root: this.root,
         output,
         taskId: context.taskId,
-        contentType: options.contentType,
+        contentType: resolvedType,
+        routing,
         detectors,
         common,
         elapsedMs: Math.round(performance.now() - started),
@@ -175,11 +234,11 @@ export class WorkflowAnalysisService implements AnalysisService {
         sections: [],
         disclaimer: '当前输出为视觉检测证据，整图真实性尚无经校准的融合结论。',
         workflow: {
-          contentType: options.contentType,
+          contentType: resolvedType,
           primary:
-            options.contentType === 'photo'
+            resolvedType === 'photo'
               ? 'rita'
-              : options.contentType === 'document'
+              : resolvedType === 'document'
                 ? 'rise'
                 : null,
           status: merged.status,
@@ -189,7 +248,8 @@ export class WorkflowAnalysisService implements AnalysisService {
           bundle: merged.bundle,
           summaryPath: join(output, 'analysis.json'),
           summary: merged.summary,
-          previousTaskId: options.supplementFromTaskId
+          previousTaskId: options.supplementFromTaskId,
+          routing
         }
       }
     } catch (error) {

@@ -47,6 +47,29 @@
     },
     "status": { "enum": ["completed", "partial", "failed"] },
     "decision": { "const": "inconclusive" },
+    "contentType": { "type": ["string", "null"], "enum": ["photo", "document", "unsure", null] },
+    "routing": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["mode", "status", "decision"],
+      "properties": {
+        "mode": { "enum": ["auto", "manual"] },
+        "status": { "enum": ["completed", "failed", "skipped"] },
+        "decision": { "type": ["string", "null"], "enum": ["photo", "document", "unsure", null] },
+        "scores": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "required": ["photo", "document"],
+          "properties": {
+            "photo": { "type": "number", "minimum": 0, "maximum": 1 },
+            "document": { "type": "number", "minimum": 0, "maximum": 1 }
+          }
+        },
+        "margin": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "marginThreshold": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "error": { "$ref": "#/$defs/error" }
+      }
+    },
     "screening": {
       "type": "object",
       "additionalProperties": false,

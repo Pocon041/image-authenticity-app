@@ -4,7 +4,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import Ajv from 'ajv'
 import addFormats from 'ajv-formats'
 import sharp from 'sharp'
-import type { ContentType, DetectorResult } from '../../shared/contracts'
+import type { ContentType, DetectorResult, WorkflowRouting } from '../../shared/contracts'
 import {
   assertEvidenceBundle,
   validateEvidenceBundle,
@@ -254,6 +254,7 @@ export async function aggregateEvidence(args: {
   output: string
   taskId: string
   contentType: ContentType
+  routing?: WorkflowRouting
   detectors: DetectorResult[]
   common: Awaited<ReturnType<typeof prepareWorkflowInput>>
   elapsedMs: number
@@ -390,18 +391,18 @@ const assets: Artifact[] = [...common.artifacts],
           detector: detector.backend
         }))
       )
+      evidence.push(
+        ...report.evidence.map((entry) => ({
+          ...entry,
+          data: {
+            ...entry.data,
+            detector: detector.backend,
+            producer: report.producer,
+            sourceReportId: report.reportId
+          }
+        }))
+      )
     }
-    evidence.push(
-      ...report.evidence.map((entry) => ({
-        ...entry,
-        data: {
-          ...entry.data,
-          detector: detector.backend,
-          producer: report.producer,
-          sourceReportId: report.reportId
-        }
-      }))
-    )
     if (detector.localization) {
       detector.regionPreviews = []
       const manipulationResult = report.moduleId === 'manipulation' ? report.result : null
@@ -449,6 +450,7 @@ const assets: Artifact[] = [...common.artifacts],
           regions,
           operationHints: [],
           contentType: args.contentType,
+          routing: args.routing ?? null,
           executionStatus: status,
           detectors: records,
           disagreements: args.flags
