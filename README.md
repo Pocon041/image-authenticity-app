@@ -10,7 +10,7 @@
 
 SICA 判真也继续定位；某个模型失败时保留其他模型的结果。支持取消、补充检查、原图/叠加切换及区域裁剪。HiFi-Net 已退出当前应用代码，历史效果记录保留在 [HIFI_EVALUATION.md](docs/HIFI_EVALUATION.md)。
 
-当前已整合第一人的来源/预处理模块：记录元数据、扫描内嵌C2PA凭证、检查元数据水印标记，并在独立环境就绪时执行可见水印关键词OCR与SDXL固定载荷解码。水印OCR不扩展为通用文字内容分析；AI生成专用模块和最后的VLM综合解释尚未整合。模型标记是待核查线索，不能直接视为已证实篡改，当前不输出未经验证的综合真假概率。
+当前已整合第一人的来源/预处理模块和第四人的本地 VLM 解释模块：记录元数据、扫描内嵌 C2PA 凭证、检查元数据水印标记，并在独立环境就绪时执行可见水印关键词 OCR 与 SDXL 固定载荷解码。解释默认通过本机 Ollama 调用从 `Qwen/Qwen3-VL-2B-Instruct-GGUF` 导入的本地模型，模型标记是待核查线索，不能直接视为已证实篡改，当前不输出未经验证的综合真假概率。
 
 ## 已安装基础版：如何增量升级
 
@@ -114,7 +114,20 @@ foreach ($modelName in @('rita', 'sica', 'rise')) {
 
 本机配置、Python 环境、权重与结果均被 Git 忽略；不要将个人盘符路径写入共享的 `*.example.json`。
 
-### 6. 启动并验证
+### 6. 准备本地 Qwen3-VL 解释模型
+
+当前解释模块默认使用本机 Ollama，不会在分析时自动下载模型。先将 `Qwen/Qwen3-VL-2B-Instruct-GGUF` 导入 Ollama，并用 `ollama list` 确认本地标签。若标签为 `srdp-qwen3-vl-2b`，在项目根目录执行：
+
+```powershell
+ollama serve
+.\run.cmd run explanation:setup -- --model srdp-qwen3-vl-2b
+```
+
+这条命令只生成 Git 忽略的 `config/explanation.local.json`。如果 Ollama 中的实际标签不同，将命令中的标签替换成实际值。没有本地模型时，解释请求会记录失败并使用规则模板，不会静默联网下载。
+
+原有云端解释接口仍保留；如需使用云端服务，直接在 `config/explanation.local.json` 中配置原来的 `host` 和 `model`，或通过代码显式传入对应参数即可。
+
+### 7. 启动并验证
 
 项目统一使用根目录 `.venv`。首次准备来源检查依赖时，在项目根目录执行：
 
@@ -183,4 +196,4 @@ foreach ($modelName in @('rita', 'sica', 'rise')) {
 
 阅读 `AGENT.md` 的四人共用规则和 `AGENTS.md` 的第二人模块说明；模块独有记录写AGENTS.md，共享协议与交接规则写AGENT.md。公共图片身份、坐标和证据语义不得由单模块自行改变。`weights/`、`work/`、`.tools/`、`.venv/`、`node_modules/`、`out/`、`dist/` 和本机配置不提交。发布包中的 Python/权重分发、CPU 路径及更大规模独立质量评测尚未验收。
 
-`yr_explanation`分支的四模块协议类型已合并，解释报告引用可与当前证据包衔接；VLM推理和解释界面尚未提交。接口约定见 [EXPLANATION_HANDOFF.md](docs/EXPLANATION_HANDOFF.md)。
+第四人解释模块已接入本地 Ollama/Qwen3-VL，结构化结论和证据引用由代码控制，VLM 负责分区短句生成；接口约定见 [EXPLANATION_HANDOFF.md](docs/EXPLANATION_HANDOFF.md)。

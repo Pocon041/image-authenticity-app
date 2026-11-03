@@ -29,7 +29,9 @@ export interface ExplanationConfig {
  * 数值说明见 config/explanation.example.json 的 `_comment` 字段。
  */
 const BUILTIN_CONFIG: ExplanationConfig = {
-  model: 'modelscope.cn/Qwen/Qwen3-VL-2B-Instruct-GGUF',
+  // Local Ollama tag created from Qwen/Qwen3-VL-2B-Instruct-GGUF.
+  // A remote model name and host remain supported through config or explicit arguments.
+  model: 'srdp-qwen3-vl-2b',
   host: 'http://127.0.0.1:11434',
   numCtx: 8192,
   // 1200 是"当前 schema 的合适值"：6 个 ≤140 字短字段实测 eval_count≈700。
