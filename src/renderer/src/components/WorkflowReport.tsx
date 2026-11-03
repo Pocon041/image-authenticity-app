@@ -80,6 +80,23 @@ export function WorkflowReport({
           </p>
         </div>
       </div>
+      {workflow.routing?.mode === 'auto' && (
+        <div className="workflow-flags" data-testid="workflow-routing">
+          <Layers size={17} />
+          <p>
+            {workflow.routing.status === 'failed'
+              ? '自动内容路由未完成，已运行全部检测。'
+              : workflow.routing.decision === 'photo'
+                ? '自动路由判定为普通照片，运行 RITA 定位。'
+                : workflow.routing.decision === 'document'
+                  ? '自动路由判定为文档 / 票据 / 截图，运行 RiSE 定位。'
+                  : '自动路由不确定，已运行全部定位检查。'}
+            {workflow.routing.status === 'completed' && workflow.routing.scores
+              ? ` 照片相似度 ${(workflow.routing.scores.photo * 100).toFixed(0)}%，文档相似度 ${(workflow.routing.scores.document * 100).toFixed(0)}%。路由只决定检测器组合，不构成篡改结论。`
+              : ''}
+          </p>
+        </div>
+      )}
       {workflow.flags.length > 0 && (
         <div className="workflow-flags" data-testid="workflow-flags">
           <TriangleAlert size={17} />

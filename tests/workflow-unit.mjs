@@ -13,7 +13,7 @@ await mkdir(temporary, { recursive: true })
 await build({
   input: join(root, 'src/main/services/workflow.ts'),
   platform: 'node',
-  external: [/^node:/, 'sharp', 'ajv', 'ajv-formats'],
+  external: [/^node:/, 'sharp', 'ajv', 'ajv-formats', 'electron'],
   output: { file: join(temporary, 'workflow.mjs'), format: 'esm' }
 })
 await build({
@@ -376,6 +376,78 @@ assert.deepEqual(supplement.calls, ['rise'])
 assert.equal(supplemented.workflow.detectors.filter((d) => d.reused).length, 2)
 checks.push('supplement runs only missing detector and preserves completed evidence')
 
+const autoPhoto = fixtureServices()
+const autoPhotoReport = await new WorkflowAnalysisService(root, autoPhoto.services, async () => ({
+  mode: 'auto',
+  status: 'completed',
+  decision: 'photo',
+  scores: { photo: 0.9, document: 0.1 },
+  margin: 0.8,
+  marginThreshold: 0.1,
+  elapsedMs: 12
+})).analyze(input, context('auto'))
+assert.deepEqual(autoPhoto.calls, ['sica', 'rita'])
+assert.equal(autoPhotoReport.workflow.contentType, 'photo')
+assert.equal(autoPhotoReport.workflow.routing.decision, 'photo')
+assert.equal(autoPhotoReport.workflow.routing.scores.photo, 0.9)
+assert.equal(autoPhotoReport.workflow.summary.routing.status, 'completed')
+assert.equal(autoPhotoReport.workflow.summary.contentType, 'photo')
+checks.push('auto routing follows the routed photo plan and records routing evidence')
+
+const autoUnsure = fixtureServices()
+await new WorkflowAnalysisService(root, autoUnsure.services, async () => ({
+  mode: 'auto',
+  status: 'completed',
+  decision: 'unsure',
+  scores: { photo: 0.5, document: 0.5 },
+  margin: 0,
+  marginThreshold: 0.1,
+  elapsedMs: 10
+})).analyze(input, context('auto'))
+assert.deepEqual(autoUnsure.calls, ['sica', 'rita', 'rise'])
+checks.push('low-confidence routing runs the full detector set')
+
+const autoFailed = fixtureServices({ includeAigc: true })
+const routedCalls = { count: 0 }
+const autoFailedReport = await new WorkflowAnalysisService(
+  root,
+  autoFailed.services,
+  async () => {
+    routedCalls.count++
+    throw new Error('route down')
+  }
+).analyze(input, context('auto'))
+assert.equal(routedCalls.count, 1)
+assert.deepEqual(autoFailed.calls, ['aigc', 'sica', 'rita', 'rise'])
+assert.equal(autoFailedReport.workflow.status, 'completed')
+assert.equal(autoFailedReport.workflow.routing.status, 'failed')
+assert.equal(autoFailedReport.workflow.routing.decision, 'unsure')
+assert.equal(autoFailedReport.workflow.summary.routing.error.code, 'INFERENCE_FAILED')
+checks.push('router failure falls back to the full detector set and is recorded')
+
+const manual = fixtureServices()
+const manualCalls = { count: 0 }
+const manualReport = await new WorkflowAnalysisService(
+  root,
+  manual.services,
+  async () => {
+    manualCalls.count++
+    return {
+      mode: 'auto',
+      status: 'completed',
+      decision: 'photo',
+      scores: { photo: 1, document: 0 },
+      margin: 1,
+      marginThreshold: 0.1,
+      elapsedMs: 1
+    }
+  }
+).analyze(input, context('document'))
+assert.equal(manualCalls.count, 0)
+assert.equal(manualReport.workflow.routing.mode, 'manual')
+assert.equal(manualReport.workflow.routing.status, 'skipped')
+checks.push('manual content type skips the router and records a manual routing entry')
+
 const failed = fixtureServices({ fail: ['sica', 'rita', 'rise'] })
 const failedReport = await new WorkflowAnalysisService(root, failed.services).analyze(
   input,
@@ -415,11 +487,34 @@ await assert.rejects(
 checks.push('artifact corruption is rejected')
 
 const sessionFixture = fixtureServices()
-const session = new AnalysisSession(new WorkflowAnalysisService(root, sessionFixture.services))
+const session = new AnalysisSession(
+  new WorkflowAnalysisService(root, sessionFixture.services, async () => ({
+    mode: 'auto',
+    status: 'completed',
+    decision: 'document',
+    scores: { photo: 0.2, document: 0.8 },
+    margin: 0.6,
+    marginThreshold: 0.1,
+    elapsedMs: 5
+  }))
+)
 session.selectImage(input)
-await session.analyze(input.asset.id, randomUUID(), () => {}, 'workflow', {
-  contentType: 'document'
-})
+const sessionFirst = await session.analyze(
+  input.asset.id,
+  randomUUID(),
+  () => {},
+  'workflow',
+  { contentType: 'document' }
+)
+const sessionSupplement = await session.analyze(
+  input.asset.id,
+  randomUUID(),
+  () => {},
+  'workflow',
+  { contentType: 'auto', supplementFromTaskId: sessionFirst.id }
+)
+assert.equal(sessionSupplement.workflow.routing.mode, 'auto')
+assert.equal(sessionSupplement.workflow.routing.decision, 'document')
 await assert.rejects(
   session.analyze(input.asset.id, randomUUID(), () => {}, 'workflow', {
     contentType: 'document',
@@ -427,7 +522,7 @@ await assert.rejects(
   }),
   /已失效/
 )
-checks.push('session rejects stale supplement references')
+checks.push('session rejects stale supplement references and accepts auto supplements')
 
 await writeFile(
   join(temporary, 'result.json'),

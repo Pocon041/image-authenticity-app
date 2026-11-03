@@ -30,6 +30,7 @@
 - 已在feature/provenance-integration合并main的e1e59b4/yht来源模块。只适配共享输入/证据汇总，不改SICA/RITA/RiSE推理策略；analysis.json保持篡改摘要，完整bundle增加provenance报告。共用接入状态写AGENT.md。
 - 合并冲突保留第二人的强类型证据汇总与解释引用校验，同时接入第一人来源报告。prepare阶段先显示来源检查进度，取消仍停止后续调度；来源读取器修复了任务已取消时的监听竞态。简明报告按moduleId查找manipulation，不依赖多模块报告排列顺序。
 - 本轮整合后真实SICA/RiSE/RITA联合Smoke8组通过（含补充复用、SICA阴性仍定位、部分失败、实际推理取消），9组编排测试通过。未新增模型、训练、阈值或二次复核策略；来源模块像素验证归属第一人，共用结果汇总见AGENT.md。
+- 预处理后内容路由已接入：默认「自动路由（推荐）」用零样本 CLIP 判定 photo/document/unsure 选择检测器组合，手动选择保留；低置信度/失败回退全量。CLIP 由现有 SICA 权重重建（无下载），细节见 docs/ROUTER_V02.md。
 
 ## 检查入口
 
@@ -43,6 +44,21 @@
 - 本轮类型检查与生产构建、模拟桌面15项和默认start.cmd启动3项通过；仅验证共享类型与读写接口变更，没有重复模型质量评测。已提交到本地整合分支，不自动推送本轮适配。
 
 ## 历史记录
+
+### 预处理后内容路由（Router）接入（2026-11-03）
+
+- 用户要求拉取最新代码后，在图像预处理后设计 router 并推送 czh，不碰 main。确认 origin/main（dbd213f）已完全包含于本地 czh，无新增需合并；基线 typecheck 与 10 组编排通过。
+- 方案经用户确认：内容类型路由（photo/document/unsure→检测器组合）；零样本 CLIP 机制；UI 默认 auto、手动可选；先离线验证再冻结阈值；低置信度/失败回退全量。
+- 无需下载任何 CLIP 权重：SICA 权重已含完整 base CLIP ViT-L/14（48 个 parametrizations.*.original + 完整文本塔，共 568 键）。`backend/router/model_loader.py` 按键映射剥离 LoRA（A/B/row_mask，122 键）与 fc 头，重建官方 CLIP 架构 strict 加载（446 基础键，missing/unexpected 为空）；前向不应用 LoRA。CLIP 源码复用 .tools/openai-clip 固定版本，Python 环境复用 EIT，无新依赖。
+- `backend/router/worker.py`：冻结提示词（photo/document 各 4 条），softmax 相似度求和得两分数，margin 决策 photo/document/unsure；输出 routing.json + 进度/错误/结果 JSONL。`evaluate.py` 离线验证 + 阈值扫描。
+- TS：`src/main/services/router.ts`（RouterService，懒加载 electron 以保持 workflow 单测可打包）；`workflow.ts` 在 prepareWorkflowInput 后按 auto 调用路由并记录 routing 证据（run.json / bundle.result.routing / analysis.json）；失败回退 unsure 全量且记录错误。路由可注入便于编排单测。
+- 协议：WorkflowOptions.contentType 支持 'auto'；WorkflowResult 增加可选 routing；ipc 白名单放行；补充复用对 auto 不比较旧类型。
+- UI：ImagePanel 下拉默认「自动路由（推荐）」；WorkflowReport 显示路由判定、照片/文档相似度百分比与「路由只决定检测器组合」说明。
+- 验证：Python 8 项（键映射/负向/真实 strict 重建 446+122=568）；编排 14 组（auto 按决策调度、unsure 全量、失败回退并记录、手动跳过、auto 补充复用）；协议 6 组；摘要 schema 增加 contentType/routing 后新旧摘要均通过校验。
+- 离线验证（work/router-validation-20261103）：481 张（479 CASIA 照片 + 2 张文档样例）全评估成功。0.15 阈值：正确 458、unsure 13、照片误判为文档 10，confident 准确率 97.9%；2 张文档全对（margin≈1.0/0.98）。照片误判为文档中约 4 例 margin>0.9（书页/海报类照片），阈值无法消除；用户确认接受 document 只跑 RiSE 的省时设计及该约 2–3% 照片跳过 RITA 的代价。阈值冻结 0.15。
+- 端到端 sanity：用户票据/短信均判 document（margin 1.0/0.98），CASIA 照片判 photo（margin 0.98）。路由 worker 单次推理约 0.8–1.4s，加载数秒并记录于 routing.json。
+- 说明文档 docs/ROUTER_V02.md；MANIPULATION_WORKFLOW.md 路由初版段补充状态。README 未改。
+- 真实 workflow smoke 9 组全部通过（含 3 组新路由场景：默认 auto 入口、真实自动路由驱动检测计划并记录证据、路由失败回退全量并记录）；回归：typecheck/生产构建、编排 14 组、协议 6 组、mock 15 项、默认 start.cmd 启动 3 项通过。smoke 中更新了 FSD/第四人并入后过期的 3 处旧断言（报告数、共享附件、复用数）与 preload API 列表，未改检测器行为。
 
 ### 发布前远端同步检查（2026-10-29）
 

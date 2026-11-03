@@ -95,7 +95,7 @@ export function registerDesktopIPC(
           const value = options as Record<string, unknown>
           if (
             typeof value.contentType !== 'string' ||
-            !['photo', 'document', 'unsure'].includes(value.contentType) ||
+            !['photo', 'document', 'unsure', 'auto'].includes(value.contentType) ||
             Object.keys(value).some((key) => !['contentType', 'supplementFromTaskId'].includes(key))
           )
             throw new AppError('INVALID_REQUEST', '联合分析参数无效。')

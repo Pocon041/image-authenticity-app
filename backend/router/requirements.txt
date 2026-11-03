@@ -1,0 +1,2 @@
+# Router 复用 SICA 的 EIT Python 环境与 CLIP 固定源码，不新增依赖。
+# Requires the project's CPU/CUDA-compatible torch and the pinned CLIP source in .tools/openai-clip.

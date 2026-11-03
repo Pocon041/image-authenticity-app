@@ -53,14 +53,14 @@ try {
     if (/^https?:/.test(r.url())) requests.push(r.url())
   })
   await page.getByRole('heading', { name: '从一张图片开始' }).waitFor()
-  assert.equal(await page.getByRole('combobox', { name: '图片类型' }).inputValue(), 'unsure')
+  assert.equal(await page.getByRole('combobox', { name: '图片类型' }).inputValue(), 'auto')
   assert.equal(
     await page.getByRole('button', { name: 'HiFi-Net 本地定位', exact: true }).isVisible(),
     false
   )
   assert.equal(await page.getByTestId('analyze-button').isDisabled(), true)
   await page.screenshot({ path: join(output, '01-empty.png'), fullPage: true })
-  checks.push('default unified entry, unsure routing, debug models hidden')
+  checks.push('default unified entry with auto routing, debug models hidden')
   async function choose(path) {
     await desktop.evaluate(({ dialog }, imagePath) => {
       dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [imagePath] })
@@ -83,8 +83,9 @@ try {
   await page.getByTestId('workflow-progress').waitFor()
   const document = await result(),
     first = document.reports[0]
-  assert.equal(document.reports.length, 2)
+  assert.equal(document.reports.length, 3)
   assert.equal(document.reports[1].moduleId, 'provenance')
+  assert.equal(document.reports[2].moduleId, 'aigc')
   assert.equal(document.reports[1].evidence.length, 4)
   const provenancePath = join(
     project,
@@ -99,6 +100,7 @@ try {
   assert.deepEqual(
     first.result.detectors.map((d) => [d.backend, d.status]),
     [
+      ['aigc', 'completed'],
       ['sica', 'completed'],
       ['rise', 'completed'],
       ['rita', 'not_run']
@@ -129,7 +131,14 @@ try {
     await desktop.evaluate(() => global.__openedEvidence),
     join(project, 'work/analysis-runs', first.taskId)
   )
-  assert.equal(document.artifacts.filter((a) => ['original', 'display'].includes(a.type)).length, 2)
+  assert.equal(
+    document.artifacts.filter(
+      (a) =>
+        a.artifactId === document.image.originalArtifactId ||
+        a.artifactId === document.image.displayArtifactId
+    ).length,
+    2
+  )
   await page.screenshot({ path: join(output, '02-document.png'), fullPage: true })
   checks.push('real SICA + RiSE document workflow with linked provenance and manipulation reports')
 
@@ -137,7 +146,7 @@ try {
   const augmented = await result(),
     combined = augmented.reports[0]
   assert.equal(combined.extensions.previousTaskId, first.taskId)
-  assert.equal(combined.result.detectors.filter((d) => d.reused).length, 2)
+  assert.equal(combined.result.detectors.filter((d) => d.reused).length, 3)
   assert.equal(combined.result.detectors.find((d) => d.backend === 'rita').status, 'completed')
   await assert.rejects(access(join(project, 'work/sica-runs', `${combined.taskId}-sica`)))
   await assert.rejects(access(join(project, 'work/rise-runs', `${combined.taskId}-rise`)))
@@ -171,6 +180,51 @@ try {
   assert.equal(invalid.stale.code, 'STALE_IMAGE')
   checks.push('invalid route options and stale supplement task references are rejected')
 
+  // 真实自动路由：default auto，routing 证据与检测器组合一致，且不依赖具体判定结果。
+  await page.getByRole('combobox', { name: '图片类型' }).selectOption('auto')
+  await page.getByTestId('analyze-button').click()
+  await page.getByTestId('workflow-progress').waitFor()
+  const routed = await result(),
+    routedReport = routed.reports[0],
+    routing = routedReport.result.routing
+  assert.ok(routing && routing.mode === 'auto')
+  assert.equal(routing.status, 'completed')
+  assert.ok(Math.abs(routing.scores.photo + routing.scores.document - 1) < 1e-6)
+  const routedRan = routedReport.result.detectors
+    .filter((d) => d.status === 'completed')
+    .map((d) => d.backend)
+  if (routing.decision === 'photo') {
+    assert.deepEqual(routedRan, ['aigc', 'sica', 'rita'])
+    assert.equal(
+      routedReport.result.detectors.find((d) => d.backend === 'rise').status,
+      'not_run'
+    )
+  } else if (routing.decision === 'document') {
+    assert.deepEqual(routedRan, ['aigc', 'sica', 'rise'])
+    assert.equal(
+      routedReport.result.detectors.find((d) => d.backend === 'rita').status,
+      'not_run'
+    )
+  } else {
+    assert.equal(routing.decision, 'unsure')
+    assert.deepEqual(routedRan, ['aigc', 'sica', 'rita', 'rise'])
+  }
+  await page.getByTestId('workflow-routing').waitFor()
+  const routedPath = join(project, 'work/analysis-runs', routedReport.taskId, 'bundle.json')
+  validate(routedPath)
+  const routedSummary = JSON.parse(
+    await readFile(join(project, 'work/analysis-runs', routedReport.taskId, 'analysis.json'), 'utf8')
+  )
+  assert.equal(routedSummary.routing.status, 'completed')
+  assert.equal(routedSummary.contentType, routing.decision)
+  const routedRun = JSON.parse(
+    await readFile(join(project, 'work/analysis-runs', routedReport.taskId, 'run.json'), 'utf8')
+  )
+  assert.equal(routedRun.selection, 'auto')
+  assert.equal(routedRun.routing.decision, routing.decision)
+  await page.screenshot({ path: join(output, '04-auto-routing.png'), fullPage: true })
+  checks.push('real post-preprocessing auto routing drives the detector plan and records evidence')
+
   await writeFile(
     configPath,
     JSON.stringify({ ...realConfig, checkpointPath: 'work/workflow-smoke/known-missing.pth' })
@@ -195,6 +249,7 @@ try {
 
   if (negativeImage) {
     await choose(resolve(negativeImage))
+    await page.getByRole('combobox', { name: '图片类型' }).selectOption('photo')
     await page.getByTestId('analyze-button').click()
     const negative = await result(),
       detectors = negative.reports[0].result.detectors
@@ -247,6 +302,68 @@ try {
   checks.push(
     'UI cancellation during real RiSE tile inference leaves no completed model or workflow bundle'
   )
+
+  // 真实路由失败回退：router 配置指向缺失权重，auto 必须回退全量且记录失败。
+  const realRouterConfig = JSON.parse(
+    (
+      await readFile(
+        resolve(project, process.env.SRDP_ROUTER_CONFIG ?? 'config/router.local.json'),
+        'utf8'
+      )
+    ).replace(/^\uFEFF/, '')
+  )
+  const routerFailConfig = join(output, 'router.local.json')
+  await writeFile(
+    routerFailConfig,
+    JSON.stringify({ ...realRouterConfig, checkpointPath: 'work/workflow-smoke/known-missing.pth' })
+  )
+  const failDesktop = await electron.launch({
+    args: [
+      project,
+      '--smoke-test',
+      ...(args.includes('--software-rendering') ? ['--disable-gpu'] : [])
+    ],
+    env: { ...env, SRDP_ROUTER_CONFIG: routerFailConfig }
+  })
+  try {
+    const failPage = await failDesktop.firstWindow()
+    failPage.setDefaultTimeout(30000)
+    await failPage.getByRole('heading', { name: '从一张图片开始' }).waitFor()
+    const smallImage = join(output, 'router-fallback-fixture.png')
+    await sharp({ create: { width: 64, height: 64, channels: 3, background: '#c0c0c0' } })
+      .png()
+      .toFile(smallImage)
+    await failDesktop.evaluate(({ dialog }, imagePath) => {
+      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [imagePath] })
+    }, smallImage)
+    await failPage.getByRole('button', { name: '选择图片', exact: true }).click()
+    await failPage.getByTestId('image-name').waitFor()
+    assert.equal(
+      await failPage.getByRole('combobox', { name: '图片类型' }).inputValue(),
+      'auto'
+    )
+    await failPage.getByTestId('analyze-button').click()
+    await failPage.getByTestId('workflow-bundle').waitFor({ state: 'attached', timeout: 600000 })
+    const fallback = JSON.parse(await failPage.getByTestId('workflow-bundle').textContent())
+    const fallbackReport = fallback.reports[0]
+    assert.equal(fallbackReport.result.routing.mode, 'auto')
+    assert.equal(fallbackReport.result.routing.status, 'failed')
+    assert.equal(fallbackReport.result.routing.decision, 'unsure')
+    assert.equal(fallbackReport.result.routing.error.code, 'MODEL_NOT_READY')
+    assert.deepEqual(
+      fallbackReport.result.detectors
+        .filter((d) => d.status === 'completed')
+        .map((d) => d.backend),
+      ['aigc', 'sica', 'rita', 'rise']
+    )
+    validate(join(project, 'work/analysis-runs', fallbackReport.taskId, 'bundle.json'))
+    await failPage.getByTestId('workflow-routing').waitFor()
+    assert.match(await failPage.getByTestId('workflow-routing').textContent(), /未完成，已运行全部检测/)
+    await failPage.screenshot({ path: join(output, '06-router-fallback.png'), fullPage: true })
+    checks.push('real router failure falls back to the full detector set and is recorded')
+  } finally {
+    await failDesktop.close()
+  }
 
   await desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1060, 740))
   await page.waitForTimeout(250)

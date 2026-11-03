@@ -48,6 +48,7 @@
 - 主进程保留原始文件路径和原始字节快照；界面只接收预览 DTO。界面组件与 `useAnalysisWorkspace` 交互状态分开。
 - 跨进程调用统一使用结果响应与稳定错误代码；进度携带任务 ID；监听器必须可取消订阅。
 - Python 侧使用 `backend/rita/`、`sica/`、`rise/` 单图子进程；`backend/common/` 保存共享离线评测工具；不再保留 HiFi-Net 运行代码。
+- 联合流程预处理后新增 `backend/router/` 内容路由子进程（零样本 CLIP，从 SICA 权重重建，不下载）：auto 时判定 photo/document/unsure 决定检测器组合，失败或低置信度回退全量；细节见 `docs/ROUTER_V02.md`。
 - 渲染进程禁止直接访问 Node.js、文件系统或任意 IPC。启用 `contextIsolation` 和 `sandbox`，关闭 `nodeIntegration`。
 - “打开报告文件夹”只允许打开当前最近任务的受控 `analysis-runs` 目录，不接收任意路径。
 
@@ -68,6 +69,7 @@
 - `tests/`：真实 Electron 窗口的端到端 Smoke 验证。
 - `scripts/`：运行时检查和安装；Windows 从官方发布地址下载 Electron，并按 npm 包提供的 SHA256 校验。
 - `backend/rita/`：RITA 单图执行、掩码解码和测试；`config/rita.example.json` 为共享配置模板，`config/rita.local.json` 为 Git 忽略的本机配置。
+- `backend/router/`：预处理后的零样本 CLIP 内容路由子进程与离线评测；`config/router.example.json` 共享模板，`config/router.local.json` 本机忽略配置。
 - `weights/rita/rita_catnet.pth`：用户从官方分享下载的权重，整个 `weights/` 不提交 Git。
 - `.tools/rita-upstream/rita.py`：下载并校验的固定版本源码，不随本项目仓库重新分发。
 - `.tools/`：可选的项目本地 Node/Python 隔离环境，不提交。

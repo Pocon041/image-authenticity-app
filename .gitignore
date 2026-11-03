@@ -19,3 +19,4 @@ config/hifi.loc.local.json
 config/rise.local.json
 config/aigc.local.json
 __pycache__/
+config/router.local.json

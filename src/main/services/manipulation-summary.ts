@@ -59,6 +59,26 @@ export function manipulationSummary(bundle: Record<string, any>, detectors: Dete
     },
     status: report.extensions.executionStatus,
     decision: 'inconclusive',
+    contentType: report.result?.contentType ?? null,
+    routing: report.result?.routing
+      ? {
+          mode: report.result.routing.mode,
+          status: report.result.routing.status,
+          decision: report.result.routing.decision,
+          ...(report.result.routing.scores
+            ? { scores: report.result.routing.scores }
+            : {}),
+          ...(typeof report.result.routing.margin === 'number'
+            ? { margin: report.result.routing.margin }
+            : {}),
+          ...(typeof report.result.routing.marginThreshold === 'number'
+            ? { marginThreshold: report.result.routing.marginThreshold }
+            : {}),
+          ...(report.result.routing.error
+            ? { error: report.result.routing.error }
+            : {})
+        }
+      : null,
     screening: {
       model: model('sica'),
       status: screening.status,
