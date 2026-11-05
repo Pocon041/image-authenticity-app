@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { CheckCircle2, FileJson, Info, Layers, Loader2, MessageSquareText, ScanLine, TriangleAlert } from 'lucide-react'
 import type { AnalysisReport, DetectorBackend } from '../../../shared/contracts'
 import type { ExplanationReport } from '../../../shared/protocol'
+import { sicaClassSupport, fsdClassSupport } from '../../../shared/decision-confidence'
 import { ProvenanceSummary } from './ProvenanceSummary'
 
 const names = { aigc: 'FSD', sica: 'SICA', rita: 'RITA', rise: 'RiSE' }
@@ -9,11 +10,13 @@ const names = { aigc: 'FSD', sica: 'SICA', rita: 'RITA', rise: 'RiSE' }
 export function WorkflowReport({
   report,
   originalDataUrl,
-  onSupplement
+  onSupplement,
+  hideExplanation = false
 }: {
   report: AnalysisReport
   originalDataUrl: string
   onSupplement(): void
+  hideExplanation?: boolean
 }) {
   const workflow = report.workflow!
   const available = workflow.detectors.filter(
@@ -44,6 +47,8 @@ export function WorkflowReport({
   const screening = workflow.detectors.find((item) => item.backend === 'sica')
   const classification = screening?.classification
   const aigc = workflow.detectors.find((item) => item.backend === 'aigc')
+  const sicaConfidence = classification ? sicaClassSupport(classification.score, classification.decision) : null
+  const fsdConfidence = aigc?.aigc ? fsdClassSupport(aigc.aigc.zScore, aigc.aigc.threshold, aigc.aigc.decision) : null
   const canSupplement = workflow.detectors.some((item) => item.status !== 'completed')
 
   // 第四人：触发解释生成
@@ -65,7 +70,7 @@ export function WorkflowReport({
   }
 
   return (
-    <div className="workflow-report" data-testid="analysis-report">
+    <div className="workflow-report" data-testid={hideExplanation ? undefined : 'analysis-report'}>
       <div className="workflow-result-heading">
         {workflow.status === 'completed' ? <CheckCircle2 size={22} /> : <TriangleAlert size={22} />}
         <div>
@@ -234,7 +239,7 @@ export function WorkflowReport({
       <ProvenanceSummary bundle={workflow.bundle} />
 
       {/* 第四人：综合解释生成区块 */}
-      <section className="explanation-section" aria-label="综合解释" style={{ marginTop: '20px', paddingTop: '20px', borderTop: '1px solid #eee' }}>
+      {!hideExplanation && <section className="explanation-section" aria-label="综合解释" style={{ marginTop: '20px', paddingTop: '20px', borderTop: '1px solid #eee' }}>
         <div className="section-label">
           <MessageSquareText size={15} />
           <h4>综合解释分析</h4>
@@ -317,10 +322,18 @@ export function WorkflowReport({
             )}
           </div>
         )}
-      </section>
+      </section>}
 
       <details className="detector-details">
         <summary>检测详情</summary>
+        {(sicaConfidence || fsdConfidence) && (
+          <p data-testid="workflow-decision-confidence">
+            模型结论支持度：
+            {sicaConfidence && ` SICA ${sicaConfidence.value.toFixed(3)}`}
+            {fsdConfidence && ` FSD ${fsdConfidence.value.toFixed(3)}`}。
+            SICA为预测类别分数，FSD为AI分类阈值距离。
+          </p>
+        )}
         {classification && (
           <p>
             整图伪造分数 {classification.score.toFixed(4)}，阈值 {classification.threshold}

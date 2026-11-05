@@ -8,6 +8,7 @@ import addFormats from 'ajv-formats'
 import sharp from 'sharp'
 import reportSchema from '../../../schemas/report-bundle.schema.json'
 import type { AnalysisReport, ErrorCode } from '../../shared/contracts'
+import type { ModelSupport } from '../../shared/decision-confidence'
 import { AppError } from '../errors'
 import type { ImportedImage } from '../image-import'
 import { MockAnalysisService, type AnalysisContext, type AnalysisService } from './analysis'
@@ -35,6 +36,7 @@ interface RitaBundle {
     taskId: string
     elapsedMs: number
     result: {
+      confidence?: ModelSupport | null
       decision: string
       score: { value: number } | null
       regionCount: number
@@ -265,6 +267,7 @@ export class RoutedAnalysisService implements AnalysisService {
       ],
       disclaimer: result.limitations.join(' '),
       localization: {
+        confidence: result.result.confidence ?? null,
         decision: result.result.decision,
         score: result.result.score?.value ?? null,
         regionCount: result.result.regionCount,

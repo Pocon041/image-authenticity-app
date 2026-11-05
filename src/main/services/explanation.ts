@@ -14,7 +14,16 @@ import type {
   Evidence,
   Artifact
 } from '../../shared/protocol'
+import type { Region } from '../../shared/protocol'
 import { validateExplanationReport } from '../../shared/protocol'
+import { sicaClassSupport, fsdClassSupport } from '../../shared/decision-confidence'
+import { observeRegions, type RegionObservation } from './visual-observation'
+import {
+  USER_EXPLANATION_SYSTEM,
+  USER_EXPLANATION_SCHEMA,
+  parseUserExplanation,
+  type UserExplanation
+} from './user-explanation'
 
 export interface ExplanationConfig {
   model: string
@@ -34,14 +43,11 @@ const BUILTIN_CONFIG: ExplanationConfig = {
   model: 'srdp-qwen3-vl-2b',
   host: 'http://127.0.0.1:11434',
   numCtx: 8192,
-  // 1200 是"当前 schema 的合适值"：6 个 ≤140 字短字段实测 eval_count≈700。
-  // 它不是硬性上限——schema 扩展（新增字段、放宽长度）时必须同步调大，否则会被 num_predict 截断。
+  // 简短摘要、权衡与最多三个区域；格式扩展后需重新检查输出预算。
   numPredict: 1200,
-  // 送图上限：每张图都要吃视觉 token。2B/4GB 下默认 1（只送 display）。
-  maxImages: 1
+  // 整图及最多两个定位器掩码。
+  maxImages: 3
 }
-const MAX_SECTION_CHARS = 140
-const MAX_ANALYSIS_CHARS = 900
 
 const UNAVAILABLE_CONFIDENCE: Confidence = {
   value: null,
@@ -56,48 +62,14 @@ interface CategorizedClaim {
   claim: ExplanationClaim
 }
 
-interface AnalysisSections {
-  conclusion: string
-  aiGeneration: string
-  classification: string
-  localization: string
-  provenance: string
-  limitations: string
-}
-
-const SECTION_KEYS: Array<keyof AnalysisSections> = [
-  'conclusion',
-  'aiGeneration',
-  'classification',
-  'localization',
-  'provenance',
-  'limitations'
-]
-
-const SECTION_LABELS: Record<keyof AnalysisSections, string> = {
-  conclusion: '结论',
-  aiGeneration: 'AI 生成',
-  classification: '整图分类',
-  localization: '局部定位',
-  provenance: '来源与凭证',
-  limitations: '限制'
-}
-
-// 2B 只负责把"分区事实"各自改写成短句；跨区结构、引用和结论由代码控制。
-const SYSTEM_PROMPT = `你是图像鉴伪解释器。只根据用户给出的分区事实写短句，输出 JSON。
-硬性规则：
-1. 只输出 JSON，字段为 conclusion、aiGeneration、classification、localization、provenance、limitations。
-2. 每个字段只写本分区事实，不得跨区合并，不得补充事实中没有的因果、依据或置信度。
-3. RITA、RiSE 是局部篡改定位器；只有 FSD 是 AI 生成检测。不得把 RITA/RiSE 说成 AI 生成分类器。
-4. 不写“确定伪造”“100%”“绝对”“置信度高”等表述。
-5. 不得新增事实、不得修改任何数值。`
+// 模型根据图片与结构化证据给出面向用户的综合判断。
+const SYSTEM_PROMPT = USER_EXPLANATION_SYSTEM
 
 /**
  * 第四人核心服务：消费证据包，生成解释报告。
  *
- * 方案 G：finalDecision / confidence / claims / unresolved 由代码从上游证据确定性装配；
- * VLM 只负责把分区事实改写成短句。analysis 由 6 个分区短句拼接，每段单独做角色校验，
- * 不通过时用规则文本回填，避免 2B 模型跨模块串写或数组循环。
+ * VLM给出独立定性判断和简洁区域解释；代码映射区域与证据引用。
+ * 原始检测结论和技术指标保留，失败时返回明确标记的基础说明。
  */
 export async function generateExplanation(
   bundle: EvidenceBundle,
@@ -111,6 +83,7 @@ export async function generateExplanation(
   // 配置：显式参数 > 环境变量 > local（或 SRDP_EXPLANATION_CONFIG 指定的文件）> example > 内置默认。
   // 每次调用读一次，不缓存：改 JSON 后下一次分析立即生效，不用重启应用。
   const config = await loadExplanationConfig(modelName, ollamaHost)
+  const requestSignal = AbortSignal.timeout(120000)
 
   // 1. 提取上游报告
   const upstreamReports = bundle.reports
@@ -120,44 +93,117 @@ export async function generateExplanation(
   const manipulationReport = upstreamReports.find(
     (report): report is ManipulationReport => report.moduleId === 'manipulation'
   )
-  const aigcReport = upstreamReports.find((report): report is AigcReport => report.moduleId === 'aigc')
+  const aigcReport = upstreamReports.find(
+    (report): report is AigcReport => report.moduleId === 'aigc'
+  )
 
-  // 2. 确定性字段：不从模型生成
-  const finalDecision = deriveFinalDecision(manipulationReport)
+  // 上游事实用于追溯，不固定模型的综合判断。
+  const upstreamDecision = deriveFinalDecision(manipulationReport)
   const categorizedClaims = buildClaims(provenanceReport, manipulationReport, aigcReport)
   const claims = categorizedClaims.map((item) => item.claim)
-  const unresolved = buildUnresolved(provenanceReport, manipulationReport, aigcReport, finalDecision)
+  const unresolved = buildUnresolved(
+    provenanceReport,
+    manipulationReport,
+    aigcReport,
+    upstreamDecision
+  )
   const disagreements = getDisagreements(manipulationReport)
-  const fallbackSections = buildFallbackSections(categorizedClaims, unresolved, finalDecision)
+  const selectedRegions = [...(manipulationReport?.result?.regions ?? [])]
+    .sort(
+      (a, b) =>
+        Number(b.areaPixels ?? b.bboxXYWH[2] * b.bboxXYWH[3]) -
+        Number(a.areaPixels ?? a.bboxXYWH[2] * a.bboxXYWH[3])
+    )
+    .filter((region) => regionEvidenceIds(region, manipulationReport).length > 0)
+    .slice(0, 3)
+  const aliases = selectedRegions.map((_, index) => String.fromCharCode(65 + index))
 
-  // 3. 图片与 prompt（按 maxImages 依次送 display / mask / crop）
-  const images = await prepareImages(bundle, taskDirectory, config.maxImages)
+  // 整图、预测掩码与简洁JSON。
+  const { images, references } = await prepareImages(
+    bundle,
+    taskDirectory,
+    config.maxImages,
+    selectedRegions
+  )
   console.log(`[explanation-images] maxImages=${config.maxImages} sent=${images.length}`)
-  const prompt = buildPrompt(finalDecision, categorizedClaims, unresolved, disagreements)
+  const fullImageIndex = references.findIndex((reference) => reference.role === 'full_image')
+  const observations =
+    fullImageIndex >= 0
+      ? await observeRegions({
+          directory: taskDirectory,
+          full: Buffer.from(images[fullImageIndex], 'base64'),
+          regions: selectedRegions,
+          artifacts: bundle.artifacts,
+          model: config.model,
+          host: config.host,
+          numCtx: config.numCtx,
+          signal: requestSignal
+        })
+      : []
+  const prompt = buildPrompt(
+    upstreamDecision,
+    categorizedClaims,
+    disagreements,
+    manipulationReport,
+    aigcReport,
+    selectedRegions,
+    references,
+    bundle.image.width,
+    observations,
+    provenanceReport
+  )
 
-  // 4. VLM 只生成分区短句；解析失败或超时时整体降级
-  let sections = fallbackSections
+  // 模型给出自己的定性判断；格式失败或超时时提供基础说明。
+  let answer: UserExplanation = {
+    finalDecision: upstreamDecision,
+    summary: selectedRegions.length
+      ? '检查已标记出值得关注的局部区域，可以先查看图片中的标记位置。'
+      : '图片检查已完成，检测结果已保存。',
+    evidenceBalance: '综合说明暂未生成，已完成的检测结果仍可查看。',
+    regions: []
+  }
   let mode: 'local' | 'mock' = 'local'
   let producerName = `ollama:${config.model}`
   let errorMsg: string | null = null
+  const rawJudgements: unknown[] = []
 
   try {
-    const rawSections = await generateAnalysis(prompt, images, config)
-    sections = repairSections(rawSections, fallbackSections)
+    answer = await generateAnalysis(prompt, images, config, aliases, rawJudgements, requestSignal)
   } catch (error) {
     console.warn('VLM 调用或校验失败，降级为规则模板:', error)
     mode = 'mock'
     producerName = 'template-fallback'
     errorMsg = error instanceof Error ? error.message : String(error)
-    sections = fallbackSections
   }
 
-  const analysis = clampText(composeAnalysis(sections), MAX_ANALYSIS_CHARS)
+  const regionAnalyses = answer.regions.map((region) => {
+    const source = selectedRegions[aliases.indexOf(region.regionId)]
+    return {
+      ...region,
+      location:
+        region.location ||
+        (source.bboxXYWH[0] + source.bboxXYWH[2] / 2 > (bundle.image.width * 2) / 3
+          ? '图片右侧'
+          : source.bboxXYWH[0] + source.bboxXYWH[2] / 2 < bundle.image.width / 3
+            ? '图片左侧'
+            : '图片中部'),
+      regionId: source.regionId,
+      evidenceIds: regionEvidenceIds(source, manipulationReport),
+      operationSource: 'vlm_hypothesis' as const
+    }
+  })
 
   const result: ExplanationResult = {
-    finalDecision,
+    finalDecision: answer.finalDecision,
+    decisionSource: mode === 'local' ? 'vlm' : 'rule_fallback',
+    upstreamDecision,
     confidence: UNAVAILABLE_CONFIDENCE,
-    analysis,
+    analysis: answer.summary,
+    evidenceBalance: answer.evidenceBalance,
+    regionAnalyses,
+    primaryRegionId: answer.primaryRegionId
+      ? (selectedRegions[aliases.indexOf(answer.primaryRegionId)]?.regionId ?? null)
+      : null,
     claims,
     unresolved
   }
@@ -173,11 +219,15 @@ export async function generateExplanation(
     upstreamReports,
     errorMsg
   )
+  report.extensions = {
+    visualObservations: observations,
+    pipeline: 'region_observation_then_evidence_synthesis',
+    rawJudgements
+  }
 
   const validationErrors = validateExplanationReport(report, upstreamReports)
   if (validationErrors.length > 0) {
-    console.error('解释报告校验失败:', validationErrors)
-    report.limitations.push(...validationErrors.map((message) => `校验：${message}`))
+    throw new Error(`解释报告校验失败：${validationErrors.join('; ')}`)
   }
 
   return report
@@ -408,18 +458,39 @@ function buildReport(
   }
 }
 
+function regionEvidenceIds(region: Region, manipulation: ManipulationReport | undefined): string[] {
+  return (manipulation?.evidence ?? [])
+    .filter(
+      (evidence) =>
+        evidence.kind === 'model_localization' &&
+        (evidence.regionId === region.regionId ||
+          (region.maskArtifactId !== null &&
+            evidence.artifactIds.includes(region.maskArtifactId)) ||
+          (typeof region.detector === 'string' && evidence.data.detector === region.detector))
+    )
+    .map((evidence) => evidence.evidenceId)
+}
+
+interface ImageReference {
+  index: number
+  role: 'full_image' | 'predicted_mask'
+  regions?: string[]
+}
+
 async function prepareImages(
   bundle: EvidenceBundle,
   taskDirectory: string,
-  maxImages: number
-): Promise<string[]> {
+  maxImages: number,
+  regions: Region[]
+): Promise<{ images: string[]; references: ImageReference[] }> {
   const base64Images: string[] = []
+  const references: ImageReference[] = []
   const displayArtifact = bundle.artifacts.find(
     (artifact) => artifact.artifactId === bundle.image.displayArtifactId
   )
 
-  // 送图优先级：display（整图）→ mask（篡改区域，面积大者优先）→ crop（局部特写，面积大者优先）。
-  // 每多送一张图都要额外吃视觉 token 并挤占 num_ctx，默认 1 即只送 display。
+  // 发送整图与各定位器预测掩码，JSON按实际发送顺序标注图片身份。
+  // 不把裁剪或黑白掩码当成另一个独立场景。
   const area = (artifact: Artifact): number =>
     artifact.bboxXYWH ? artifact.bboxXYWH[2] * artifact.bboxXYWH[3] : 0
   const byType = (type: Artifact['type']): Artifact[] =>
@@ -432,20 +503,31 @@ async function prepareImages(
           .sort((a, b) => area(b) - area(a))
       : []
 
-  const ordered: Artifact[] = displayArtifact
-    ? [displayArtifact, ...byType('mask'), ...byType('crop')]
-    : []
+  const ordered: Artifact[] = displayArtifact ? [displayArtifact, ...byType('mask')] : []
 
   for (const artifact of ordered.slice(0, maxImages)) {
     try {
       const buffer = await readFile(join(taskDirectory, artifact.uri))
       base64Images.push(buffer.toString('base64'))
+      references.push({
+        index: base64Images.length,
+        role: artifact.type === 'display' ? 'full_image' : 'predicted_mask',
+        ...(artifact.type === 'mask'
+          ? {
+              regions: regions.flatMap((region, index) =>
+                region.maskArtifactId === artifact.artifactId
+                  ? [String.fromCharCode(65 + index)]
+                  : []
+              )
+            }
+          : {})
+      })
     } catch (error) {
       console.warn(`读取图片失败（${artifact.type}: ${artifact.uri}）:`, error)
     }
   }
 
-  return base64Images
+  return { images: base64Images, references }
 }
 
 // --- 确定性字段 ---
@@ -543,9 +625,7 @@ function buildClaims(
     push('provenance', {
       text: `图像元数据格式为 ${format}，EXIF=${details.hasExif === true ? '有' : '无'}、XMP=${
         details.hasXmp === true ? '有' : '无'
-      }、IPTC=${details.hasIptc === true ? '有' : '无'}，CreatorTool=${
-        creatorTool ?? '未记录'
-      }。`,
+      }、IPTC=${details.hasIptc === true ? '有' : '无'}，CreatorTool=${creatorTool ?? '未记录'}。`,
       evidenceIds: [metadataEvidence.evidenceId]
     })
   }
@@ -596,11 +676,9 @@ function buildUnresolved(
   const items: string[] = []
 
   if (!manipulation || manipulation.status !== 'completed' || !manipulation.result) {
-    items.push(
-      `局部篡改检测未完成（status=${manipulation?.status ?? '缺失'}），整体结论只能为 inconclusive。`
-    )
+    items.push(`局部篡改检测未完成（status=${manipulation?.status ?? '缺失'}）。`)
   } else if (finalDecision === 'inconclusive') {
-    items.push('聚合层判定为 inconclusive，单张图片无法给出确定的真伪结论。')
+    items.push('上游汇总尚未给出整图真伪结论。')
   }
 
   const unfinished = getDetectors(manipulation)
@@ -631,88 +709,151 @@ function buildUnresolved(
   return items
 }
 
-function buildFallbackSections(
-  categorized: CategorizedClaim[],
-  unresolved: string[],
-  finalDecision: FinalDecision
-): AnalysisSections {
-  const pick = (category: ClaimCategory): string =>
-    categorized
-      .filter((item) => item.category === category)
-      .map((item) => item.claim.text)
-      .join('')
-
-  const conclusion =
-    finalDecision === 'suspicious'
-      ? '聚合层判定为可疑。'
-      : finalDecision === 'no_anomaly_detected'
-        ? '聚合层未检出明显异常。'
-        : '聚合层判定为 inconclusive，暂无法给出确定结论。'
-
-  return {
-    conclusion,
-    aiGeneration: pick('aigc') || '未提供可用的 AI 生成检测结果。',
-    classification: pick('classification') || '未提供可用的整图分类结果。',
-    localization: pick('localization') || '未提供可用的局部定位结果。',
-    provenance: pick('provenance') || '未提供可用的来源与凭证信息。',
-    limitations: unresolved.length > 0 ? `${unresolved.slice(0, 3).join('；')}。` : '无额外限制说明。'
-  }
-}
-
 // --- Prompt 与 VLM 调用 ---
 
 function buildPrompt(
   finalDecision: FinalDecision,
   categorized: CategorizedClaim[],
-  unresolved: string[],
-  disagreements: string[]
+  disagreements: string[],
+  manipulation: ManipulationReport | undefined,
+  aigc: AigcReport | undefined,
+  selectedRegions: Region[],
+  images: ImageReference[],
+  imageWidth: number,
+  observations: RegionObservation[],
+  provenance: ProvenanceReport | undefined
 ): string {
-  const facts = (category: ClaimCategory): string => {
-    const lines = categorized
-      .filter((item) => item.category === category)
-      .map((item) => `- ${item.claim.text}`)
-    return lines.length > 0 ? lines.join('\n') : '- （无）'
+  const sica = getDetector(manipulation, 'sica')
+  const sicaResult = asRecord(sica?.result)
+  const classification = asRecord(sicaResult.classification)
+  const sicaScore = asNumber(asRecord(sicaResult.score).value)
+  const support = (value: unknown, supports?: string) => {
+    const record = asRecord(value)
+    return typeof record.value === 'number'
+      ? {
+          value: Number(record.value.toFixed(4)),
+          meaning: record.description,
+          ...(supports ? { supports } : {})
+        }
+      : null
   }
-
-  const lines: string[] = []
-  lines.push('【聚合结论】')
-  lines.push(`finalDecision=${finalDecision}`)
-  lines.push('')
-
-  lines.push('【分区事实（只能改写本区，禁止跨区合并）】')
-  lines.push('AI 生成（只写 FSD）：')
-  lines.push(facts('aigc'))
-  lines.push('整图分类（只写 SICA）：')
-  lines.push(facts('classification'))
-  lines.push('局部定位（只写 RITA/RiSE）：')
-  lines.push(facts('localization'))
-  lines.push('来源与凭证（只写元数据/C2PA/水印）：')
-  lines.push(facts('provenance'))
-  lines.push('')
-
-  lines.push('【模块间分歧】')
-  if (disagreements.length === 0) lines.push('无')
-  else for (const item of disagreements) lines.push(`- ${item}`)
-  lines.push('')
-
-  lines.push('【必须说明的限制】')
-  for (const item of unresolved) lines.push(`- ${item}`)
-  lines.push('')
-
-  lines.push('【输出要求】')
-  lines.push(
-    '只输出 JSON，六个字符串字段：conclusion、aiGeneration、classification、localization、provenance、limitations。'
-  )
-  lines.push('每段 1–2 句、40–120 字；只改写本区事实，不得跨区合并、不得新增事实或改动数值。')
-  lines.push(
-    'conclusion 必须与聚合结论一致且不写置信度；aiGeneration 不得提 RITA/RiSE；localization 不得提 AI 生成/AIGC；classification 不得提局部定位。'
-  )
-  lines.push('每个字段必须是一句完整中文说明，不能只写类别值或模块名。句式示例（数值以本样本事实为准）：')
-  lines.push('conclusion: "聚合层判定为 inconclusive，暂无法给出确定结论。"')
-  lines.push('classification: "SICA 整图分类结果为 fake，偏向存在篡改。"')
-  lines.push('limitations: "FSD 的 z-score 未校准，C2PA 签名未验证。"')
-
-  return lines.join('\n')
+  const models: JsonObject[] = [
+    {
+      model: 'SICA',
+      task: '通用整图真实性分类',
+      status: sica?.status ?? 'not_run',
+      finding:
+        classification.predictedClass === 'real'
+          ? '整图未见明显异常'
+          : classification.predictedClass === 'fake'
+            ? '整图存在可疑线索'
+            : '尚无结果',
+      score: sicaScore,
+      threshold: classification.threshold ?? null,
+      support: support(
+        sicaClassSupport(sicaScore, classification.predictedClass),
+        classification.predictedClass === 'real' ? '整图未见明显异常' : '整图存在可疑线索'
+      )
+    },
+    {
+      model: 'FSD',
+      task: 'AI生成分类',
+      status: aigc?.status ?? 'not_run',
+      finding:
+        aigc?.result?.decision === 'non_ai'
+          ? '未检出AI生成线索'
+          : aigc?.result?.decision === 'ai_generated'
+            ? '存在AI生成线索'
+            : '尚无结果',
+      score: aigc?.result?.score?.value ?? null,
+      threshold: aigc?.result?.threshold ?? null,
+      support: support(
+        fsdClassSupport(
+          aigc?.result?.score?.value,
+          aigc?.result?.threshold,
+          aigc?.result?.decision
+        ),
+        aigc?.result?.decision === 'non_ai' ? '未检出AI生成线索' : '存在AI生成线索'
+      )
+    }
+  ]
+  for (const backend of ['rita', 'rise'] as const) {
+    const detector = getDetector(manipulation, backend)
+    const result = asRecord(detector?.result)
+    const regions = selectedRegions.filter((region) => region.detector === backend)
+    models.push({
+      model: backend === 'rita' ? 'RITA' : 'RiSE',
+      task: backend === 'rita' ? '照片局部篡改定位' : '文档局部篡改定位',
+      status: detector?.status ?? 'not_run',
+      regionCount: result.regionCount ?? null,
+      support: support(result.confidence),
+      shownRegionCount: regions.length,
+      regions: regions.map((region) => ({
+        regionId: String.fromCharCode(65 + selectedRegions.indexOf(region)),
+        bboxXYWH: region.bboxXYWH,
+        position:
+          region.bboxXYWH[0] + region.bboxXYWH[2] / 2 > (imageWidth * 2) / 3
+            ? '图片右侧'
+            : region.bboxXYWH[0] + region.bboxXYWH[2] / 2 < imageWidth / 3
+              ? '图片左侧'
+              : '图片中部',
+        support: support(region.confidence)
+      }))
+    })
+  }
+  return JSON.stringify({
+    task: '评估是否存在异常；如有，说明优先核查的目标、候选编辑方式及依据',
+    images,
+    maskLegend: '白色是检测器标记的异常候选；掩码与待分析整图同坐标',
+    imageRelationship:
+      '所有图片和局部观察来自同一张待分析输入，没有编辑前参考图；裁剪仅用于看清内容',
+    models,
+    provenance: {
+      status: provenance?.status ?? 'not_run',
+      metadata: {
+        format: provenance?.result?.metadata?.details?.format ?? null,
+        creatorTool:
+          asRecord(asRecord(provenance?.result?.metadata?.details?.xmp).fields)[
+            'xmp:CreatorTool'
+          ] ?? null
+      },
+      credentials: {
+        status: provenance?.result?.credentials?.status ?? 'not_run',
+        outcome: provenance?.result?.credentials?.details?.outcome ?? null
+      },
+      watermark: {
+        status: provenance?.result?.watermark?.status ?? 'not_run',
+        outcome:
+          provenance?.result?.watermark?.details?.combinedOutcome ??
+          provenance?.result?.watermark?.details?.outcome ??
+          null
+      }
+    },
+    regionObservations: observations.map((observation) => ({
+      regionId: observation.regionId,
+      status: observation.status,
+      ...(observation.text ? { content: observation.text.slice(0, 600) } : {})
+    })),
+    observationSource: '区域观察仅描述可见内容，尚未判定异常',
+    disagreements,
+    evidenceScope:
+      '整图筛查、AI生成和局部编辑是不同任务；支持度说明各自结论，综合时结合局部标记与可见内容。',
+    supportMeaning: '支持度描述模型对当前类别或标记像素的响应强度，非正确率',
+    output: {
+      fields: ['finalDecision', 'primaryRegionId', 'subject', 'suspectedOperation', 'explanation'],
+      regionIds: selectedRegions.map((_, index) => String.fromCharCode(65 + index)),
+      operationTypes: {
+        copy_move: '复制移动',
+        splicing: '拼接',
+        removal: '擦除',
+        inpainting: '局部修复或重绘',
+        text_edit: '文字修改',
+        ai_generation: 'AI生成',
+        unknown: '暂不能区分'
+      },
+      style: '选出一个最值得关注的区域；explanation用两句中文概括判断与理由'
+    }
+  })
 }
 
 interface OllamaChatResponse {
@@ -725,8 +866,11 @@ interface OllamaChatResponse {
 async function generateAnalysis(
   prompt: string,
   images: string[],
-  config: ExplanationConfig
-): Promise<AnalysisSections> {
+  config: ExplanationConfig,
+  regionIds: string[],
+  rawJudgements: unknown[],
+  requestSignal: AbortSignal
+): Promise<UserExplanation> {
   let lastProblem: string | null = null
 
   // 最多两次：仅当输出无法解析或缺字段时重试；网络/超时直接抛出，由上层降级。
@@ -734,7 +878,7 @@ async function generateAnalysis(
     const userContent =
       attempt === 0
         ? prompt
-        : `${prompt}\n\n【上一次输出未通过校验】${lastProblem ?? '未知问题'}。请严格按六个字段重写。`
+        : `${prompt}\n\n【上一次输出未通过校验】${lastProblem ?? '未知问题'}。请按约定格式重写。`
 
     const response = await fetch(`${config.host}/api/chat`, {
       method: 'POST',
@@ -746,11 +890,11 @@ async function generateAnalysis(
           { role: 'user', content: userContent, images }
         ],
         stream: false,
-        format: EXPLANATION_SCHEMA,
+        format: USER_EXPLANATION_SCHEMA,
         // temperature 固定 0：解释任务要确定性，不属于环境相关配置。
         options: { temperature: 0, num_predict: config.numPredict, num_ctx: config.numCtx }
       }),
-      signal: AbortSignal.timeout(120000)
+      signal: requestSignal
     })
 
     if (!response.ok) {
@@ -758,6 +902,7 @@ async function generateAnalysis(
     }
 
     const data = (await response.json()) as OllamaChatResponse
+    rawJudgements.push(data)
     console.log(
       `[Ollama] attempt=${attempt + 1} done_reason=${data.done_reason} eval_count=${data.eval_count} prompt_eval_count=${data.prompt_eval_count}`
     )
@@ -774,88 +919,20 @@ async function generateAnalysis(
       continue
     }
 
-    const sections = parseSections(parsed)
+    const sections = parseUserExplanation(parsed, regionIds)
     if (!sections) {
-      lastProblem = '缺少必要字段或字段不是字符串'
+      lastProblem = '请按约定JSON回答，用日常语言解释并使用已有区域编号'
       console.warn(`  第 ${attempt + 1} 次输出未通过校验：${lastProblem}`)
       continue
     }
 
     console.log('----- [Ollama] sections -----')
-    for (const key of SECTION_KEYS) console.log(`  ${key}: ${sections[key]}`)
+    console.log(JSON.stringify(sections))
     console.log('-----------------------------')
     return sections
   }
 
   throw new Error(`VLM 输出未通过校验：${lastProblem ?? '未知问题'}`)
-}
-
-function parseSections(value: unknown): AnalysisSections | null {
-  const record = asRecord(value)
-  const sections = {} as AnalysisSections
-  for (const key of SECTION_KEYS) {
-    const text = asString(record[key])
-    if (!text) return null
-    sections[key] = text
-  }
-  return sections
-}
-
-/**
- * 对每段做角色/绝对化检查；不通过时用规则文本回填，而不是整份降级。
- * 这样单个分区写错不会拖垮整个解释，VLM 仍可贡献其余段落。
- */
-function repairSections(raw: AnalysisSections, fallback: AnalysisSections): AnalysisSections {
-  const repaired = { ...raw }
-  for (const key of SECTION_KEYS) {
-    const problem = sectionProblem(key, repaired[key])
-    if (problem) {
-      console.warn(`  段落 ${key} 未通过检查（${problem}），改用规则文本`)
-      repaired[key] = fallback[key]
-    } else {
-      repaired[key] = clampText(repaired[key].trim(), MAX_SECTION_CHARS)
-    }
-  }
-  return repaired
-}
-
-function sectionProblem(key: keyof AnalysisSections, text: string): string | null {
-  const value = text.trim()
-  // 2B 容易把字段当“值”填（如 classification: fake），用最小长度挡住
-  if (value.length < 15) return '段落过短（疑似只写了类别值或模块名）'
-
-  // 所有分区都不得出现未校准置信度或绝对化结论
-  if (/(?:置信度|可信度)(?:高|较高|很高)|高置信|100%|确定(就是)?(伪造|篡改)/.test(value)) {
-    return '出现置信度或绝对化表述'
-  }
-
-  switch (key) {
-    case 'aiGeneration':
-      if (/RITA|RiSE/.test(value)) return 'AI 生成段提到 RITA/RiSE'
-      break
-    case 'classification':
-      if (/RITA|RiSE|局部定位/.test(value)) return '整图分类段提到局部定位'
-      break
-    case 'localization':
-      if (/AIGC|AI\s*生成|ai_generated/i.test(value)) return '局部定位段提到 AI 生成'
-      break
-    case 'provenance':
-      if (/SICA|RITA|RiSE|FSD/.test(value)) return '来源段提到检测器'
-      break
-    case 'limitations':
-      if (/判定为 ai_generated|整图分类结果|标记可疑区域|CreatorTool=/.test(value)) {
-        return '限制段混入检测事实'
-      }
-      break
-  }
-  return null
-}
-
-function composeAnalysis(sections: AnalysisSections): string {
-  return SECTION_KEYS.map((key) => {
-    const text = sections[key].trim().replace(/[。；;]+$/u, '')
-    return `${SECTION_LABELS[key]}：${text}。`
-  }).join('')
 }
 
 // --- 低层工具 ---
@@ -880,13 +957,6 @@ function fmtNum(value: number | null, digits = 4): string {
   return value === null ? '未知' : value.toFixed(digits)
 }
 
-function clampText(text: string, max: number): string {
-  if (text.length <= max) return text
-  const cut = text.slice(0, max)
-  const lastStop = cut.lastIndexOf('。')
-  return lastStop > max * 0.6 ? cut.slice(0, lastStop + 1) : cut
-}
-
 function getDetectors(manipulation: ManipulationReport | undefined): JsonObject[] {
   const raw = manipulation?.result?.detectors
   return Array.isArray(raw) ? (raw as JsonObject[]) : []
@@ -909,28 +979,5 @@ function findEvidence(
 
 function getDisagreements(manipulation: ManipulationReport | undefined): string[] {
   const raw = manipulation?.result?.disagreements
-  return Array.isArray(raw)
-    ? raw.filter((item): item is string => typeof item === 'string')
-    : []
-}
-
-// Ollama 的 JSON Schema 约束：六个字符串字段，没有数组，避免 2B 模型在 claims 上循环。
-const EXPLANATION_SCHEMA = {
-  type: 'object',
-  properties: {
-    conclusion: { type: 'string' },
-    aiGeneration: { type: 'string' },
-    classification: { type: 'string' },
-    localization: { type: 'string' },
-    provenance: { type: 'string' },
-    limitations: { type: 'string' }
-  },
-  required: [
-    'conclusion',
-    'aiGeneration',
-    'classification',
-    'localization',
-    'provenance',
-    'limitations'
-  ]
+  return Array.isArray(raw) ? raw.filter((item): item is string => typeof item === 'string') : []
 }

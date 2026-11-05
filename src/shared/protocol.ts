@@ -12,6 +12,7 @@
 import Ajv from 'ajv'
 import addFormats from 'ajv-formats'
 import bundleSchema from '../../schemas/report-bundle.schema.json'
+import type { DecisionConfidence, ModelSupport } from './decision-confidence'
 
 // ===== 基础标量与元组 =====
 
@@ -100,6 +101,7 @@ export interface Score {
 }
 
 export interface Region {
+  confidence?: ModelSupport | null
   regionId: Id
   bboxXYWH: BBox
   coordinateSpace: 'display_image_pixels'
@@ -133,18 +135,22 @@ export interface ProvenanceResult {
 }
 
 export interface ManipulationResult {
+  confidence?: ModelSupport | null
   decision: ManipulationDecision
   score: Score | null
   regions: Region[]
   operationHints: Record<string, unknown>[]
+  decisionConfidence?: DecisionConfidence | null
   // schema: additionalProperties: true
   [key: string]: unknown
 }
 
 export interface AigcResult {
+  confidence?: ModelSupport | null
   decision: AigcDecision
   score: Score | null
   clues: Record<string, unknown>[]
+  decisionConfidence?: DecisionConfidence | null
   // schema: additionalProperties: true
   [key: string]: unknown
 }
@@ -169,6 +175,20 @@ export interface ExplanationResult {
   analysis: string // minLength 1
   claims: ExplanationClaim[]
   unresolved: string[]
+  decisionSource?: 'vlm' | 'rule_fallback'
+  upstreamDecision?: FinalDecision
+  evidenceBalance?: string
+  primaryRegionId?: Id | null
+  regionAnalyses?: {
+    regionId: Id
+    location: string
+    subject: string
+    reason: string
+    suspectedOperation?: string
+    operationReason?: string
+    operationSource?: 'vlm_hypothesis'
+    evidenceIds: Id[]
+  }[]
   // schema: additionalProperties: true
   [key: string]: unknown
 }
@@ -307,5 +327,18 @@ export function validateExplanationReport(
         errors.push(`claims[${index}] references unknown evidenceId: ${id}`)
     }
   }
+  const knownRegions = new Set(report.inputReportIds.flatMap(id => {
+    const upstream = byId.get(id)
+    return upstream?.moduleId === 'manipulation' && upstream.imageId === report.imageId
+      ? (upstream.result?.regions ?? []).map(region => region.regionId) : []
+  }))
+  for (const region of report.result?.regionAnalyses ?? []) {
+    if (!knownRegions.has(region.regionId)) errors.push(`unknown explanation regionId: ${region.regionId}`)
+    for (const id of region.evidenceIds) {
+      if (!evidenceOwners.has(id)) errors.push(`region explanation references unknown evidenceId: ${id}`)
+    }
+  }
+  if (report.result?.primaryRegionId && !(report.result.regionAnalyses ?? []).some(region=>region.regionId===report.result?.primaryRegionId))
+    errors.push('primaryRegionId must reference an explained region')
   return errors
 }

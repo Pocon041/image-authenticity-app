@@ -75,9 +75,11 @@
       "additionalProperties": false,
       "required": ["model", "status"],
       "properties": {
+        "confidence": { "$ref": "#/$defs/modelSupport" },
         "model": { "$ref": "#/$defs/model" },
         "status": { "$ref": "#/$defs/status" },
         "decision": { "enum": ["fake", "real"] },
+        "decisionConfidence": { "$ref": "#/$defs/decisionConfidence" },
         "score": { "type": "number", "minimum": 0, "maximum": 1 },
         "threshold": { "type": "number", "minimum": 0, "maximum": 1 },
         "calibrated": { "const": false },
@@ -89,9 +91,11 @@
       "additionalProperties": false,
       "required": ["model", "status"],
       "properties": {
+        "confidence": { "$ref": "#/$defs/modelSupport" },
         "model": { "$ref": "#/$defs/model" },
         "status": { "$ref": "#/$defs/status" },
         "decision": { "enum": ["ai_generated", "non_ai", "inconclusive"] },
+        "decisionConfidence": { "$ref": "#/$defs/decisionConfidence" },
         "zScore": { "type": "number" },
         "threshold": { "type": "number" },
         "attributedSource": { "type": ["string", "null"] },
@@ -107,6 +111,7 @@
         "additionalProperties": false,
         "required": ["model", "status"],
         "properties": {
+          "confidence": { "$ref": "#/$defs/modelSupport" },
           "model": { "$ref": "#/$defs/model" },
           "status": { "$ref": "#/$defs/status" },
           "regionCount": { "type": "integer", "minimum": 0 },
@@ -126,6 +131,7 @@
         "additionalProperties": false,
         "required": ["regionId", "model", "bboxXYWH", "crop"],
         "properties": {
+          "confidence": { "$ref": "#/$defs/modelSupport" },
           "regionId": { "type": "string" },
           "model": { "enum": ["rita", "rise"] },
           "bboxXYWH": {
@@ -158,6 +164,32 @@
     "audit": { "const": "bundle.json" }
   },
   "$defs": {
+    "modelSupport": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["value", "description", "target", "source", "calibrated", "comparableAcrossModels"],
+      "properties": {
+        "value": { "type": "number", "minimum": 0, "maximum": 1 },
+        "target": { "enum": ["general_image_classification", "ai_generation_classification", "marked_region_pixels"] },
+        "description": { "type": "string", "minLength": 1 },
+        "source": { "enum": ["model_sigmoid", "threshold_distance", "mean_tamper_response"] },
+        "calibrated": { "const": false },
+        "comparableAcrossModels": { "const": false }
+      }
+    },
+    "decisionConfidence": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["value", "source", "distance", "normalization", "calibrated", "comparableAcrossModels"],
+      "properties": {
+        "value": { "type": "number", "minimum": 0, "maximum": 1 },
+        "source": { "const": "threshold_distance" },
+        "distance": { "type": "number", "minimum": 0 },
+        "normalization": { "enum": ["class_side_range", "distance_over_distance_plus_one"] },
+        "calibrated": { "const": false },
+        "comparableAcrossModels": { "const": false }
+      }
+    },
     "status": { "enum": ["completed", "failed", "not_run"] },
     "hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
     "strings": { "type": "array", "items": { "type": "string" } },

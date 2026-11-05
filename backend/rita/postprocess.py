@@ -1,6 +1,10 @@
 """Model-independent geometry and mask decoding for the public four-class protocol."""
 import numpy as np
 from PIL import Image
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'common'))
+from region_support import regions_with_support, mask_pixel_support
 
 
 def decode_sequence(labels, responses, output_size, threshold=None):
@@ -37,8 +41,5 @@ def decode_sequence(labels, responses, output_size, threshold=None):
     }
 
 
-def regions_from_mask(mask, max_regions=20):
-    import cv2
-    count, _labels, stats, _centroids = cv2.connectedComponentsWithStats((mask > 0).astype(np.uint8), 8)
-    entries = sorted(stats[1:count], key=lambda entry: int(entry[4]), reverse=True)
-    return [{'bboxXYWH': [int(n) for n in entry[:4]], 'areaPixels': int(entry[4])} for entry in entries[:max_regions]], max(0, count-1)
+def regions_from_mask(mask, max_regions=20, response=None):
+    return regions_with_support(mask, max_regions=max_regions, response=response)

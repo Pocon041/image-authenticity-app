@@ -1,5 +1,6 @@
 import { app, dialog, ipcMain, shell, type BrowserWindow, type IpcMainInvokeEvent } from 'electron'
 import { dirname, resolve } from 'node:path'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { IPC, type Response, type ImageAsset, type WorkflowOptions } from '../shared/contracts'
 import { AppError, failure } from './errors'
 import { importImage } from './image-import'
@@ -164,6 +165,9 @@ export function registerDesktopIPC(
 
         // 调用解释生成服务（内部已包含 Ollama 调用与模板兜底）
         const explanation = await generateExplanation(bundle, taskId as string)
+        const directory = resolve(app.getAppPath(), 'work/analysis-runs', taskId as string, 'reports')
+        await mkdir(directory, { recursive: true })
+        await writeFile(resolve(directory, 'explanation.json'), JSON.stringify(explanation, null, 2))
         
         return { ok: true, data: explanation }
       } catch (error) {

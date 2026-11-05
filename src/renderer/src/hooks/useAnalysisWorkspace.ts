@@ -13,6 +13,7 @@ export function useAnalysisWorkspace() {
   const [contentType, setContentType] = useState<ContentType | 'auto'>('auto')
   const [report, setReport] = useState<AnalysisReport | null>(null)
   const [progress, setProgress] = useState<AnalysisProgress | null>(null)
+  const [lastProgress, setLastProgress] = useState<AnalysisProgress | null>(null)
   const [status, setStatus] = useState<'idle' | 'picking' | 'running' | 'cancelling'>('idle')
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -22,7 +23,10 @@ export function useAnalysisWorkspace() {
   useEffect(
     () =>
       window.desktop.onAnalysisProgress((event) => {
-        if (event.taskId === currentTask.current) setProgress(event)
+        if (event.taskId === currentTask.current) {
+          setProgress(event)
+          setLastProgress(event)
+        }
       }),
     []
   )
@@ -40,6 +44,7 @@ export function useAnalysisWorkspace() {
         setImage(result.data)
         setReport(null)
         setProgress(null)
+        setLastProgress(null)
       }
     } catch {
       setError('无法打开图片，请重新尝试。')
@@ -58,6 +63,7 @@ export function useAnalysisWorkspace() {
     setNotice('')
     if (!supplement) setReport(null)
     setProgress(null)
+    setLastProgress(null)
     setStatus('running')
     try {
       const result = await window.desktop.analyze(
@@ -118,6 +124,7 @@ export function useAnalysisWorkspace() {
         setImage(null)
         setReport(null)
         setProgress(null)
+        setLastProgress(null)
         setError('')
         setNotice('')
       }
@@ -136,6 +143,7 @@ export function useAnalysisWorkspace() {
       setContentType(next)
       setReport(null)
       setProgress(null)
+      setLastProgress(null)
       setError('')
       setNotice('')
     },
@@ -146,10 +154,12 @@ export function useAnalysisWorkspace() {
       setError('')
       setNotice('')
       setProgress(null)
+      setLastProgress(null)
     },
     image,
     report,
     progress,
+    lastProgress,
     status,
     error,
     notice,

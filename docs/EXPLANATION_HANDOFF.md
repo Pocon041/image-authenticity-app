@@ -13,20 +13,26 @@
 
 联合包包含独立的 `manipulation`、`provenance` 和 `aigc` 报告；第四人按 `moduleId` 查找，不依赖数组顺序。
 
-## 当前实现：代码装配结构化字段 + VLM 写分区短句
+## 当前实现：综合判断与用户解释
 
-`src/main/services/explanation.ts` 的 `generateExplanation(bundle, taskId, modelName?, host?)` 按以下职责划分生成解释：
+`generateExplanation(bundle, taskId, modelName?, host?)`保持原有本地/服务端入口，按两个阶段工作：
 
-1. **代码确定性装配**（不经过模型）：
-   - `finalDecision`：取自 `manipulation.result.decision`；报告缺失或未完成时为 `inconclusive`。
-   - `confidence`：固定 `{ value: null, source: "unavailable", calibrated: false }`。
-   - `claims`：按 `evidence.kind` 与 `detector` 从上游证据逐类装配，每条只引用本类 `evidenceId`，从构造上避免跨类错配与重复。
-   - `unresolved`：从检测器状态、未校准项、C2PA/水印限制、模块分歧派生。
-2. **VLM 只写分析文本**：本地 Ollama（默认 Qwen3-VL-2B-Instruct-GGUF，`http://127.0.0.1:11434`）按分区事实生成 6 个字符串字段：`conclusion`、`aiGeneration`、`classification`、`localization`、`provenance`、`limitations`。JSON Schema 只含字符串字段，没有数组，避免 2B 模型在 `claims` 数组上循环。
-3. **逐段校验与回填**：对每段检查最小长度、角色混用（如 RITA/RiSE 被写成 AI 生成分类器）、未校准置信度与绝对化表述；不通过的段落用规则文本回填，而不是整份降级。
-4. **整体兜底**：JSON 解析失败、缺字段、超时或网络错误时，`analysis` 全部使用规则模板，`mode` 标记为 `mock`，`producer` 标记为 `template-fallback`，并在 `limitations` 记录原因。
+1. 区域观察：从预测bbox截取带20%上下文（至少16像素）的原始局部图，每次只发送一张，让模型描述内容。只裁剪，不着色、不锐化或重绘，最多观察3个有证据引用的主要区域。
+2. 综合判断：继续发送完整待分析图和原尺寸预测掩码，附上精简JSON：检测结论、分数、阈值、支持度、区域观察、图片对应和实际分歧。类别real/non_ai转换为“整图未见明显异常”/“未检出AI生成线索”，并把支持度与它支持的结论绑定，减少跨任务混淆。
 
-`analysis` 最终由 6 段拼接为带标签的中文文本；`claims` 与 `analysis` 使用同一批上游事实，便于追溯。
+实际模型输出简化为5个字段：finalDecision、primaryRegionId、subject、suspectedOperation、explanation。选择最值得关注的目标；没有目标时primaryRegionId为null。候选手法支持复制移动、拼接、擦除、局部修复/重绘、文字修改、AI生成或暂不能区分。它是模型推测，不写回检测器的operationHints。
+
+仅检查JSON可解析、必要字段类型、枚举及区域引用，不再按专业词、文风、重复句或预期真假筛选输出。结构不符时最多重试一次，原始模型响应保存到报告extensions.rawJudgements；区域观察保存到extensions.visualObservations。模型判断与描述照实保留，不能把结构通过当作内容正确。所有模型调用共享120秒总预算，区域调用各自最多60秒。
+
+最终 `ExplanationReport.result` 保持现有核心字段，并增加：
+
+- `decisionSource=vlm/rule_fallback`：综合结论来源。
+- `upstreamDecision`：上游原始判定，保留追溯，不固定VLM判断。
+- `evidenceBalance`：面向用户的简短证据权衡。
+- `primaryRegionId`：模型选择的优先目标，映射回正式区域ID。
+- `regionAnalyses`：位置、对象、理由、suspectedOperation及证据ID；operationSource=vlm_hypothesis明确来源。位置按bbox对应整图计算，不依赖模型把编号解释成位置。
+
+`analysis` 为用户摘要，`confidence` 仍为unavailable；技术claims/unresolved保留在原始记录。IPC将成功返回的解释保存至任务目录 `reports/explanation.json`，不重写原始bundle。右侧对话界面在检测完成后自动请求解释，技术报告默认折叠；换图后不展示迟到的解释。
 
 ## 类型与运行时校验
 
@@ -44,33 +50,18 @@ if (errors.length) throw new Error(errors.join('; '))
 - 校验成功仅说明结构和引用可追溯，不证明文字陈述事实正确，也不允许把像素响应或 VLM 自评改写成校准概率。
 - `confidence` 当前固定为 `unavailable`；协议虽预留 `vlm_self_assessment` 和 `calibrated_fusion`，但当前未实现校准融合。
 
-## 测试
-
-在项目根目录运行：
+## 测试与验证范围
 
 ```powershell
-npx tsx work/test-all-bundles.ts
-npx tsx work/test-all-bundles.ts --limit 2          # 只跑前两个样本，控制时间
-npx tsx work/test-all-bundles.ts --only 35a79651    # 只跑指定 taskId 前缀
-npx tsx work/test-all-bundles.ts --model <name> --host <url>
+.\run.cmd run test:explanation
+.\run.cmd run test:confidence
+.\run.cmd run test:protocol
+.\run.cmd run smoke:conversation
 ```
 
-脚本扫描 `work/analysis-runs` 下含 `bundle.json` 的任务，串行调用 `generateExplanation`，输出到 `work/explanation-results/`（每个任务的完整结果、`summary.json`、`summary.md`），并检查：
+测试覆盖图片/掩码顺序、区域别名与证据映射、独立VLM判定、基础说明回退，以及真实Electron中的进度消息、自动请求、取消、换图和窄窗口布局。测试使用明确的合成IPC/模型响应，不代表真实模型解释质量。
 
-- `validateExplanationReport` 结构与引用校验；
-- 重复 claim 文本；
-- claim 关键词与引用证据类别是否匹配；
-- 绝对化用语；
-- 是否提及 SICA / RITA / RiSE / AIGC / 分歧 / 限制。
-
-当前 7 个样本结果：7/7 `mode=local`、`done_reason=stop` 无截断；`claims=7`、重复 claim=0、跨类引用=0；`validateExplanationReport` 全部通过；单样本 8–16s，7 样本合计 72.5s（RTX 3050 Ti 4GB，Qwen3-VL-2B）。
-
-## 已知限制
-
-- 2B 模型主要能力是复述分区事实，跨模块综合与复杂推理有限；`analysis` 是辅助描述，不构成鉴定结论。
-- 默认只向模型传 1 张显示图（`maxImages` 可调大，见下节）；裁剪图与掩码仅在 `maxImages > 1` 时按面积顺序补送。
-- 未实现 calibrated fusion；`confidence` 不能作为概率使用。
-- 单图 `decision=inconclusive` 时，解释必须保留不确定性，不得改写成确定结论。
+此前7个真实样例的运行数据属于旧的六段文本实现，不作为本版本模型质量验收。新版本已实测鸟类、票据、短信及真实对照快照；对象识别有改善，但手法猜测、理由编造与误判仍存在，未通过质量验收。完整对照在work/vlm-optimization-20261105，不能只挑选成功输出。模型支持度的定义见报告协议第10节，LPC保留在内部；图片和掩码空间对应本身不保证模型理解正确。
 
 ## 配置（`config/explanation.example.json` / `.local.json`）
 
@@ -82,17 +73,15 @@ npx tsx work/test-all-bundles.ts --model <name> --host <url>
 | `host` | Ollama 地址 | 合法 URL（无协议头时按 `http://` 补全） | `http://127.0.0.1:11434` |
 | `numCtx` | 上下文窗口 `num_ctx` | 正整数 | `8192` |
 | `numPredict` | 输出上限 `num_predict` | 正整数 | `1200` |
-| `maxImages` | 送图上限 | 正整数，≥1 | `1` |
+| `maxImages` | 送图上限 | 正整数，≥1 | `3` |
 
 `temperature` **不配置化**，代码固定为 `0`：解释任务要求确定性，不属于环境相关参数。JSON 不支持注释，模板里的 `_comment` 字段仅作文档说明，加载时被忽略。
 
-**`numPredict: 1200` 是"当前 schema 的合适值"，不是硬性上限。** 6 个 ≤140 字短字段实测 `eval_count` 约 300–700，1200 是留有余量的档位；一旦扩展 `EXPLANATION_SCHEMA`（新增字段、放宽段落长度），必须同步调大，否则输出会被 `num_predict` 截断并降级为模板。
-
-**`maxImages > 1` 会增加视觉 token。** 加载顺序为 display（整图）→ mask（篡改区域，面积大者优先）→ crop（局部特写，面积大者优先）。实测 `maxImages: 3` 时同一张 256×384 样本的 `prompt_eval_count` 从 1901 涨到 4065，接近翻倍；4GB 显存下需同时留意 `num_ctx` 是否够用。
+`numPredict=1200` 为简短摘要、证据权衡和最多3个区域保留输出预算；扩展格式时需重新检查截断情况。默认 `maxImages=3`，加载顺序为整图和最多两个定位器的掩码，不发送裁剪图。较小显存可减少图片上限；JSON只列实际读取成功的图片及其顺序。
 
 优先级链（高 → 低，逐字段覆盖）：
 
-1. `generateExplanation` 的显式参数（`modelName`、`ollamaHost`）；测试脚本 `--model` / `--host` 走这层。
+1. `generateExplanation` 的显式参数（`modelName`、`ollamaHost`）；显式传入可切换运行服务。
 2. 环境变量 `OLLAMA_HOST`（只影响 `host`；模型不设环境变量，避免与 Ollama 自身变量混淆，换模型请改配置或走显式参数）。
 3. `config/explanation.local.json`；若设置了 `SRDP_EXPLANATION_CONFIG`，则用它指定的路径替代该文件（语义与 `SRDP_RITA_CONFIG` 一致，不新增配置层）。
 4. `config/explanation.example.json`。
@@ -124,12 +113,12 @@ $env:OLLAMA_HOST = "127.0.0.1:11434"   # 无协议头会自动补 http://
 $env:SRDP_EXPLANATION_CONFIG = "E:\temp\test-explanation.json"
 
 # 显式参数优先级最高
-npx tsx work/test-all-bundles.ts --model <name> --host http://127.0.0.1:11434
+# 调用方可显式传入 modelName 和 host，优先于本机配置。
 ```
 
 启动日志会打印每个字段的实际来源，便于排查：
 
 ```
 [explanation-config] model=... (explicit) host=... (config/explanation.local.json) numCtx=8192 (builtin) ...
-[explanation-images] maxImages=1 sent=1
+[explanation-images] maxImages=3 sent=2
 ```

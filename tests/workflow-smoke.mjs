@@ -75,6 +75,7 @@ try {
   }
   async function result() {
     await page.getByTestId('workflow-bundle').waitFor({ state: 'attached', timeout: 600000 })
+    await page.getByTestId('workflow-technical-details').evaluate(element => { element.open = true })
     return JSON.parse(await page.getByTestId('workflow-bundle').textContent())
   }
   await choose(image)
@@ -344,6 +345,7 @@ try {
     )
     await failPage.getByTestId('analyze-button').click()
     await failPage.getByTestId('workflow-bundle').waitFor({ state: 'attached', timeout: 600000 })
+    await failPage.getByTestId('workflow-technical-details').evaluate(element => { element.open = true })
     const fallback = JSON.parse(await failPage.getByTestId('workflow-bundle').textContent())
     const fallbackReport = fallback.reports[0]
     assert.equal(fallbackReport.result.routing.mode, 'auto')

@@ -136,3 +136,49 @@ VLM 调用层根据 `artifactId` 加载实际图片。JSON 文件中的路径或
 文件 SHA256、图片尺寸和副本变换是实际测量；来源检查、分类分数、模拟定位矩形和模板解释不应混成同等可靠的证据。模拟报告必须保留标记，即使使用的原图来自真实数据集。
 
 第一阶段联调允许失败、不支持和信息缺失；这些状态应完整传递，不能用“真实”或 0 分替代。
+
+## 9. 分类判定裕量（2026-11-04）
+
+该节记录原始阈值距离定义。2026-11-05新增的主要`confidence`接口见第10节；简明报告和VLM使用第10节的模型支持度，`decisionConfidence`仍留在完整审计报告中。
+
+SICA 和 FSD 的 `result.decisionConfidence` 为可选字段；旧报告继续兼容。联合报告的检测器记录、简明报告的 `screening` / `aigc` 同步保存该字段。它衡量分数与当前阈值的距离，不改变原始分数、阈值、类别或掩码，也不是最终解释报告的 `confidence`。
+
+- SICA：`d = abs(score - threshold)`；score >= threshold 时 `value = d / (1 - threshold)`，否则 `value = d / threshold`。分数恰在阈值时 value=0；有效分数端点按所属类别归一化，结果在0～1。
+- FSD：`d = abs(zScore - threshold)`，`value = d / (d + 1)`。1 是工程选定的一个 z-score 单位，尚无准确率校准依据。
+- 字段保留 `value`、`distance`、`source=threshold_distance`、`normalization`、`calibrated=false`、`comparableAcrossModels=false`。输入缺失或无效时为null，不能将0与未运行混淆。
+- 裕量越大，只表示同一模型当前判定离边界越远。两种归一化的数值不能跨模型比大小或作投票权重。FSD的non_ai只涉及AI生成，不否决copy-move；SICA阴性不否决RITA定位。定位器没有整图阈值时，不根据最大像素响应制造图像级置信度。
+- APP适配器在写出本轮报告前添加派生字段；联合汇总对旧版/复用报告按原始分数重算字段，不修改已有来源快照。Python单图CLI的原始worker输出保持原格式。
+
+## 10. 各模型的结论支持度（2026-11-05）
+
+各模型报告`result.confidence`、简明报告`screening.confidence` / `aigc.confidence` / `localization[].confidence`，以及定位报告`regions[].confidence`使用同一可选结构：
+
+```json
+{
+  "value": 0.8,
+  "description": "标记区域内像素的平均篡改响应",
+  "target": "marked_region_pixels",
+  "source": "mean_tamper_response",
+  "calibrated": false,
+  "comparableAcrossModels": false
+}
+```
+
+上面数值仅示意。具体含义为：
+
+- SICA：`target=general_image_classification`，`source=model_sigmoid`。当前预测fake时取p_fake，预测real时取1-p_fake；支持度跟随实际预测类别，分类阈值不变。
+- FSD：`target=ai_generation_classification`，`source=threshold_distance`，沿用d/(d+1)。描述为“当前AI分类的阈值距离支持度”，与模型原生类别概率区分。
+- RITA / RiSE：`target=marked_region_pixels`，`source=mean_tamper_response`。从浮点响应计算已标记像素均值；每个区域只统计对应连通组件，排除框内背景与其他组件。整幅预测掩码的confidence为全部标记像素的面积加权均值，不受最多20个展示区域的截断影响。空掩码为null。
+- 旧定位报告没有浮点统计字段时保留null，不从8位热图补造精确支持度；区域confidence不代表定位IoU、对象完整性或正确率。RiSE LPC继续只留内部专家选择记录。
+
+`description`只简短说明数值含义，适用范围和来源由target/source表达。给VLM的用户消息是精简JSON，包含模型任务、状态、原始分数与阈值、confidence、区域对应与实际分歧；选择最多3个有证据引用的主要区域，同时保留各检测器总数和展示数。完整报告与掩码不受输入截断影响。不发送源码诊断、哈希或LPC，不重复叠加限制性Prompt。未执行/缺失和数值0分别保留。
+
+## 11. 用户解释与进度（2026-11-05）
+
+解释入口签名与IPC保持不变。VLM输入整图与预测掩码，JSON中用图片序号及区域A/B/C建立对应；输出简短综合判断、位置、对象、原因和证据权衡，专业指标保留在技术报告。
+
+最新优化采用局部内容观察+综合判断：先看不着色的上下文裁剪，再以整图、黑白预测掩码及JSON综合证据。模型仅生成finalDecision/primaryRegionId/subject/suspectedOperation/explanation五字段；代码适配现有ExplanationResult，区域增加suspectedOperation及operationSource=vlm_hypothesis，独立于检测器operationHints。操作类别为模型候选，原始回答照实保存extensions.rawJudgements，局部观察存extensions.visualObservations。只做结构与区域引用检查，不按关键词、文风、重复或预期标签过滤。原始分数、阈值、掩码和上游判定不改动。
+
+ExplanationResult新增可选decisionSource（vlm/rule_fallback）、upstreamDecision、evidenceBalance、regionAnalyses（regionId/location/subject/reason/evidenceIds）。finalDecision为本轮VLM的定性综合判断，与保存的上游判定分别追溯；confidence仍为unavailable。模型只返回区域别名，正式区域ID和证据引用由代码映射并校验。解析失败或服务不可用时返回明确标记的基础说明；成功IPC结果另存reports/explanation.json，不覆盖原检测bundle。
+
+联合进度DTO增加可选workflowPhase、routingStatus和步骤message；不改已有字段。前端根据真实阶段逐条展示消息和当前步骤，检测结束自动请求解释。旧报告和单模型调试入口继续兼容。

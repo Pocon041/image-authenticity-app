@@ -5,6 +5,7 @@ import { basename, join, resolve } from 'node:path'
 import { app } from 'electron'
 import sharp from 'sharp'
 import type { AnalysisReport } from '../../shared/contracts'
+import { fsdDecisionConfidence, fsdClassSupport } from '../../shared/decision-confidence'
 import { AppError } from '../errors'
 import type { ImportedImage } from '../image-import'
 import type { AnalysisContext, AnalysisService } from './analysis'
@@ -54,6 +55,10 @@ export class AigcAnalysisService implements AnalysisService {
     const report = bundle.reports?.[0]
     if (!report || bundle.image?.imageId !== input.asset.id || report.mode !== 'local' || report.moduleId !== 'aigc') throw new AppError('INFERENCE_FAILED', 'FSD 输出身份或协议无效。')
     const result = report.result
-    return { id: context.taskId, imageId: input.asset.id, backend: 'aigc', mode: 'local', createdAt: report.createdAt, elapsedMs: report.elapsedMs, title: 'FSD AI 生成检测已完成', summary: `${basename(input.sourcePath)}：${result.decision === 'ai_generated' ? '检测倾向 AI 生成' : result.decision === 'non_ai' ? '检测倾向真实图像' : '结果不确定'}。`, sections: [], disclaimer: (report.limitations ?? []).join(' '), aigc: { decision: result.decision, zScore: result.score.value, threshold: result.threshold, attributedSource: result.attribution?.source ?? null, attributionScore: result.attribution?.score ?? null, bundlePath: join(output, 'bundle.json'), bundle } }
+    const decisionConfidence = fsdDecisionConfidence(result.score?.value, result.threshold)
+    result.decisionConfidence = decisionConfidence
+    result.confidence = fsdClassSupport(result.score?.value, result.threshold, result.decision)
+    await writeFile(join(output, 'bundle.json'), JSON.stringify(bundle, null, 2))
+    return { id: context.taskId, imageId: input.asset.id, backend: 'aigc', mode: 'local', createdAt: report.createdAt, elapsedMs: report.elapsedMs, title: 'FSD AI 生成检测已完成', summary: `${basename(input.sourcePath)}：${result.decision === 'ai_generated' ? '检测倾向 AI 生成' : result.decision === 'non_ai' ? '检测倾向真实图像' : '结果不确定'}。`, sections: [], disclaimer: (report.limitations ?? []).join(' '), aigc: { decision: result.decision, zScore: result.score.value, threshold: result.threshold, decisionConfidence, confidence: result.confidence, attributedSource: result.attribution?.source ?? null, attributionScore: result.attribution?.score ?? null, bundlePath: join(output, 'bundle.json'), bundle } }
   }
 }

@@ -11,6 +11,8 @@ import numpy as np
 from PIL import Image
 
 from adapter import COMMIT, RisePredictor, digest
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'common'))
+from region_support import regions_with_support, mask_pixel_support
 
 
 class WorkerError(Exception):
@@ -23,11 +25,8 @@ def emit(kind, **payload):
     print(json.dumps({'type': kind, **payload}, ensure_ascii=False, allow_nan=False), flush=True)
 
 
-def regions_from_mask(mask, max_regions=20):
-    import cv2
-    count, _labels, stats, _centroids = cv2.connectedComponentsWithStats((mask > 0).astype(np.uint8), 8)
-    entries = sorted(stats[1:count], key=lambda entry: int(entry[4]), reverse=True)
-    return [{'bboxXYWH': [int(n) for n in entry[:4]], 'areaPixels': int(entry[4])} for entry in entries[:max_regions]], max(0, count - 1)
+def regions_from_mask(mask, max_regions=20, response=None):
+    return regions_with_support(mask, max_regions=max_regions, response=response)
 
 
 def run(request):
@@ -47,7 +46,8 @@ def run(request):
     mask, score_map, audit = model.predict(image, progress=lambda done, total: emit('progress', percent=25+round(60*done/total), label=f'RiSE 分块推理 {done}/{total}（九专家顺序执行）'))
     np.save(Path(request['outputDirectory']) / 'response.float32.npy', score_map)
     emit('progress', percent=88, label='生成掩码、区域与叠加图')
-    region_entries, region_count = regions_from_mask(mask)
+    region_entries, region_count = regions_from_mask(mask, response=score_map)
+    pixel_support = mask_pixel_support(mask, score_map)
     values = score_map.ravel()
     count = max(1, int(np.ceil(values.size * 0.01)))
     score = float(np.partition(values, values.size - count)[-count:].mean())
@@ -83,6 +83,7 @@ def run(request):
         regions.append({'regionId': region_id, **entry, 'coordinateSpace': 'display_image_pixels',
                         'maskArtifactId': mask_id, 'cropArtifactId': crop['artifactId']})
     limitations = [
+        'confidence仅为掩码内像素响应均值，不是区域定位正确率；LPC仅留内部专家选择诊断。',
         '本次仅运行 RiSE-9 RGB 视觉定位，未运行 SICA、OCR、AI生成专用检测或VLM。',
         '像素响应与专家选择分数均未经图像级校准，整图判断保留为inconclusive。',
         '全图采用512×512重叠分块并平均响应，与论文预裁剪输入协议不同，可能产生边缘效应。',
@@ -97,6 +98,7 @@ def run(request):
         'createdAt': timestamp, 'elapsedMs': round((time.perf_counter() - started) * 1000), 'inputReportIds': [],
         'result': {
             'decision': 'inconclusive',
+            'confidence': pixel_support,
             'score': {'name': 'top_1pct_mask_probability', 'value': score, 'positiveClass': 'tampered', 'calibrated': False},
             'regions': regions, 'operationHints': [],
             'localization': {'status': 'completed', 'regionCount': region_count,
@@ -107,7 +109,7 @@ def run(request):
         'evidence': [{'evidenceId': f'{report_id}:e1', 'kind': 'model_localization', 'origin': 'measured',
             'description': '官方 RiSE-9 RGB 权重严格加载后执行全图分块视觉定位。', 'regionId': None,
             'artifactIds': [mask_id, f'{report_id}:response'],
-            'data': {'score': score, 'maskThreshold': 0.5, 'regionCount': region_count},
+            'data': {'score': score, 'confidence': pixel_support, 'maskThreshold': 0.5, 'regionCount': region_count},
             'limitation': '像素响应及LPC专家选择分数不代表整图真实性概率。'}],
         'artifacts': artifacts, 'limitations': limitations, 'error': None,
         'extensions': {**audit, 'rawResponse': {'uri': 'response.float32.npy', 'sha256': digest(output / 'response.float32.npy'), 'dtype': 'float32', 'coordinateSpace': 'display_image_pixels'}}

@@ -7,6 +7,7 @@ import addFormats from 'ajv-formats'
 import sharp from 'sharp'
 import schema from '../../../schemas/report-bundle.schema.json'
 import type { AnalysisReport } from '../../shared/contracts'
+import { sicaDecisionConfidence, sicaClassSupport, type DecisionConfidence, type ModelSupport } from '../../shared/decision-confidence'
 import { AppError } from '../errors'
 import type { ImportedImage } from '../image-import'
 import type { AnalysisContext, AnalysisService } from './analysis'
@@ -31,6 +32,8 @@ interface SicaBundle {
     taskId: string
     elapsedMs: number
     result: {
+      decisionConfidence?: DecisionConfidence | null
+      confidence?: ModelSupport | null
       score: { value: number }
       classification: { predictedClass: 'fake' | 'real'; threshold: number }
     }
@@ -205,6 +208,12 @@ export class SicaAnalysisService implements AnalysisService {
     )
       throw new AppError('INFERENCE_FAILED', 'SICA 输出身份或完整加载记录不一致。')
     const { score, classification } = report.result
+    const decisionConfidence = sicaDecisionConfidence(score.value, classification.threshold)
+    report.result.decisionConfidence = decisionConfidence
+    const confidence = sicaClassSupport(score.value, classification.predictedClass)
+    report.result.confidence = confidence
+    await writeFile(bundlePath, JSON.stringify(raw, null, 2))
+    await writeFile(join(output, 'report.json'), JSON.stringify(report, null, 2))
     return {
       id: context.taskId,
       imageId: input.asset.id,
@@ -233,6 +242,8 @@ export class SicaAnalysisService implements AnalysisService {
         decision: classification.predictedClass,
         score: score.value,
         threshold: classification.threshold,
+        decisionConfidence,
+        confidence,
         checkpointVariant: report.extensions.checkpointVariant,
         bundlePath,
         bundle: raw as Record<string, unknown>

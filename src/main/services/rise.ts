@@ -7,6 +7,7 @@ import addFormats from 'ajv-formats'
 import sharp from 'sharp'
 import schema from '../../../schemas/report-bundle.schema.json'
 import type { AnalysisReport } from '../../shared/contracts'
+import type { ModelSupport } from '../../shared/decision-confidence'
 import { AppError } from '../errors'
 import type { ImportedImage } from '../image-import'
 import type { AnalysisContext, AnalysisService } from './analysis'
@@ -32,6 +33,7 @@ interface RiseBundle {
     elapsedMs: number
     producer: { name: string }
     result: {
+      confidence?: ModelSupport | null
       decision: string
       score: { value: number } | null
       regions: unknown[]
@@ -250,6 +252,7 @@ export class RiseAnalysisService implements AnalysisService {
       ],
       disclaimer: report.limitations.join(' '),
       localization: {
+        confidence: report.result.confidence ?? null,
         decision: report.result.decision,
         score: report.result.score?.value ?? null,
         regionCount,
