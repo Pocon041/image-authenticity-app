@@ -1,8 +1,8 @@
 {
-  "_comment": "numPredict=1200 是当前 schema 的合适值（6 个 <=140 字短字段实测 eval_count 约 700），不是硬性上限：schema 扩展（新增字段/放宽长度）时必须同步调大。maxImages 每多送 1 张图都会额外消耗视觉 token 并挤占 num_ctx，2B/4GB 建议保持 1。temperature 固定为 0，不在此配置。",
+  "_comment": "maxImages=3：整图及最多两个定位器掩码；按实际附件发送。numPredict=1200为简短综合说明和最多3个区域预留输出，扩展格式时需同步检查。temperature固定0。",
   "model": "srdp-qwen3-vl-2b",
   "host": "http://127.0.0.1:11434",
   "numCtx": 8192,
   "numPredict": 1200,
-  "maxImages": 1
+  "maxImages": 3
 }

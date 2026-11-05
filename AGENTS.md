@@ -45,6 +45,78 @@
 
 ## 历史记录
 
+### 本轮发布整理（2026-11-05）
+
+- 用户明确授权提交并推送czh，再将功能更新发布main。已fetch origin：main仍为0c2f37b，yr_explanation已同步到同一提交；当前代码含其功能，无需替换他人实现。发布包含模型支持度、区域统计、分阶段本地解释、候选手法与右侧真实进度对话；保留原分类阈值和本地/云端调用入口。
+- main发布使用最新main基础的独立整合分支，排除本文件；共享AGENT增量合并。模型、图片、权重、个人配置、Ollama缓存和work试验均保持Git忽略。真实Qwen解释质量的负面结果与当前限制保留在文档，不将工程测试通过表述为准确率达标。
+
+### 分阶段视觉解释与候选手法优化（2026-11-05）
+
+- 用户授权深度优化，要求整图和预测掩码确实参与分析；输出选出最值得怀疑的目标和最可能的手法。随后明确取消按关键词/文风进行输出筛选。保留上游模型、阈值与掩码，未训练新算法，不推送main。
+- 对照片/票据/短信进行本地对照：整图+黑白掩码、整图+叠加、三图联合观察、无Schema自由描述和单局部图观察。模型曾照抄JSON字段说明、将三图角色混淆、把人工红色叠加当异常依据。因此新增visual-observation.ts：按预测bbox扩20%上下文（至少16像素）读取不着色原像素，独立调用一次局部观察，最多3处；不让模型同时识别区域和判断真假。局部三样例可识别水鸟、模糊数字和21:16，但票据仍有文字/内容误读，不记为准确率。
+- 综合阶段仍实际发送完整待分析图和原尺寸预测黑白掩码，附上JSON中的局部观察、实际分歧、来源、模型任务与支持度。将real/non_ai改写为本任务的中文结果，明确支持度支持哪一个类别；JSON说明图片均来自同一输入，没有编辑前参考图，避免模型误用“与原图不同”。不传文件名或真值，不强制正确类别。
+- 实际生成格式减为5字段finalDecision/primaryRegionId/subject/suspectedOperation/explanation，减少数组和重复段落负担；允许null目标和unknown手法。区域位置按bbox在整图上的位置计算，正式regionId/证据仍代码关联；界面展示优先关注对象与“可能方式”。手法枚举复制移动/拼接/擦除/局部修复重绘/文字修改/AI生成/暂不能区分，报告标明operationSource=vlm_hypothesis，未写入检测器operationHints。
+- 删除专业词、重复句、风格、长度及预期真假相关的输出拦截，仅检查JSON类型、枚举和引用；保留旧结构解析兼容。原始综合返回保存在extensions.rawJudgements，原始局部描述在extensions.visualObservations；观察失败为failed而非零分或造描述。各调用共享120秒预算，局部单请求最多60秒，格式结构最多重试1次，网络失败保持原基础说明路径。
+- 新流程实际在鸟类同图、票据、短信及CASIA真实对照快照运行，源图均为既有实际检测输出，未重新推理或伪造缺失SICA/FSD。鸟类当前版本完整2阶段调用4.191s：局部观察1张原始裁剪，综合2张整图+mask，单次综合正常stop、对象识别一只鸟，选择右侧目标并猜测复制移动；但finalDecision=no_anomaly_detected，文字仍有将自然外观当低篡改依据等问题，不能宣称综合判断正确。前一轮猜测过inpainting，说明手法不稳定。
+- 票据/短信运行可提出文字修改，但理由存在虚构的价格/日期关系；真实对照也曾错误归因AI生成或得出自相矛盾文字。全部保留于work/vlm-optimization-20261105的cases.json、before-relationship-*及对照调用文件；没有将负例通过过滤隐藏。已确认本地调用和对象理解部分改善，未完成判断质量验收。
+- test:explanation新增原像素裁剪一致性/掩码尺寸/越界/观察失败、5字段解析、手法与优先区域引用、无关键词拦截等检查；test:confidence、协议6组、编排15组、生产构建与6组对话Electron Smoke通过（合成IPC，仅工程验证）。原图输入组件和公共styles.css不变；README/交接协议/共享AGENT同步两阶段定义。新代码和历史未提交修改都保留在本地czh，未提交或发布。
+
+### 本地服务恢复后的真实解释复核（2026-11-05）
+
+- 用户启动Ollama后，api/tags成功返回srdp-qwen3-vl-2b:latest；真实127.0.0.1请求已恢复。使用既有完整CASIA12407快照，按同图/bbox关联新RITA区域支持度到测试副本，原报告未覆盖，不重跑检测或利用真值。输入整图与预测掩码2张，用户消息为JSON，实际调用和原始响应保存work/user-explanation-test/real-*。
+- 第一轮两次响应均正常stop，耗时9.129s，但复述专业数值、location=A并出现重复，旧表达检查漏过“像素平均篡改响应”，不能将local模式等价为说明质量合格。原始结果另存initial-real-*后，补充小数/专业词、区域编号代替位置和重复句检查，并在JSON给出从bbox算出的左/中/右位置。
+- 第二轮两次响应正常stop、6.941s，仍有专业指标复述与位置=A，最终明确返回mock基础说明。该轮可确认本地模型确实收到2张图和新JSON，但没有达到新用户说明合同；不以不断放松检查或篡改模型事实假装验收通过。保持现有最多一次重试；本轮改动仍本地未发布。
+
+### 用户说明与右侧对话进度（2026-11-05）
+
+- 用户授权优化VLM综合判断，输入整图+预测掩码、精简JSON及模型支持度；输出面向普通用户，不朗读模型名称、阈值或专业指标。新增user-explanation.ts的summary/evidenceBalance/regions输出格式、区域别名映射和简洁表达检查。finalDecision改为模型独立判断，新增decisionSource与upstreamDecision区分来源；不改上游检测包、分数或分类阈值。默认maxImages=3，实际送图顺序写入JSON；本机配置同步3，云端host/model和generateExplanation签名保留。
+- VLM只返回已有区域A/B/C，代码映射正式regionId并关联实际定位证据。共享Schema兼容可选regionAnalyses/evidenceBalance/decisionSource/upstreamDecision，运行时检查区域及证据引用。格式不符可重试一次，服务失败以mock/template-fallback明确标记基础说明；不虚构真实性概率。IPC将解释独立保存reports/explanation.json，不改原bundle。
+- 右侧联合模式新增WorkflowConversation，左侧ImagePanel、公共styles.css和图像输入逻辑没有改动。真实后端进度新增可选workflowPhase/routingStatus/message，逐步显示来源读取、路由、整图/生成检查、区域定位和汇总；当前步loading与最新进度、关键完成信息逐条出现。路由完成前不编造总步数；失败/复用/取消分别记录，不用定时器伪造诊断或逐字生成。
+- 检测完成后自动请求说明并显示loading，最终给综合判断、位置/对象/原因和短权衡；专业报告/叠加/JSON收进折叠详情。React effect复用同一请求避免重复调用，换图/重新分析后忽略迟到响应。取消检测不请求解释，部分失败保留报告，解释失败可重试。生成过程中用户可换图；目前仅忽略旧解释回包，尚不取消其Ollama请求，超时仍按已有120秒机制。
+- 新增test:explanation三组通过（含整图/掩码序号、别名/证据映射、独立综合判断、未知区域拒绝和基础说明回退）；smoke:conversation六组真实Electron界面测试通过（合成IPC/模型响应），包括步骤计数、消息/自动请求、1400/1060无横溢出、取消、部分失败/解释重试与换图丢弃迟到结果。截图和结果在work/conversation-smoke；仅证明工程交互，不是实际模型输出质量。test:confidence、协议6组、编排15组、生产构建含类型检查通过，默认start.cmd启动3项通过。
+- 实机Ollama服务检查为不可用，未再次尝试此前被策略拒绝的启动动作，因此本轮不宣称新输出格式已通过真实Qwen推理。README、共享AGENT和交接协议同步当前使用方式；尚未提交推送。旧workflow-smoke/layout脚本适配展开技术详情，未重复运行整套真实模型验收。
+- 最终模拟桌面回归15项通过（真实Electron+模拟分析服务），无渲染异常或外部HTTP请求；进度与结果截图已经人工查看，修正步骤计数的sticky遮挡。新UI的图片测试为明确合成图，截图不冒充真实取证结果；左侧输入组件及原公共样式文件无diff。
+
+### 各模型结论支持度与简洁JSON输入（2026-11-05）
+
+- 用户明确要每个模型对当前结论的支持程度，而非仅阈值距离；要求描述简洁、有助后续判断，不堆叠防御性提示。新增统一可选confidence结构：value/description/target/source/calibrated/comparableAcrossModels。SICA为实际预测类别的sigmoid支持（real取1-p，fake取p）；FSD为现有距离派生量；旧decisionConfidence仅留完整审计，简明报告以新confidence为主。
+- 新增backend/common/region_support.py，RITA/RiSE在浮点响应上计算整幅已标记像素及逐连通区域均值。区域均值不包含bbox内背景或其他组件；全掩码均值覆盖全部组件，不受最多20个展示区域截断影响。空掩码/旧报告无统计为null，不以0替代。未改像素决策、分类阈值、推理模型或路由；LPC仍留RiSE内部诊断。
+- 完整包、单模型APP报告、detector记录、analysis.json及Schema/类型已适配；描述如“当前预测类别的模型支持度”“标记区域内像素的平均篡改响应”。VLM用户消息改为JSON，保留任务、状态、分数/阈值、confidence、区域和实际分歧；每个定位器按面积列出最多3处并保留总数/展示数，不附哈希、源码或LPC，不重复强加限制句。原generateExplanation参数、云端host/model和六字段输出接口保留，最终decision/confidence装配规则未更改。
+- 实测同一CASIA12407图像，RITA新区域支持度0.9898254146，bbox仍为[482,152,158,94]、8597像素，PNG掩码与此前运行逐字节一致。RiSE照片单图2块正常完成，32组件/保留20区域，全部标记像素支持度0.7823704048；该补测只验证输出字段，不代表文档模型在照片上的质量结论。
+- 本轮示例work/model-support-20261105-casia12407/model-results.json：SICA使用同图既有score0.3243587315得到类别支持度0.6756412685，FSD使用既有z=-0.0164866655得到0.6648246923；RITA/RiSE为本轮新推理。实际两个定位包Schema与置信度字段通过，validation.json记录结果与来源，未将旧结果冒充重新分类。
+- 类型检查/生产构建、3组confidence测试（含模型支持、Schema与纯JSON请求模拟传输）、15组联合编排、6组协议、6项区域统计、5项RITA后处理及实际start.cmd启动3项通过。JSON传输测试用模拟响应，不声称真实VLM分析质量提高；此前Ollama启动被策略拒绝，本轮未重试该启动动作。共用协议记AGENT.md和docs/REPORT_PROTOCOL_V1.md第10节，未发布main。
+
+### 分类阈值距离置信度接入（2026-11-04）
+
+- 用户要求阈值不变，新增随分数到阈值距离增加的置信度并供VLM参考。实现src/shared/decision-confidence.ts：SICA按当前类别到分数端点的区间归一化距离；FSD用d/(d+1)，d=abs(z-threshold)，1为工程参考的z单位。字段decisionConfidence携带来源、原始距离、归一化方法、calibrated=false、comparableAcrossModels=false；缺失/非法输入返回null，阈值上裕量为0。
+- 仅补充报告派生量：SICA/FSD的TS适配器保存本轮result.decisionConfidence及DTO；联合汇总对旧版/复用报告重算并写入独立报告、detector记录、analysis.json。可选Schema和协议类型兼容旧报告；未改Python模型、分类阈值、掩码、路由或最终综合概率，不为RITA/RiSE无整图阈值的像素响应伪造置信度。
+- VLM现有调用签名与云端host/model接口保留，Prompt新增简短JSON指标及任务范围，说明优先参考同任务远离阈值的判定、对临界结果保留不确定性；不能跨模型直接投票，FSD非AI不能否决copy-move，SICA阴性不能否决局部定位。检测详情折叠区展示新指标；最终ExplanationReport.confidence仍为unavailable。
+- test:confidence三组（双向单调/端点/缺失输入、真实分数样例/Schema拒绝伪校准、实际解释请求模拟传输）通过；15组工作流和6组协议检查通过，生产构建含类型检查通过。格式化新文件未改变计算逻辑。
+- 真正Electron照片流程7f63a1ce-3ab3-4a24-a7ca-44eb287052c5已完成FSD/SICA/RITA与报告保存；同一CASIA鸟类样例SICA阈值0.5/score0.3243587315得到0.351282537，FSD阈值-2/z=-0.0164866655得到0.664824692。完整包Schema与各份派生字段检查通过。第一次桌面脚本因匹配两个details而失败（产品报告已完成），已改为唯一testid；第二次被会话中断，未作为成功Smoke记录。
+- 基于已完成快照的真实VLM补测遇到127.0.0.1:11434连接拒绝；自动审批策略拒绝启动Ollama后台命令，仅返回blocked by policy，无进一步原因。未绕过，未把模板降级记为真实模型成功。当前只确认JSON实际请求传输模拟通过，未确认新指标改善VLM判断。复现/中间产物保存在work/decision-confidence-test，未推送main。
+
+### CASIA12407补测FSD（2026-11-04）
+
+- 用户询问同一张鸟类样例的FSD分数。此前试验未运行FSD；本轮用现有官方FSDDetector.load/score单独实测同一规范整图（640×293），不读取掩码、裁剪、文件名标签或真值，不改模型和阈值。
+- 复用既有下载的config.json/fre.pt/gmm.pt/fsd_transforms.pt，仅复制缺失文件到D:/SRDP/weights/fsd/v1.2.0，显式传weights_dir加载，不调用下载器。未删除旧缓存或更改第三人产品代码。
+- 原始z-score=-0.016486665496319393，raw_score=-53.89375378945079，阈值-2.0，按z<threshold判AI生成的规则输出non_ai。该分数不是概率，不能据此排除copy-move或其他局部编辑。
+- 实际本机.venv-fsd当前为torch2.15.0+cpu、自动选择CPU，单次总耗时33.293s。结果与复现脚本保存work/vlm-crop-20261104-12407/fsd-result.json、fsd_score.py；此前VLM试验中的FSD=not_run仍如实保留，不追写成当时已运行。
+
+### 整图与预测掩码的JSON输入及证据权衡试验（2026-11-04）
+
+- 延续上述CASIA12407试验，用户希望不叠加长Prompt，以JSON传入整图+RITA掩码、copy-move能力边界，并提高完整对象定位的核查优先级。复用本轮真实SICA/RITA结果；FSD没有运行，在JSON明确not_run，未伪造其non_ai结果，也不将数据集文件名/真值传给模型。
+- 在work/vlm-crop-20261104-12407/mask-json.mjs中保存两次实际调用：mask-input.json/full-and-mask-json.json；加已有bbox与右侧位置的mask-regions-input.json/full-and-mask-json-regions.json。均只传规范整图和原尺寸黑白预测掩码，不传crop；短system提示，业务事实与解释边界放JSON。Ollama本地模型两次正常stop，耗时7.137s/4.534s。
+- 模型保留了“整图阴性不能否决局部阳性”的关系，但两次仍将对应对象说成两只鸟，并生成未获证实的对象轮廓相似依据；说明当前2B模型对整图/黑白掩码空间对齐不足，JSON输入或增加bbox不保证解释正确。本轮不将这两次输出并入产品，不通过反复强行指定对象名称来冒充视觉识别成功。
+- 完整对象掩码作为重点核查线索，不能单独声称“很高篡改概率”。SICA为通用整图筛查，FSD为AI生成检测，二者阴性不构成copy-move无篡改证明；RITA完整对象误标率与此条件下的定位可靠性尚未单独验证，不将三模型标签当投票或编造权重。若后续验证，需用实际真值区分未改图/篡改图，再比较同样整图阴性条件下完整对象定位的误报与命中；VLM所述完整性/相似性不能作为独立已测事实。
+
+### 整图与上下文裁剪输入本地VLM试验（2026-11-04）
+
+- 用户指定CASIA2_corrected_pilot/Tp/Tp_D_CNN_S_N_ani10198_ani10197_12407.jpg，授权试验整图+裁剪+简短检测事实。仅调用现有SICA/RITA单图CLI和本地Ollama，不改产品解释接口、模型或阈值，不运行来源/FSD/Router；文件名、数据集标签、真值、哈希和证据ID不进入VLM提示。
+- 真实SICA分数0.3243587315（阈值0.5，类别real）；RITA返回1个区域bbox=[482,152,158,94]、标记面积4.5846%，整图decision=inconclusive。裁剪自动按预测bbox加20%上下文（至少16像素）并截到图像边界，得到[450,133,190,132]，对应右侧一只鸟；没有以真值选裁剪或声称预测命中真值。
+- 结果目录为work/vlm-crop-20261104-12407，含原始检测报告、region-A-context.png、facts.json、三次请求的实际Prompt及原始Ollama响应。两次相同检测事实/JSON字段约束对照（整图1张与整图+裁剪2张）均正常结束，但把区域内容数成两只鸟，整图版擅自判断真实，双图版将SICA分数称为置信度；不能视为解释准确。
+- 第三次将提示简化为图片对应关系+SICA倾向真实/RITA右侧异常+分歧与限制，不传分数/坐标、不限制JSON四字段。Qwen3-VL-2B正确区分整图3只与裁剪1只鸟，保留无法确定，但仍有检测器角色含混及“共识不同”等不准确措辞。请求4.526s、输入2367token/输出169token，单次个例，不能宣称泛化、裁剪提升或速度收益。
+- Ollama仅请求127.0.0.1:11434/api/chat、模型srdp-qwen3-vl-2b；模型缓存仍位于D:/SRDP/weights/ollama-models。三个输出全部保留，未挑选后覆盖首次输出；试验未接入APP、不冒充整条桌面链路验收，不自动发布到main。
+
 ### 预处理后内容路由（Router）接入（2026-11-03）
 
 - 用户要求拉取最新代码后，在图像预处理后设计 router 并推送 czh，不碰 main。确认 origin/main（dbd213f）已完全包含于本地 czh，无新增需合并；基线 typecheck 与 10 组编排通过。

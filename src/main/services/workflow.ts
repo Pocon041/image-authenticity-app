@@ -36,6 +36,7 @@ export class WorkflowAnalysisService implements AnalysisService {
     }
     const detectors: DetectorResult[] = []
     const steps: WorkflowStep[] = []
+    let phase: 'prepare' | 'routing' | 'detectors' | 'aggregate' = 'prepare'
     const notify = (percent: number, label: string) =>
       context.onProgress({
         taskId: context.taskId,
@@ -43,6 +44,8 @@ export class WorkflowAnalysisService implements AnalysisService {
         stage: 'analyzing',
         percent,
         label,
+        workflowPhase: phase,
+        routingStatus: routing?.status,
         steps: steps.map((step) => ({ ...step }))
       })
     let resolvedType: ContentType = 'unsure'
@@ -70,6 +73,7 @@ export class WorkflowAnalysisService implements AnalysisService {
       notify(1, '检查来源信息与图像预处理')
       const common = await prepareWorkflowInput(input, output, this.root, context.signal)
       if (options.contentType === 'auto') {
+        phase = 'routing'
         const routeStarted = performance.now()
         notify(2, '图像预处理完成，自动判定内容类型')
         try {
@@ -120,6 +124,7 @@ export class WorkflowAnalysisService implements AnalysisService {
         }
       }
       const planned = plannedDetectors(resolvedType, !!previous)
+      phase = 'detectors'
       steps.push(...planned.map((backend) => ({ backend, status: 'pending' as const })))
       await manifest('running')
       for (let index = 0; index < planned.length; index++) {
@@ -131,6 +136,7 @@ export class WorkflowAnalysisService implements AnalysisService {
         if (cached) {
           detectors.push({ ...structuredClone(cached), reused: true })
           steps[index].status = 'reused'
+          steps[index].message = cached.localization ? `复用已完成的区域检查，保留 ${cached.localization.regionCount} 处候选区域。` : '复用上次已完成的检查结果。'
           notify(
             5 + Math.round((85 * (index + 1)) / planned.length),
             `复用 ${detectorNames[backend]} 已完成证据`
@@ -172,6 +178,10 @@ export class WorkflowAnalysisService implements AnalysisService {
             ...(result.localization ? { localization: result.localization } : {})
           })
           steps[index].status = 'completed'
+          steps[index].message = result.localization
+            ? result.localization.regionCount > 0 ? `已标记 ${result.localization.regionCount} 处候选区域。` : '本轮未标记候选区域。'
+            : result.aigc ? result.aigc.decision === 'ai_generated' ? '发现图像生成线索。' : result.aigc.decision === 'non_ai' ? '未发现明显的图像生成线索。' : '生成线索检查已完成。'
+            : result.classification?.decision === 'fake' ? '整图检查发现可疑线索。' : '整图检查倾向正常，继续结合局部结果分析。'
         } catch (error) {
           if (context.signal.aborted) throw error
           detectors.push({
@@ -184,12 +194,14 @@ export class WorkflowAnalysisService implements AnalysisService {
             }
           })
           steps[index].status = 'failed'
+          steps[index].message = '这项检查未完成，继续保留其他检查结果。'
         }
         await manifest('running')
       }
       for (const backend of ['aigc', 'sica', 'rita', 'rise'] as const)
         if (!planned.includes(backend)) detectors.push({ backend, status: 'not_run', elapsedMs: 0 })
       const flags = workflowFlags(detectors)
+      phase = 'aggregate'
       notify(94, '整理可追溯证据与附件')
       const merged = await aggregateEvidence({
         root: this.root,

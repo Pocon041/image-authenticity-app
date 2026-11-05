@@ -23,7 +23,7 @@
 - 内容路由：普通照片运行 SICA + RITA；文档/票据截图运行 SICA + RiSE；不确定时按顺序运行 SICA + RITA + RiSE。
 - 联合流程中 SICA 不作为定位硬门控；单模型失败不阻断后续模型，允许部分完成并保留错误。
 - 模拟模式仅保留作工程验证，必须明确标记，不能冒充真实推理。
-- 本阶段不训练模型、不接入 VLM 或远程推理服务。
+- 本阶段不训练模型；第四人VLM解释已接入，用户于2026-11-05授权优化综合判断、掩码输入与对话式进度。
 - 来源模块仅获准使用 OCR 匹配可见水印文字，不扩展为第四阶段的通用内容 OCR 分析。
 - FSD 为第三人 AIGC 初步接入，许可仅支持非商业用途；2026-10-29 最新授权后，联合流程先运行 FSD，再执行 SICA 整图筛查及 RITA/RiSE 定位。早期“FSD 不进入默认联合路由”为历史状态。
 - 缺少权重时不得伪造真实报告或静默回退模拟。
@@ -106,6 +106,7 @@ Windows 启动入口为 `start.cmd`；`run.cmd` 负责优先使用 `.tools/` 下
 - `run.cmd run provenance:setup`：在项目统一的 `.venv` 安装 C2PA、图像元数据、RapidOCR 与水印检测依赖。
 - `run.cmd run explanation:setup -- --model <本地Ollama标签>`：生成 Git 忽略的本地 Qwen3-VL/Ollama 配置；只写配置，不下载模型，不修改云端解释接口。
 - `run.cmd run test:workflow` / `smoke:workflow`：联合编排逻辑与真实桌面流程检查。
+- `run.cmd run test:confidence`：分类阈值距离、边界输入、Schema及实际解释请求JSON传输检查；使用合成响应，不代表模型质量评测。
 - `run.cmd run report:validate -- <analysis.json>`：简明报告 Schema、身份、相对路径与引用校验。
 - `<配置的Python> backend/sica/evaluate.py --casia-root <划分清单目录> --output <目录>`：只读运行本地 CASIA 子集，阈值固定 0.5，记录每图预测和分组统计，不声称独立泛化。
 - FSD 相关 worker、配置与验证入口见 `docs/AIGC_FSD.md`。
@@ -142,8 +143,10 @@ Electron 45 延迟下载导致首次启动出现 `Electron uninstall` 的修复�
 - README 已按 `image-authenticity-app` 重写，包含结构、协作边界、启动命令、从基础版增量升级步骤和后续接入位置。
 - 第一阶段报告协议 v1.0 初稿、共享 JSON Schema、样例生成与校验脚本已补齐。
 - 第一阶段材料已整理 12 张原文件，三份原生标注单独保存，唯一 `vlm-input.example.json` 面向 IMD2020 修复样本；材料通过文件级校验。
-- 第四人解释模块已接入：`generateExplanation` 消费前三人证据包；`finalDecision` / `confidence` / `claims` / `unresolved` 由代码从上游证据确定性装配，VLM 只按分区事实生成 6 段短句（JSON Schema，无数组），逐段做角色/绝对化校验，失败段落用规则文本回填；整体 VLM 失败时降级为规则模板。已打通 IPC 通道与前端界面展示。模型名、Ollama 地址、`num_ctx`/`num_predict`/送图上限由 `config/explanation.local.json`（模板 `config/explanation.example.json`）驱动，优先级为显式参数 > `OLLAMA_HOST` > local > example > 内置默认，改配置无需重启；配置缺失时逐级回退而非报错。
+- 第四人解释模块已接入：VLM根据精简JSON、整图和预测掩码给出独立综合判断及最多3个区域的用户解释。上游判定保存在upstreamDecision，decisionSource区分模型与规则回退；技术claims/unresolved和原始指标留详情，最终confidence仍为unavailable。原generateExplanation参数和host/model配置保留。IPC保存reports/explanation.json，不改上游bundle。
+- 联合分析右侧改为对话式进度：真实事件逐步显示来源/路由/整图/区域/汇总信息，标明当前步骤，检测完成后自动请求综合说明；左侧图像输入不改。取消、失败、复用与迟到解释均分别处理，专业指标和报告折叠。
 - 本地解释默认使用 `srdp-qwen3-vl-2b`（由 `Qwen/Qwen3-VL-2B-Instruct-GGUF` 导入 Ollama 的本地标签）；`explanation:setup` 只生成 Git 忽略的本机配置，不下载模型。原有 `generateExplanation` 的 `modelName` / `ollamaHost` 参数和云端 host/model 配置继续保留。
+- 2026-11-05解释优化：先独立观察不着色的局部上下文图，再以整图、预测掩码及精简JSON综合判断。新增primaryRegionId和候选手法，操作标记vlm_hypothesis，不改检测器operationHints。只校验输出结构和引用，不进行关键词/文风筛选；原始回答和区域观察保留在解释extensions。共享120秒调用预算，本地模型已能真实调用，但手法和理由的质量仍未验收。
 - SICA 独立二分类模式、RITA 独立定位模式、RiSE-9 RGB 独立文档定位模式、FSD 独立 AIGC 分析入口均已接入；HiFi-Net 运行入口已移除，不参与联合流程。
 - 联合流程已加入 FSD：在 SICA 整图筛查及 RITA/RiSE 定位前先运行 FSD；其判断、z-score、阈值、来源线索状态写入联合简明 JSON 和完整报告，界面先显示 AIGC 结果。
 - 第一人来源模块 v0.1.0：完整联合包增加 `provenance` 报告及独立 `reports/provenance.json`；记录原文件 SHA-256、显示副本、EXIF/XMP/IPTC/GPS 摘要、C2PA 活动清单与签名验证状态、可见水印候选和 SDXL 固定 48 位 DWT-DCT 载荷。
@@ -166,6 +169,7 @@ Electron 45 延迟下载导致首次启动出现 `Electron uninstall` 的修复�
 ### 已知限制
 
 - 尚无校准整图阈值时 `decision=inconclusive`；响应分数、距离、LPC confidence 等均不能冒充校准概率。
+- 模型报告新增可选`confidence`支持度，旧报告兼容：SICA为当前预测类别分数，FSD为阈值距离派生量，RITA/RiSE为整幅掩码及逐区域的标记像素平均响应。简明报告与VLM JSON保留简短description、target/source及任务/状态；不堆叠限制性Prompt，LPC留内部。旧decisionConfidence留完整审计。原始阈值、类别、掩码不变，最终综合confidence仍沿用第四人接口；定义见docs/REPORT_PROTOCOL_V1.md第10节。
 - SICA 的 `fake` 不等同局部篡改；RITA 真实图误报面积较高，图像级分类弱；RiSE 文档样例有额外标记，质量未验收；FSD 联合流程 Smoke 与项目数据效果验证未完成。
 - 解释模块使用 2B VLM，主要能力是复述分区事实；跨模块综合、复杂推理与开放式追问仍受模型能力限制，解释文本为辅助描述，不构成鉴定结论。
 - HiFi-Net 已移除运行入口，不参与当前联合流程；历史评测仅作归档。

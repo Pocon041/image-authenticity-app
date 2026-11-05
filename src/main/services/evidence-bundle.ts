@@ -5,6 +5,7 @@ import Ajv from 'ajv'
 import addFormats from 'ajv-formats'
 import sharp from 'sharp'
 import type { ContentType, DetectorResult, WorkflowRouting } from '../../shared/contracts'
+import { sicaDecisionConfidence, fsdDecisionConfidence, sicaClassSupport, fsdClassSupport } from '../../shared/decision-confidence'
 import {
   assertEvidenceBundle,
   validateEvidenceBundle,
@@ -310,6 +311,19 @@ const assets: Artifact[] = [...common.artifacts],
       report.mode !== 'local'
     )
       throw new AppError('INFERENCE_FAILED', '模型报告图片身份或执行模式不一致。')
+    // Recompute derived confidence, including for reused reports from older versions.
+    const decisionConfidence = detector.classification
+      ? sicaDecisionConfidence(detector.classification.score, detector.classification.threshold)
+      : detector.aigc
+        ? fsdDecisionConfidence(detector.aigc.zScore, detector.aigc.threshold)
+        : undefined
+    if (decisionConfidence !== undefined) report.result.decisionConfidence = decisionConfidence
+    const confidence = detector.classification
+      ? sicaClassSupport(detector.classification.score, detector.classification.decision)
+      : detector.aigc
+        ? fsdClassSupport(detector.aigc.zScore, detector.aigc.threshold, detector.aigc.decision)
+        : report.result.confidence ?? null
+    report.result.confidence = confidence
     const source = dirname(dto.bundlePath),
       prefix = `detectors/${detector.backend}`
     const modelArtifacts: Artifact[] = []
@@ -362,6 +376,8 @@ const assets: Artifact[] = [...common.artifacts],
       sourceReportSha256: digest(await readFile(join(output, reportUri))),
       checkpointSha256: report.extensions?.checkpointSha256,
       result: {
+        ...(decisionConfidence !== undefined ? { decisionConfidence } : {}),
+        confidence,
         ...(report.moduleId === 'manipulation' ? { score: report.result.score } : {}),
         ...(report.result.classification ? { classification: report.result.classification } : {}),
         ...(detector.aigc
@@ -370,6 +386,7 @@ const assets: Artifact[] = [...common.artifacts],
                 decision: detector.aigc.decision,
                 zScore: detector.aigc.zScore,
                 threshold: detector.aigc.threshold,
+                decisionConfidence,
                 attributedSource: detector.aigc.attributedSource,
                 attributionScore: detector.aigc.attributionScore
               }

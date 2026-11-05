@@ -106,6 +106,7 @@ try {
   await page.getByRole('button', { name: '选择图片', exact: true }).click()
   await page.getByRole('combobox', { name: '图片类型' }).selectOption('document')
   await page.getByTestId('analyze-button').click()
+  await page.getByTestId('workflow-technical-details').evaluate(element => { element.open = true })
   await page.getByTestId('workflow-overlay').waitFor()
   const checks = []
   for (const width of [1400, 1060]) {

@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict'
 import { randomUUID, createHash } from 'node:crypto'
 import { mkdir, readFile, writeFile, access } from 'node:fs/promises'
-import { resolve, join } from 'node:path'
+import { resolve, join, dirname } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import sharp from 'sharp'
 import { build } from 'rolldown'
@@ -151,6 +151,7 @@ function fixtureServices({
               await writeFile(join(directory, 'mask.png'), mask)
               await writeFile(join(directory, 'crop.png'), crop)
               regions.push({
+                confidence: {value: .8, description: 'Synthetic marked-pixel support', target: 'marked_region_pixels', source: 'mean_tamper_response', calibrated: false, comparableAcrossModels: false},
                 regionId: `${id}:region`,
                 bboxXYWH: [2, 3, 4, 5],
                 coordinateSpace: 'display_image_pixels',
@@ -184,7 +185,7 @@ function fixtureServices({
                       attribution: null,
                       clues: []
                     }
-                  : { decision: 'inconclusive', score: null, regions, operationHints: [] },
+                  : { decision: 'inconclusive', score: null, regions, operationHints: [], ...(backend !== 'sica' ? {confidence: {value: .8, description: 'Synthetic marked-pixel support', target: 'marked_region_pixels', source: 'mean_tamper_response', calibrated: false, comparableAcrossModels: false}} : {}) },
               evidence: [
                 {
                   evidenceId: `${id}:evidence`,
@@ -303,6 +304,16 @@ assert.equal(
   false
 )
 assert.equal(withAigc.workflow.summary.aigc.zScore, -2.5)
+assert.equal(aigcReport.result.decisionConfidence.value, 1 / 3)
+assert.equal(withAigc.workflow.summary.aigc.confidence.value, 1 / 3)
+assert.equal(withAigc.workflow.summary.aigc.confidence.target, 'ai_generation_classification')
+assert.equal(manipulationReport.result.detectors.find(d => d.backend === 'aigc').result.aigc.decisionConfidence.value, 1 / 3)
+assert.equal(withAigc.workflow.summary.screening.confidence.value, 0.9)
+assert.equal(withAigc.workflow.summary.regions[0].confidence.value, .8)
+assert.equal(withAigc.workflow.summary.localization[0].confidence.value, .8)
+const copiedSica = JSON.parse(await readFile(join(dirname(withAigc.workflow.bundlePath), 'detectors/sica/report.json'), 'utf8'))
+assert.equal(copiedSica.result.decisionConfidence.value, 0.8)
+checks.push('model support survives independent reports, regions and concise summaries; legacy margins stay in audit')
 checks.push('completed AIGC retains its independent report and globally unique evidence IDs')
 
 const photo = fixtureServices()

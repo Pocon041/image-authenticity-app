@@ -1,4 +1,5 @@
 import type { DetectorResult } from '../../shared/contracts'
+import { sicaClassSupport, fsdClassSupport } from '../../shared/decision-confidence'
 
 // A concise reader/VLM view. The complete v1.0 bundle remains the audit record.
 export function manipulationSummary(bundle: Record<string, any>, detectors: DetectorResult[]) {
@@ -42,6 +43,7 @@ export function manipulationSummary(bundle: Record<string, any>, detectors: Dete
     model: region.detector,
     bboxXYWH: region.bboxXYWH,
     ...(typeof region.areaPixels === 'number' ? { areaPixels: region.areaPixels } : {}),
+    confidence: region.confidence ?? null,
     crop: uri(region.cropArtifactId)
   }))
   return {
@@ -87,6 +89,7 @@ export function manipulationSummary(bundle: Record<string, any>, detectors: Dete
             decision: screening.classification.decision,
             score: screening.classification.score,
             threshold: screening.classification.threshold,
+            confidence: sicaClassSupport(screening.classification.score, screening.classification.decision),
             calibrated: false
           }
         : {}),
@@ -100,6 +103,7 @@ export function manipulationSummary(bundle: Record<string, any>, detectors: Dete
         decision: aigc.aigc.decision,
         zScore: aigc.aigc.zScore,
         threshold: aigc.aigc.threshold,
+        confidence: fsdClassSupport(aigc.aigc.zScore, aigc.aigc.threshold, aigc.aigc.decision),
         attributedSource: aigc.aigc.attributedSource,
         attributionScore: aigc.aigc.attributionScore
       } : {}),
@@ -119,6 +123,7 @@ export function manipulationSummary(bundle: Record<string, any>, detectors: Dete
           ...(item.localization
             ? {
                 regionCount: item.localization.regionCount,
+                confidence: records.find((record: any) => record.backend === item.backend)?.result?.confidence ?? null,
                 listedRegionCount: listed.length,
                 areaFraction: item.localization.manipulatedAreaFraction,
                 mask: own.find((asset: any) => asset.type === 'mask')?.uri ?? null,

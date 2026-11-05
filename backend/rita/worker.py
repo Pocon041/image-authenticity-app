@@ -133,7 +133,9 @@ def run(request):
             current = predicted
     inference_ms = round((time.perf_counter()-inference_started)*1000)
     mask, response, statistics = decode_sequence(labels, responses, size, threshold)
-    region_entries, region_count = regions_from_mask(mask)
+    region_entries, region_count = regions_from_mask(mask, response=response)
+    from postprocess import mask_pixel_support
+    pixel_support = mask_pixel_support(mask, response)
     output = Path(request['outputDirectory'])
     (output / 'artifacts').mkdir(parents=True, exist_ok=True)
     Image.fromarray(mask).save(output / 'artifacts/mask.png')
@@ -164,6 +166,7 @@ def run(request):
         regions.append({'regionId': region_id, **entry, 'coordinateSpace': 'display_image_pixels', 'maskArtifactId': mask_id, 'cropArtifactId': crop['artifactId']})
     score = statistics['score']
     limitations = [
+        'confidence仅为掩码内像素响应均值，不是区域定位正确率或完整性评分。',
         'RITA 输出为定位模型响应，未校准为图像真实性概率。',
         '推理步骤不是已证实的真实编辑历史，当前不识别具体编辑手段。',
         '固定 512×512 模型输入可能丢失细小区域；定位已映射回规范显示坐标。',
@@ -182,6 +185,7 @@ def run(request):
         'createdAt': datetime.now(timezone.utc).isoformat(), 'elapsedMs': round((time.perf_counter()-started)*1000),
         'inputReportIds': [], 'result': {
             'decision': statistics['decision'],
+            'confidence': pixel_support,
             'score': {'name': 'top_1pct_valid_pixels_class0_softmax', 'value': score, 'positiveClass': 'tampered', 'calibrated': False} if score is not None else None,
             'regions': regions, 'operationHints': [], 'localization': statistics,
             'responseEncoding': {'range': [0, 255], 'scale': 'round(class0_softmax*255)', 'calibrated': False},
@@ -191,7 +195,7 @@ def run(request):
         'evidence': [{ 'evidenceId': f'{report_id}:e1', 'kind': 'model_localization', 'origin': 'measured',
             'description': '官方 RITA 权重严格加载后执行的单图像素响应与定位结果。', 'regionId': None,
             'artifactIds': [mask_id, f'{report_id}:response'],
-            'data': {'score': score, 'selectedStep': statistics['selectedStep'], 'decisionThreshold': threshold},
+            'data': {'score': score, 'confidence': pixel_support, 'selectedStep': statistics['selectedStep'], 'decisionThreshold': threshold},
             'limitation': '模型响应未校准，不能直接还原编辑工具或历史。' }],
         'artifacts': artifacts, 'limitations': limitations, 'error': None,
         'extensions': {'upstreamCommit': UPSTREAM_COMMIT, 'checkpointSha256': checkpoint_hash,

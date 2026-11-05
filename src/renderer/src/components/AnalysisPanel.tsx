@@ -2,6 +2,7 @@ import { Check, CheckCircle2, Info, LoaderCircle, ScanLine } from 'lucide-react'
 import type { AnalysisBackend, AnalysisReport } from '../../../shared/contracts'
 import type { AnalysisWorkspace } from '../hooks/useAnalysisWorkspace'
 import { WorkflowReport } from './WorkflowReport'
+import { WorkflowConversation } from './WorkflowConversation'
 
 function backendName(backend?: AnalysisBackend): string {
   return backend === 'workflow'
@@ -139,6 +140,7 @@ function ReportContent({ report }: { report: AnalysisReport }) {
 }
 
 export function AnalysisPanel({ workspace: w }: { workspace: AnalysisWorkspace }) {
+  if (['workflow'].includes(w.backend)) return <WorkflowConversation workspace={w}/>
   const modelName = backendName(w.backend)
   const local = w.backend !== 'mock'
   return (

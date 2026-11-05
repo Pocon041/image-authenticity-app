@@ -1,3 +1,5 @@
+import type { DecisionConfidence, ModelSupport } from './decision-confidence'
+
 export const IPC = {
   chooseImage: 'srdp:image:choose',
   clearImage: 'srdp:image:clear',
@@ -31,6 +33,8 @@ export interface AnalysisProgress {
   percent: number
   label: string
   steps?: WorkflowStep[]
+  workflowPhase?: 'prepare' | 'routing' | 'detectors' | 'aggregate'
+  routingStatus?: 'completed' | 'failed' | 'skipped'
 }
 
 export type ContentType = 'photo' | 'document' | 'unsure'
@@ -53,6 +57,7 @@ export interface WorkflowRouting {
 }
 export interface WorkflowStep {
   backend: DetectorBackend
+  message?: string
   status: 'pending' | 'running' | 'completed' | 'failed' | 'not_run' | 'reused' | 'cancelled'
 }
 export interface DetectorResult {
@@ -109,6 +114,7 @@ export interface AnalysisReport {
   disclaimer: string
   workflow?: WorkflowResult
   localization?: {
+    confidence?: ModelSupport | null
     decision: string
     score: number | null
     regionCount: number
@@ -118,18 +124,22 @@ export interface AnalysisReport {
     bundle: Record<string, unknown>
   }
   classification?: {
+    confidence?: ModelSupport | null
     decision: 'fake' | 'real'
     score: number
     threshold: number
     checkpointVariant: string
+    decisionConfidence?: DecisionConfidence | null
     bundlePath: string
     bundle: Record<string, unknown>
   }
   // [第三人任务] FSD 返回 z-score，不将其伪装成概率；归因来源可能为空。
   aigc?: {
+    confidence?: ModelSupport | null
     decision: 'ai_generated' | 'non_ai' | 'inconclusive'
     zScore: number
     threshold: number
+    decisionConfidence?: DecisionConfidence | null
     attributedSource: string | null
     attributionScore: number | null
     bundlePath: string

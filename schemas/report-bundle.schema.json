@@ -141,6 +141,32 @@
         "message": { "type": "string", "minLength": 1 }
       }
     },
+    "modelSupport": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["value", "description", "target", "source", "calibrated", "comparableAcrossModels"],
+      "properties": {
+        "value": { "type": "number", "minimum": 0, "maximum": 1 },
+        "target": { "enum": ["general_image_classification", "ai_generation_classification", "marked_region_pixels"] },
+        "description": { "type": "string", "minLength": 1 },
+        "source": { "enum": ["model_sigmoid", "threshold_distance", "mean_tamper_response"] },
+        "calibrated": { "const": false },
+        "comparableAcrossModels": { "const": false }
+      }
+    },
+    "decisionConfidence": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["value", "source", "distance", "normalization", "calibrated", "comparableAcrossModels"],
+      "properties": {
+        "value": { "type": "number", "minimum": 0, "maximum": 1 },
+        "source": { "const": "threshold_distance" },
+        "distance": { "type": "number", "minimum": 0 },
+        "normalization": { "enum": ["class_side_range", "distance_over_distance_plus_one"] },
+        "calibrated": { "const": false },
+        "comparableAcrossModels": { "const": false }
+      }
+    },
     "score": {
       "type": "object",
       "additionalProperties": false,
@@ -157,6 +183,7 @@
       "additionalProperties": true,
       "required": ["regionId", "bboxXYWH", "coordinateSpace", "maskArtifactId"],
       "properties": {
+        "confidence": { "$ref": "#/$defs/modelSupport" },
         "regionId": { "$ref": "#/$defs/id" },
         "bboxXYWH": { "$ref": "#/$defs/bbox" },
         "coordinateSpace": { "const": "display_image_pixels" },
@@ -195,7 +222,9 @@
       "additionalProperties": true,
       "required": ["decision", "score", "regions", "operationHints"],
       "properties": {
+        "confidence": { "$ref": "#/$defs/modelSupport" },
         "decision": { "enum": ["suspicious", "no_anomaly_detected", "inconclusive"] },
+        "decisionConfidence": { "$ref": "#/$defs/decisionConfidence" },
         "score": { "anyOf": [{ "$ref": "#/$defs/score" }, { "type": "null" }] },
         "regions": { "type": "array", "items": { "$ref": "#/$defs/region" } },
         "operationHints": { "type": "array", "items": { "type": "object" } }
@@ -206,7 +235,9 @@
       "additionalProperties": true,
       "required": ["decision", "score", "clues"],
       "properties": {
+        "confidence": { "$ref": "#/$defs/modelSupport" },
         "decision": { "enum": ["ai_generated", "non_ai", "inconclusive"] },
+        "decisionConfidence": { "$ref": "#/$defs/decisionConfidence" },
         "score": { "anyOf": [{ "$ref": "#/$defs/score" }, { "type": "null" }] },
         "clues": { "type": "array", "items": { "type": "object" } }
       }
@@ -246,6 +277,24 @@
       "additionalProperties": true,
       "required": ["finalDecision", "confidence", "analysis", "claims", "unresolved"],
       "properties": {
+        "decisionSource": { "enum": ["vlm", "rule_fallback"] },
+        "upstreamDecision": { "enum": ["suspicious", "no_anomaly_detected", "inconclusive"] },
+        "evidenceBalance": { "type": "string" },
+        "primaryRegionId": { "type": ["string", "null"] },
+        "regionAnalyses": { "type": "array", "maxItems": 3, "items": {
+          "type": "object", "additionalProperties": false,
+          "required": ["regionId", "location", "subject", "reason", "evidenceIds"],
+          "properties": {
+            "regionId": { "$ref": "#/$defs/id" },
+            "location": { "type": "string", "minLength": 1 },
+            "subject": { "type": "string", "minLength": 1 },
+            "reason": { "type": "string", "minLength": 1 },
+            "suspectedOperation": { "type": "string" },
+            "operationReason": { "type": "string" },
+            "operationSource": { "const": "vlm_hypothesis" },
+            "evidenceIds": { "type": "array", "items": { "$ref": "#/$defs/id" }, "minItems": 1, "uniqueItems": true }
+          }
+        } },
         "finalDecision": { "enum": ["suspicious", "no_anomaly_detected", "inconclusive"] },
         "confidence": { "$ref": "#/$defs/confidence" },
         "analysis": { "type": "string", "minLength": 1 },
