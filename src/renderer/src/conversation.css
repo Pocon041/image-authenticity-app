@@ -262,6 +262,14 @@
   line-height: 1.5;
   font-weight: 600;
 }
+.conclusion-target {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.7;
+  color: inherit;
+  opacity: 0.9;
+  overflow-wrap: anywhere;
+}
 .conversation-conclusion.no_anomaly_detected {
   background: #1c302b;
   color: #a9d3bf;

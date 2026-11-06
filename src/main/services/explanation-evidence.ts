@@ -1,4 +1,5 @@
 import type { FinalDecision, Region } from '../../shared/protocol'
+import { OPERATION_NAMES, type EvidenceAssessment } from './evidence-assessment'
 
 type ObjectValue = Record<string, unknown>
 const object = (v: unknown): ObjectValue =>
@@ -33,6 +34,9 @@ export interface NarrationCandidate {
   location: string
   observedContent: string | null
   confidence?: unknown
+  detector?: string
+  context?: string | null
+  visibleText?: string | null
 }
 
 /** Verbal presentation of a bounded locator response only; not a correctness or fusion threshold. */
@@ -48,8 +52,9 @@ export function buildNarrationFacts(input: {
   decision: FinalDecision
   focusIndex: number | null
   candidates: NarrationCandidate[]
+  assessment?: EvidenceAssessment
 }): string {
-  const { evidence, decision, candidates, focusIndex } = input
+  const { evidence, decision, candidates, focusIndex, assessment } = input
   const focus = focusIndex === null ? undefined : candidates[focusIndex - 1]
   const lines = [
     '这是已经完成检查的图片分析记录。',
@@ -57,30 +62,36 @@ export function buildNarrationFacts(input: {
   ]
   if (focus) {
     lines.push(
-      `优先核查的位置与对象：${focus.location}，${focus.observedContent ?? '候选内容尚未辨认'}。`
+      `重点位置：${assessment?.targetDescription || focus.context || focus.observedContent || focus.location}。`
     )
-    lines.push('局部定位结果：定位模型在这一范围检出了候选区域。')
+    if (focus.visibleText) lines.push(`该处清楚可辨的原文：${focus.visibleText}`)
+    lines.push(
+      `局部定位结果：${focus.detector === 'rise' ? 'RiSE' : focus.detector === 'rita' ? 'RITA' : '定位模型'}标出了这一处疑似篡改的位置。`
+    )
     const strength = responseWording(focus.confidence)
     if (strength) lines.push(`该定位器在这一区域的响应强度：${strength}。`)
   } else if (candidates.length)
-    lines.push(`检测器共提供${candidates.length}处主要候选，尚未指定优先对象。`)
+    lines.push(`检测器标出了${candidates.length}处需要检查的位置，尚未指定重点。`)
   for (const value of Array.isArray(evidence.models) ? evidence.models : []) {
     const model = object(value)
     if (model.finding === '本轮未运行或未完成') continue
     if (model.model === 'SICA')
       lines.push(
-        model.finding === '通用伪造筛查未报警'
-          ? '全图通用特征检查：这一项未触发异常提示。'
-          : `全图通用特征检查：${String(model.finding)}。`
+        `SICA整图伪造筛查：${String(model.finding)}${responseWording(model.support) ? `，对这个分类结果的支持${responseWording(model.support)}` : ''}。`
       )
-    if (model.model === 'FSD' && (model.finding === '存在AI生成线索' || !focus))
-      lines.push(`AI生成检查：${String(model.finding)}，这一项只评价AI生成特征。`)
+    if (model.model === 'FSD')
+      lines.push(
+        `FSD的AI生成检测：${String(model.finding)}${responseWording(model.support) ? `，对这个结果的支持${responseWording(model.support)}` : ''}，该项只评价AI生成。`
+      )
   }
   if (Array.isArray(evidence.disagreements) && evidence.disagreements.length)
     lines.push(
       '检查结果之间存在分歧，最终分析倾向已综合这些结果；某一检查未触发提示，不能直接抵消局部候选。'
     )
   const provenance = object(evidence.provenance)
+  if (assessment) {
+    lines.push(`VLM综合图像与证据后提出的可能方式：${OPERATION_NAMES[assessment.operation]}。`)
+  }
   const credential = object(provenance.credentials).outcome
   if (credential === 'manifest_container_found')
     lines.push('来源检查发现了内嵌凭证标记；该标记不等于内容已验证真实。')
@@ -100,6 +111,9 @@ export function evidenceForAssessment(prompt: string, candidates: NarrationCandi
       index: index + 1,
       position: c.location,
       content: c.observedContent,
+      context: c.context ?? null,
+      visibleText: c.visibleText ?? null,
+      detector: c.detector,
       support: c.confidence ?? null
     }))
   }

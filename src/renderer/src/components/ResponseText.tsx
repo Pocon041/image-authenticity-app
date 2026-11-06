@@ -35,7 +35,7 @@ export function ResponseText({ text, streaming = false }: { text: string; stream
   }
   for (const line of text.split('\n')) {
     const heading = /^\s*#{1,6}\s+(.+?)\s*$/.exec(line)
-    const label = /^\s*\*\*(重点位置|判断依据|可能方式)[：:]?\*\*\s*$/.exec(line)
+    const label = /^\s*\*\*(重点位置|判断依据|可能方式|分析依据)[：:]?\*\*\s*$/.exec(line)
     const unorderedItem = /^\s*[-*]\s+(.+)$/.exec(line)
     const orderedItem = /^\s*\d+[.)、]\s+(.+)$/.exec(line)
     if (heading || label) {

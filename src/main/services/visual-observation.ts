@@ -11,8 +11,24 @@ export interface RegionObservation {
   error?: string
   contextBBoxXYWH?: [number, number, number, number]
   inputImageCount?: number
+  requestImageCounts?: number[]
   presentation?: 'unmarked_context_crop'
   rawResponse?: unknown
+  contextResponse?: unknown
+  context?: string | null
+  visibleText?: string | null
+  subject?: string | null
+  contextRecord?: string | null
+  contextField?: string | null
+}
+
+/** Preserve the model's quoted reading verbatim; no digits or field values are invented here. */
+export function quotedReading(text: string): string | null {
+  const values = [...text.matchAll(/[“「]([^”」\n]{1,80})[”」]/gu)].map((match) => match[1])
+  const readings = values.length
+    ? values
+    : [...text.matchAll(/(?<!\d)\d{1,2}[:：]\d{2}(?!\d)/gu)].map((match) => match[0])
+  return readings.length ? [...new Set(readings)].join('、') : null
 }
 
 /** Crop unchanged pixels around a predicted region; no tint or synthetic marks. */
@@ -76,16 +92,13 @@ export async function observeRegions(args: {
           messages: [
             {
               role: 'user',
-              content: withScene
-                ? '第一张只提供场景上下文，第二张是未加标记的文档局部。请只简短描述第二张局部中文字或底色的实际外观，不抄录具体数字，不推断编辑手法。'
-                : '这张原始局部图里主要是什么？用简短中文通俗称呼回答，不推断编辑手法。',
-              images: withScene
-                ? [args.full.toString('base64'), context.bytes.toString('base64')]
-                : [context.bytes.toString('base64')]
+              content: '这张局部图片主要是什么？用简短的通俗称呼回答；有文字时读出能看清的原文。',
+              images: [context.bytes.toString('base64')]
             }
           ],
           stream: false,
-          options: { temperature: 0, num_ctx: args.numCtx, num_predict: 60 }
+
+          options: { temperature: 0, num_ctx: args.numCtx, num_predict: 140 }
         }),
         signal: args.signal
           ? AbortSignal.any([args.signal, AbortSignal.timeout(60000)])
@@ -99,15 +112,94 @@ export async function observeRegions(args: {
         !data.message.content.trim()
       )
         throw new Error('区域观察返回为空')
+      const content = {
+        context: null as string | null,
+        subject: data.message.content as string,
+        visibleText: quotedReading(data.message.content),
+        record: null as string | null,
+        field: null as string | null
+      }
+      let contextResponse: unknown
+      if (withScene) {
+        try {
+          const response = await fetch(`${args.host}/api/chat`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              model: args.model,
+              stream: false,
+              format: {
+                type: 'object',
+                properties: {
+                  记录: { type: ['string', 'null'], maxLength: 40 },
+                  字段: { type: ['string', 'null'], maxLength: 30 }
+                },
+                required: ['记录', '字段']
+              },
+              messages: [
+                {
+                  role: 'system',
+                  content:
+                    '根据整图确认局部内容属于哪一条记录、哪个字段。记录填写记录的自然名称，字段填写字段的作用。只填简短名称，不抄录提问，无法辨认填null。'
+                },
+                {
+                  role: 'user',
+                  content:
+                    '局部实际读到的内容：' +
+                    (content.visibleText || content.subject) +
+                    '。请在这张整图中确认它所属的记录和字段。',
+                  images: [args.full.toString('base64')]
+                }
+              ],
+              options: { temperature: 0, num_ctx: args.numCtx, num_predict: 240 }
+            }),
+            signal: args.signal
+              ? AbortSignal.any([args.signal, AbortSignal.timeout(60000)])
+              : AbortSignal.timeout(60000)
+          })
+          if (!response.ok) throw new Error(`上下文HTTP ${response.status}`)
+          const result = await response.json()
+          contextResponse = result
+          const parsed = JSON.parse(result.message?.content ?? '')
+          if (
+            result.done_reason === 'length' ||
+            !['记录', '字段'].every(
+              (key) => parsed[key] === null || typeof parsed[key] === 'string'
+            )
+          )
+            throw new Error('记录字段对应结构无效')
+          content.record = parsed.记录
+          content.field = parsed.字段
+          // This field is a record name, not a numeric index. Keep incomplete values in the raw record.
+          const namedRecord =
+            typeof parsed.记录 === 'string' && !/^\s*\d+\s*$/.test(parsed.记录) ? parsed.记录 : null
+          content.context = [namedRecord, parsed.字段].filter(Boolean).join('中的') || null
+        } catch (error) {
+          contextResponse = { error: String(error) }
+        }
+      }
       observations.push({
         regionId,
         status: 'completed',
-        text: data.message.content,
+        text: [
+          content.context,
+          content.subject,
+          content.visibleText ? `可见原文：${content.visibleText}` : null
+        ]
+          .filter(Boolean)
+          .join('；'),
+        context: content.context,
+        subject: content.subject,
+        visibleText: content.visibleText,
+        contextRecord: content.record,
+        contextField: content.field,
         finishReason: data.done_reason,
         contextBBoxXYWH: context.bbox,
         presentation: 'unmarked_context_crop',
         inputImageCount: withScene ? 2 : 1,
-        rawResponse: data
+        requestImageCounts: withScene ? [1, 1] : [1],
+        rawResponse: data,
+        contextResponse
       })
     } catch (error) {
       observations.push({

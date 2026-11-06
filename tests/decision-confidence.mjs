@@ -181,8 +181,16 @@ globalThis.fetch = async (url, options) => {
   let content
   if (captured.format?.properties?.decision) {
     assessmentRequest = captured
-    content = JSON.stringify({ decision: '存在可疑线索', focusIndex: 1 })
-  } else if (captured.format?.properties?.focusIndex) content = JSON.stringify({ focusIndex: 1 })
+    content = JSON.stringify({
+      decision: '存在可疑线索',
+      focusIndex: 1,
+      targetDescription: '图片右侧水鸟',
+      operation: 'unknown',
+      operationReason: '尚不能区分具体方式'
+    })
+  } else if (captured.format?.properties?.operation)
+    content = JSON.stringify({ operation: 'unknown', reason: '无法区分' })
+  else if (captured.format?.properties?.focusIndex) content = JSON.stringify({ focusIndex: 1 })
   else if (captured.format) content = JSON.stringify({ suspectedOperationQuote: null })
   else {
     narrativeRequest = captured

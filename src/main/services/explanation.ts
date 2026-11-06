@@ -20,7 +20,12 @@ import { observeRegions, type RegionObservation } from './visual-observation'
 import { drawRegionBoundaries, BOUNDARY_NOTE } from './visual-boundary'
 import { readOllamaChat } from './ollama-stream'
 import type { ExplanationProgress } from '../../shared/contracts'
-import { locateCandidates, assessOriginal } from './evidence-assessment'
+import {
+  locateCandidates,
+  assessOriginal,
+  inferOperation,
+  OPERATION_NAMES
+} from './evidence-assessment'
 import {
   primaryExplanationRegions,
   evidenceForAssessment,
@@ -194,7 +199,10 @@ export async function generateExplanation(
         regionId: aliases[index],
         location: regionPosition(region, bundle.image.width, bundle.image.height),
         observedContent: observations[index]?.text ?? null,
-        confidence: region.confidence
+        confidence: region.confidence,
+        context: observations[index]?.context ?? null,
+        visibleText: observations[index]?.visibleText ?? null,
+        detector: typeof region.detector === 'string' ? region.detector : undefined
       })),
       original,
       visualGuidance.focusIndex
@@ -268,7 +276,7 @@ export async function generateExplanation(
       annotationAddedBy: 'app',
       forStage: 'visual_guidance',
       assessment: { type: 'unmarked_original', imageCount: original ? 1 : 0 },
-      observation: { type: 'unmarked_context_crops' },
+      observation: { type: 'original_scene_with_unmarked_context_crops' },
       narration: { type: 'text_only_evidence', imageCount: 0 }
     }
   }
@@ -900,17 +908,41 @@ async function generateAnalysis(
     signal: requestSignal,
     rawJudgements
   })
+  const focus = assessment.focusIndex === null ? undefined : candidates[assessment.focusIndex - 1]
+  assessment.targetDescription = focus
+    ? [
+        focus.location,
+        focus.context || focus.observedContent,
+        focus.visibleText ? `“${focus.visibleText}”` : null
+      ]
+        .filter(Boolean)
+        .join('，')
+    : ''
+  if (focus && assessment.decision !== 'no_anomaly_detected') {
+    notify?.({ phase: 'synthesizing', label: '正在比较复制移动、拼接和移除修复三类方式' })
+    Object.assign(
+      assessment,
+      await inferOperation({
+        original,
+        target: assessment.targetDescription,
+        config,
+        signal: requestSignal,
+        rawJudgements
+      })
+    )
+  }
   const facts = buildNarrationFacts({
     evidence: JSON.parse(prompt),
     decision: assessment.decision,
     focusIndex: assessment.focusIndex,
-    candidates
+    candidates,
+    assessment
   })
   const selectedFocus =
     assessment.focusIndex === null ? undefined : candidates[assessment.focusIndex - 1]
   const writingQuestion = selectedFocus
-    ? `请按“重点位置、判断依据、可能方式”的顺序组织正文，点明${selectedFocus.location}“${selectedFocus.observedContent ?? '候选区域'}”。判断依据分2条，每条另起一行并以“- ”开头。记录未提供明确手法证据，可能方式只写当前还不能区分具体编辑方式，不写检查建议。不新增事实，不重复综合判断。`
-    : '请按“重点位置、判断依据、可能方式”的顺序组织正文，未选出重点位置时如实说明。判断依据用短项目列表，可能方式只说明有无明确手法依据，不写检查建议。不新增事实，不重复综合判断。'
+    ? `请按“重点位置、分析依据”两个标题组织正文，重点对象为“${assessment.targetDescription || selectedFocus.observedContent || selectedFocus.location}”。分析依据分2至3条短项目，将模型结论与支持程度、疑似篡改位置和可能方式结合解释，不新增事实，不重复综合判断。`
+    : '请按“重点位置、分析依据”两个标题组织正文，结合实际模型结论、支持程度与手法分析解释，未确定重点位置时如实说明，不新增事实。'
 
   notify?.({
     phase: 'synthesizing',
@@ -1009,7 +1041,6 @@ async function generateAnalysis(
       if (requestSignal.aborted) break
     }
   }
-  const focus = assessment.focusIndex === null ? undefined : candidates[assessment.focusIndex - 1]
   return {
     finalDecision: assessment.decision,
     summary: narrative,
@@ -1020,9 +1051,17 @@ async function generateAnalysis(
           {
             regionId: focus.regionId,
             location: focus.location,
-            subject: focus.observedContent ?? '候选区域',
+            subject:
+              assessment.targetDescription ||
+              focus.context ||
+              focus.observedContent ||
+              '疑似篡改位置',
             reason: narrative,
-            ...(operationQuote ? { suspectedOperation: operationQuote } : {})
+            suspectedOperation:
+              assessment.operation !== 'unknown'
+                ? OPERATION_NAMES[assessment.operation]
+                : (operationQuote ?? OPERATION_NAMES.unknown),
+            operationReason: assessment.operationReason
           }
         ]
       : [],
