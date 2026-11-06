@@ -1,5 +1,5 @@
 {
-  "_comment": "maxImages=3：整图及最多两个定位器掩码；按实际附件发送。numPredict=1200为简短综合说明和最多3个区域预留输出，扩展格式时需同步检查。temperature固定0。",
+  "_comment": "轮廓图只用于位置对应；局部识别与综合判断看未标记原图，正文仅接收检测事实，不接收人工标记和专业数值。maxImages为单请求图片上限（文档观察最多2张），numPredict=1200控制正文，temperature固定0。",
   "model": "srdp-qwen3-vl-2b",
   "host": "http://127.0.0.1:11434",
   "numCtx": 8192,

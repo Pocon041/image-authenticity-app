@@ -58,7 +58,22 @@ export interface WorkflowRouting {
 export interface WorkflowStep {
   backend: DetectorBackend
   message?: string
+  // Bounded renderer preview only; never expose model bundles or filesystem paths in progress.
+  preview?: LocalizationPreview
   status: 'pending' | 'running' | 'completed' | 'failed' | 'not_run' | 'reused' | 'cancelled'
+}
+export interface LocalizationPreview {
+  overlayDataUrl: string
+  regionCount: number
+  manipulatedAreaFraction: number
+}
+export interface ExplanationProgress {
+  taskId: string
+  imageId: string
+  phase: 'observing' | 'synthesizing' | 'retrying' | 'finished'
+  label: string
+  text?: string
+  decision?: import('./protocol').FinalDecision
 }
 export interface DetectorResult {
   backend: DetectorBackend
@@ -164,5 +179,6 @@ export interface DesktopAPI {
   ): Promise<Response<AnalysisReport>>
   cancelAnalysis(taskId: string): Promise<Response<boolean>>
   explain(taskId: string): Promise<Response<import('./protocol').ExplanationReport>>
+  onExplanationProgress(listener: (progress: ExplanationProgress) => void): () => void
   onAnalysisProgress(listener: (progress: AnalysisProgress) => void): () => void
 }

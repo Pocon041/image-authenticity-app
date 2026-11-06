@@ -151,7 +151,14 @@ function fixtureServices({
               await writeFile(join(directory, 'mask.png'), mask)
               await writeFile(join(directory, 'crop.png'), crop)
               regions.push({
-                confidence: {value: .8, description: 'Synthetic marked-pixel support', target: 'marked_region_pixels', source: 'mean_tamper_response', calibrated: false, comparableAcrossModels: false},
+                confidence: {
+                  value: 0.8,
+                  description: 'Synthetic marked-pixel support',
+                  target: 'marked_region_pixels',
+                  source: 'mean_tamper_response',
+                  calibrated: false,
+                  comparableAcrossModels: false
+                },
                 regionId: `${id}:region`,
                 bboxXYWH: [2, 3, 4, 5],
                 coordinateSpace: 'display_image_pixels',
@@ -185,7 +192,24 @@ function fixtureServices({
                       attribution: null,
                       clues: []
                     }
-                  : { decision: 'inconclusive', score: null, regions, operationHints: [], ...(backend !== 'sica' ? {confidence: {value: .8, description: 'Synthetic marked-pixel support', target: 'marked_region_pixels', source: 'mean_tamper_response', calibrated: false, comparableAcrossModels: false}} : {}) },
+                  : {
+                      decision: 'inconclusive',
+                      score: null,
+                      regions,
+                      operationHints: [],
+                      ...(backend !== 'sica'
+                        ? {
+                            confidence: {
+                              value: 0.8,
+                              description: 'Synthetic marked-pixel support',
+                              target: 'marked_region_pixels',
+                              source: 'mean_tamper_response',
+                              calibrated: false,
+                              comparableAcrossModels: false
+                            }
+                          }
+                        : {})
+                    },
               evidence: [
                 {
                   evidenceId: `${id}:evidence`,
@@ -278,9 +302,40 @@ function context(contentType, extra = {}) {
 }
 
 const aigcFixture = fixtureServices({ includeAigc: true })
+const progressSnapshots = []
 const withAigc = await new WorkflowAnalysisService(root, aigcFixture.services).analyze(
   input,
-  context('unsure')
+  context('unsure', { onProgress: (progress) => progressSnapshots.push(structuredClone(progress)) })
+)
+const located = progressSnapshots.find(
+  (p) =>
+    p.workflowPhase === 'detectors' &&
+    p.steps.find((s) => s.backend === 'rita' && s.status === 'completed')
+)
+assert.ok(located, 'RITA completion must be emitted before aggregation')
+assert.equal(located.steps.find((s) => s.backend === 'rise').status, 'pending')
+assert.deepEqual(Object.keys(located.steps.find((s) => s.backend === 'rita').preview).sort(), [
+  'manipulatedAreaFraction',
+  'overlayDataUrl',
+  'regionCount'
+])
+assert.ok(
+  located.steps.find((s) => s.backend === 'rita').preview.overlayDataUrl.startsWith('data:image/')
+)
+const runManifest = JSON.parse(
+  await readFile(join(dirname(withAigc.workflow.bundlePath), 'run.json'), 'utf8')
+)
+assert.equal(
+  progressSnapshots.filter((p) => p.steps.find((s) => s.backend === 'rita')?.preview).length,
+  1,
+  'Preview bytes should be sent only once'
+)
+assert.ok(
+  runManifest.steps.every((step) => !step.preview),
+  'Do not duplicate image bytes in the run manifest'
+)
+checks.push(
+  'localization preview is emitted immediately before queued detectors and exposes no paths or bundles'
 )
 assert.equal(withAigc.workflow.status, 'completed')
 assert.deepEqual(aigcFixture.calls, ['aigc', 'sica', 'rita', 'rise'])
@@ -307,13 +362,21 @@ assert.equal(withAigc.workflow.summary.aigc.zScore, -2.5)
 assert.equal(aigcReport.result.decisionConfidence.value, 1 / 3)
 assert.equal(withAigc.workflow.summary.aigc.confidence.value, 1 / 3)
 assert.equal(withAigc.workflow.summary.aigc.confidence.target, 'ai_generation_classification')
-assert.equal(manipulationReport.result.detectors.find(d => d.backend === 'aigc').result.aigc.decisionConfidence.value, 1 / 3)
+assert.equal(
+  manipulationReport.result.detectors.find((d) => d.backend === 'aigc').result.aigc
+    .decisionConfidence.value,
+  1 / 3
+)
 assert.equal(withAigc.workflow.summary.screening.confidence.value, 0.9)
-assert.equal(withAigc.workflow.summary.regions[0].confidence.value, .8)
-assert.equal(withAigc.workflow.summary.localization[0].confidence.value, .8)
-const copiedSica = JSON.parse(await readFile(join(dirname(withAigc.workflow.bundlePath), 'detectors/sica/report.json'), 'utf8'))
+assert.equal(withAigc.workflow.summary.regions[0].confidence.value, 0.8)
+assert.equal(withAigc.workflow.summary.localization[0].confidence.value, 0.8)
+const copiedSica = JSON.parse(
+  await readFile(join(dirname(withAigc.workflow.bundlePath), 'detectors/sica/report.json'), 'utf8')
+)
 assert.equal(copiedSica.result.decisionConfidence.value, 0.8)
-checks.push('model support survives independent reports, regions and concise summaries; legacy margins stay in audit')
+checks.push(
+  'model support survives independent reports, regions and concise summaries; legacy margins stay in audit'
+)
 checks.push('completed AIGC retains its independent report and globally unique evidence IDs')
 
 const photo = fixtureServices()
@@ -420,14 +483,10 @@ checks.push('low-confidence routing runs the full detector set')
 
 const autoFailed = fixtureServices({ includeAigc: true })
 const routedCalls = { count: 0 }
-const autoFailedReport = await new WorkflowAnalysisService(
-  root,
-  autoFailed.services,
-  async () => {
-    routedCalls.count++
-    throw new Error('route down')
-  }
-).analyze(input, context('auto'))
+const autoFailedReport = await new WorkflowAnalysisService(root, autoFailed.services, async () => {
+  routedCalls.count++
+  throw new Error('route down')
+}).analyze(input, context('auto'))
 assert.equal(routedCalls.count, 1)
 assert.deepEqual(autoFailed.calls, ['aigc', 'sica', 'rita', 'rise'])
 assert.equal(autoFailedReport.workflow.status, 'completed')
@@ -438,22 +497,18 @@ checks.push('router failure falls back to the full detector set and is recorded'
 
 const manual = fixtureServices()
 const manualCalls = { count: 0 }
-const manualReport = await new WorkflowAnalysisService(
-  root,
-  manual.services,
-  async () => {
-    manualCalls.count++
-    return {
-      mode: 'auto',
-      status: 'completed',
-      decision: 'photo',
-      scores: { photo: 1, document: 0 },
-      margin: 1,
-      marginThreshold: 0.1,
-      elapsedMs: 1
-    }
+const manualReport = await new WorkflowAnalysisService(root, manual.services, async () => {
+  manualCalls.count++
+  return {
+    mode: 'auto',
+    status: 'completed',
+    decision: 'photo',
+    scores: { photo: 1, document: 0 },
+    margin: 1,
+    marginThreshold: 0.1,
+    elapsedMs: 1
   }
-).analyze(input, context('document'))
+}).analyze(input, context('document'))
 assert.equal(manualCalls.count, 0)
 assert.equal(manualReport.workflow.routing.mode, 'manual')
 assert.equal(manualReport.workflow.routing.status, 'skipped')
@@ -510,13 +565,9 @@ const session = new AnalysisSession(
   }))
 )
 session.selectImage(input)
-const sessionFirst = await session.analyze(
-  input.asset.id,
-  randomUUID(),
-  () => {},
-  'workflow',
-  { contentType: 'document' }
-)
+const sessionFirst = await session.analyze(input.asset.id, randomUUID(), () => {}, 'workflow', {
+  contentType: 'document'
+})
 const sessionSupplement = await session.analyze(
   input.asset.id,
   randomUUID(),

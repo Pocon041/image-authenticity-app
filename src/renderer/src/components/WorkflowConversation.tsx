@@ -1,12 +1,20 @@
 import { useEffect, useRef, useState } from 'react'
-import { Check, CircleAlert, LoaderCircle, MessageSquareText } from 'lucide-react'
-import type { Response, WorkflowStep } from '../../../shared/contracts'
+import { Check, ChevronRight, CircleAlert, LoaderCircle, MessageSquareText } from 'lucide-react'
+import type { ExplanationProgress, Response, WorkflowStep } from '../../../shared/contracts'
 import type { ExplanationReport } from '../../../shared/protocol'
 import type { AnalysisWorkspace } from '../hooks/useAnalysisWorkspace'
 import { WorkflowReport } from './WorkflowReport'
+import { StepPreview } from './StepPreview'
+import { ResponseText } from './ResponseText'
 import '../conversation.css'
 
-type Item = { id: string; title: string; status: WorkflowStep['status']; message?: string }
+type Item = {
+  id: string
+  title: string
+  status: WorkflowStep['status']
+  message?: string
+  preview?: WorkflowStep['preview']
+}
 const titles = {
   aigc: '检查图像生成线索',
   sica: '检查整图异常',
@@ -21,11 +29,31 @@ export function WorkflowConversation({ workspace: w }: { workspace: AnalysisWork
   const [explainState, setExplainState] = useState<'idle' | 'running' | 'done' | 'error'>('idle')
   const [explainError, setExplainError] = useState('')
   const [retry, setRetry] = useState(0)
+  const [activityOpen, setActivityOpen] = useState(true)
+  const [stream, setStream] = useState<ExplanationProgress | null>(null)
   const request = useRef<{ key: string; promise: Promise<Response<ExplanationReport>> } | null>(
     null
   )
   const body = useRef<HTMLDivElement | null>(null)
   const follow = useRef(true)
+
+  useEffect(() => {
+    setActivityOpen(true)
+    setStream(null)
+    follow.current = true
+  }, [w.image?.id, (w.progress ?? w.lastProgress)?.taskId, retry])
+
+  useEffect(() => {
+    if (!report || w.running) return
+    return window.desktop.onExplanationProgress((progress) => {
+      if (progress.taskId === report.id && progress.imageId === report.imageId)
+        setStream((previous) => ({
+          ...progress,
+          text: progress.text ?? previous?.text,
+          decision: progress.decision ?? previous?.decision
+        }))
+    })
+  }, [report?.id, w.running])
 
   useEffect(() => {
     if (!report || w.running) {
@@ -36,10 +64,16 @@ export function WorkflowConversation({ workspace: w }: { workspace: AnalysisWork
     }
     if (report.explanation) {
       setExplanation(report.explanation)
-      setExplainState('done')
+      setExplainState(report.explanation.mode === 'local' ? 'done' : 'error')
+      setExplainError(
+        report.explanation.mode === 'local' ? '' : '智能分析未完成，已完成的检测结果仍可展开查看。'
+      )
+      setActivityOpen(report.explanation.mode !== 'local')
       return
     }
     let active = true
+    setExplanation(null)
+    setStream(null)
     setExplainState('running')
     setExplainError('')
     const key = `${report.id}:${retry}`
@@ -50,7 +84,11 @@ export function WorkflowConversation({ workspace: w }: { workspace: AnalysisWork
         if (!active) return
         if (result.ok) {
           setExplanation(result.data)
-          setExplainState('done')
+          setExplainState(result.data.mode === 'local' ? 'done' : 'error')
+          setExplainError(
+            result.data.mode === 'local' ? '' : '智能分析未完成，已完成的检测结果仍可展开查看。'
+          )
+          setActivityOpen(result.data.mode !== 'local')
         } else {
           setExplainError(result.error)
           setExplainState('error')
@@ -79,6 +117,7 @@ export function WorkflowConversation({ workspace: w }: { workspace: AnalysisWork
         .map((d) => ({
           backend: d.backend,
           status: d.reused ? 'reused' : d.status,
+          preview: d.localization,
           message: trace?.steps?.find((s) => s.backend === d.backend)?.message
         }))
     : (trace?.steps ?? [])
@@ -116,6 +155,7 @@ export function WorkflowConversation({ workspace: w }: { workspace: AnalysisWork
       id: step.backend,
       title: titles[step.backend],
       status: stopped && step.status === 'running' ? stopStatus : step.status,
+      preview: step.preview,
       message: step.message
     }))
   )
@@ -146,13 +186,16 @@ export function WorkflowConversation({ workspace: w }: { workspace: AnalysisWork
   const current = items.findIndex((item) => item.status === 'running')
   const visible = items.filter((item) => item.status !== 'pending')
   const started = w.running || !!trace || !!report
-  const result = explanation?.result
+  const result = explanation?.mode === 'local' ? explanation.result : undefined
+  const verdict =
+    result?.finalDecision ?? (explainState === 'running' ? stream?.decision : undefined)
   useEffect(() => {
     if (follow.current && body.current) body.current.scrollTop = body.current.scrollHeight
   }, [
     trace?.label,
     trace?.steps?.map((step) => `${step.backend}:${step.status}`).join(','),
-    explainState
+    explainState,
+    stream?.text
   ])
   return (
     <section
@@ -177,66 +220,105 @@ export function WorkflowConversation({ workspace: w }: { workspace: AnalysisWork
               body.current.scrollHeight - body.current.scrollTop - body.current.clientHeight < 80
         }}
       >
-        <div className="conversation-intro">
-          <span className="assistant-avatar">
-            <MessageSquareText size={17} />
-          </span>
-          <p>
-            {started
-              ? '已收到图片，以下是本次检查进度和分析结果。'
-              : w.image
+        {!started && (
+          <div className="conversation-intro">
+            <span className="assistant-avatar">
+              <MessageSquareText size={17} />
+            </span>
+            <p>
+              {w.image
                 ? '图片已就绪。开始分析后，我会逐步检查并说明值得注意的位置。'
                 : '选择一张图片，我会结合检测结果和图像内容给出分析。'}
-          </p>
-        </div>
+            </p>
+          </div>
+        )}
         {started && (
           <>
-            <div className="conversation-counter" data-testid="workflow-step-counter">
-              {current >= 0
-                ? `第 ${current + 1} 步${detectorSteps.length ? ` / 共 ${items.length} 步` : ''} · ${items[current].title}`
-                : explainState === 'done'
-                  ? '本轮分析已结束'
-                  : stopped
-                    ? '分析已停止'
-                    : '检测结果已保存'}
-            </div>
-            <ol className="conversation-timeline" data-testid="workflow-progress">
-              {visible.map((item) => (
-                <li key={item.id} data-status={item.status} data-step={item.id}>
-                  <span className={`conversation-step-icon ${item.status}`}>
-                    {item.status === 'running' ? (
-                      <LoaderCircle size={16} className="spin" />
-                    ) : ['failed', 'cancelled'].includes(item.status) ? (
-                      <CircleAlert size={16} />
-                    ) : (
-                      <Check size={16} />
-                    )}
-                  </span>
-                  <div>
-                    <strong>{item.title}</strong>
-                    <p>
-                      {item.status === 'running'
-                        ? item.id === 'explanation'
-                          ? '正在理解图片与标记区域，整理综合判断…'
-                          : '正在检查，请稍候…'
-                        : (item.message ??
-                          (item.status === 'failed'
-                            ? '这项检查未完成。'
-                            : item.status === 'cancelled'
-                              ? '已停止。'
-                              : item.status === 'reused'
-                                ? '已复用完成的检查结果。'
-                                : '已完成。'))}
-                    </p>
-                    {item.status === 'running' && item.id !== 'explanation' && trace?.label && (
-                      <small className="conversation-live" data-testid="analysis-progress-label">
-                        {trace.label}
-                      </small>
-                    )}
-                  </div>
-                </li>
-              ))}
-            </ol>
+            <details
+              className="conversation-activity"
+              open={activityOpen}
+              onToggle={(event) => setActivityOpen(event.currentTarget.open)}
+            >
+              <summary className="conversation-counter" data-testid="workflow-step-counter">
+                {current >= 0 ? <LoaderCircle size={14} className="spin" /> : <Check size={14} />}
+                <span>
+                  {current >= 0
+                    ? `第 ${current + 1} 步${detectorSteps.length ? ` / 共 ${items.length} 步` : ''} · ${items[current].title}`
+                    : explainState === 'done'
+                      ? '本轮分析已结束 · 查看分析过程'
+                      : w.running
+                        ? '本步已完成，正在继续分析'
+                        : stopped
+                          ? '分析已停止'
+                          : '检测结果已保存'}
+                </span>
+                <ChevronRight size={14} className="activity-chevron" />
+              </summary>
+              <ol className="conversation-timeline" data-testid="workflow-progress">
+                {visible.map((item) => (
+                  <li key={item.id} data-status={item.status} data-step={item.id}>
+                    <span className={`conversation-step-icon ${item.status}`}>
+                      {item.status === 'running' ? (
+                        <LoaderCircle size={16} className="spin" />
+                      ) : ['failed', 'cancelled'].includes(item.status) ? (
+                        <CircleAlert size={16} />
+                      ) : (
+                        <Check size={16} />
+                      )}
+                    </span>
+                    <div className="conversation-step-content">
+                      <strong>{item.title}</strong>
+                      <p>
+                        {item.status === 'running'
+                          ? item.id === 'explanation'
+                            ? (stream?.label ?? '正在理解图片与标记区域，整理综合判断…')
+                            : '正在检查，请稍候…'
+                          : (item.message ??
+                            (item.status === 'failed'
+                              ? '这项检查未完成。'
+                              : item.status === 'cancelled'
+                                ? '已停止。'
+                                : item.status === 'reused'
+                                  ? '已复用完成的检查结果。'
+                                  : '已完成。'))}
+                      </p>
+                      {item.status === 'running' && item.id !== 'explanation' && trace?.label && (
+                        <small className="conversation-live" data-testid="analysis-progress-label">
+                          {trace.label}
+                        </small>
+                      )}
+                      {item.preview && ['completed', 'reused'].includes(item.status) && (
+                        <StepPreview
+                          preview={item.preview}
+                          name={item.id === 'rise' ? 'RiSE' : 'RITA'}
+                          original={w.image?.dataUrl ?? ''}
+                        />
+                      )}
+                    </div>
+                  </li>
+                ))}
+              </ol>
+              {report && (
+                <details
+                  className="conversation-technical"
+                  data-testid="workflow-technical-details"
+                >
+                  <summary>检测指标与 JSON 报告</summary>
+                  <WorkflowReport
+                    report={report}
+                    originalDataUrl={w.image?.dataUrl ?? ''}
+                    onSupplement={w.supplement}
+                    hideExplanation
+                  />
+                  {explanation && (
+                    <details>
+                      <summary>解释原始记录</summary>
+                      <pre>{JSON.stringify(explanation, null, 2)}</pre>
+                    </details>
+                  )}
+                </details>
+              )}
+            </details>
             {w.running && (
               <button
                 className="secondary-button"
@@ -248,51 +330,35 @@ export function WorkflowConversation({ workspace: w }: { workspace: AnalysisWork
             )}
           </>
         )}
-        {result && (
+        {(result || (explainState === 'running' && (stream?.text || verdict))) && (
           <article className="conversation-answer" data-testid="analysis-report">
+            {verdict && (
+              <div
+                className={`conversation-conclusion ${verdict}`}
+                data-testid="explanation-conclusion"
+              >
+                <span>综合判断</span>
+                <strong>
+                  {verdict === 'suspicious'
+                    ? '发现可疑线索'
+                    : verdict === 'no_anomaly_detected'
+                      ? '未发现明显异常线索'
+                      : '暂不能确定'}
+                </strong>
+              </div>
+            )}
             <div className="conversation-answer-heading">
               <span className="assistant-avatar">
                 <MessageSquareText size={17} />
               </span>
-              <h3>综合分析</h3>
-              <span className={`conversation-verdict ${result.finalDecision}`}>
-                {result.finalDecision === 'suspicious'
-                  ? '有可疑线索'
-                  : result.finalDecision === 'no_anomaly_detected'
-                    ? '未发现明显异常'
-                    : '仍需进一步核查'}
-              </span>
+              <h3>{explainState === 'running' ? '正在撰写分析' : '分析说明'}</h3>
             </div>
-            <p className="conversation-summary" data-testid="explanation-summary">
-              {result.analysis}
-            </p>
-            {result.regionAnalyses?.map((region, index) => (
-              <div
-                className="conversation-region"
-                key={region.regionId}
-                data-testid="explanation-region"
-              >
-                <h4>
-                  {result.primaryRegionId === region.regionId
-                    ? '优先关注'
-                    : `关注位置 ${index + 1}`}{' '}
-                  · {region.subject}
-                </h4>
-                <small>{region.location}</small>
-                {region.reason !== result.analysis && <p>{region.reason}</p>}
-                {region.suspectedOperation && (
-                  <p>
-                    可能方式：{region.suspectedOperation}
-                    {region.operationReason ? `。${region.operationReason}` : ''}
-                  </p>
-                )}
-              </div>
-            ))}
-            {result.evidenceBalance && (
+            <ResponseText
+              text={result?.analysis ?? stream?.text ?? ''}
+              streaming={explainState === 'running'}
+            />
+            {result?.evidenceBalance && (
               <p className="conversation-balance">{result.evidenceBalance}</p>
-            )}
-            {explanation.mode === 'mock' && (
-              <p className="conversation-muted">智能分析暂不可用，以上为基础说明。</p>
             )}
           </article>
         )}
@@ -303,23 +369,6 @@ export function WorkflowConversation({ workspace: w }: { workspace: AnalysisWork
               重新生成说明
             </button>
           </div>
-        )}
-        {report && (
-          <details className="conversation-technical" data-testid="workflow-technical-details">
-            <summary>检测详情与报告</summary>
-            <WorkflowReport
-              report={report}
-              originalDataUrl={w.image?.dataUrl ?? ''}
-              onSupplement={w.supplement}
-              hideExplanation
-            />
-            {explanation && (
-              <details>
-                <summary>解释原始记录</summary>
-                <pre>{JSON.stringify(explanation, null, 2)}</pre>
-              </details>
-            )}
-          </details>
         )}
       </div>
     </section>

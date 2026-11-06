@@ -19,13 +19,27 @@ export function useAnalysisWorkspace() {
   const [notice, setNotice] = useState('')
   const locked = useRef(false)
   const currentTask = useRef<string | null>(null)
+  const progressTrace = useRef<AnalysisProgress | null>(null)
 
   useEffect(
     () =>
       window.desktop.onAnalysisProgress((event) => {
         if (event.taskId === currentTask.current) {
-          setProgress(event)
-          setLastProgress(event)
+          // Preview bytes arrive once at completion, not on every later progress tick.
+          const previous =
+            progressTrace.current?.taskId === event.taskId ? progressTrace.current : null
+          const merged = {
+            ...event,
+            steps: event.steps?.map((step) => {
+              const preview =
+                step.preview ??
+                previous?.steps?.find((item) => item.backend === step.backend)?.preview
+              return preview ? { ...step, preview } : step
+            })
+          }
+          progressTrace.current = merged
+          setProgress(merged)
+          setLastProgress(merged)
         }
       }),
     []
@@ -45,6 +59,7 @@ export function useAnalysisWorkspace() {
         setReport(null)
         setProgress(null)
         setLastProgress(null)
+        progressTrace.current = null
       }
     } catch {
       setError('无法打开图片，请重新尝试。')
@@ -64,6 +79,7 @@ export function useAnalysisWorkspace() {
     if (!supplement) setReport(null)
     setProgress(null)
     setLastProgress(null)
+    progressTrace.current = null
     setStatus('running')
     try {
       const result = await window.desktop.analyze(
@@ -125,6 +141,7 @@ export function useAnalysisWorkspace() {
         setReport(null)
         setProgress(null)
         setLastProgress(null)
+        progressTrace.current = null
         setError('')
         setNotice('')
       }
@@ -144,6 +161,7 @@ export function useAnalysisWorkspace() {
       setReport(null)
       setProgress(null)
       setLastProgress(null)
+      progressTrace.current = null
       setError('')
       setNotice('')
     },
@@ -155,6 +173,7 @@ export function useAnalysisWorkspace() {
       setNotice('')
       setProgress(null)
       setLastProgress(null)
+      progressTrace.current = null
     },
     image,
     report,

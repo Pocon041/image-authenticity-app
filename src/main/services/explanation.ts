@@ -11,19 +11,23 @@ import type {
   ProvenanceReport,
   ManipulationReport,
   AigcReport,
-  Evidence,
-  Artifact
+  Evidence
 } from '../../shared/protocol'
 import type { Region } from '../../shared/protocol'
 import { validateExplanationReport } from '../../shared/protocol'
 import { sicaClassSupport, fsdClassSupport } from '../../shared/decision-confidence'
 import { observeRegions, type RegionObservation } from './visual-observation'
+import { drawRegionBoundaries, BOUNDARY_NOTE } from './visual-boundary'
+import { readOllamaChat } from './ollama-stream'
+import type { ExplanationProgress } from '../../shared/contracts'
+import { locateCandidates, assessOriginal } from './evidence-assessment'
 import {
-  USER_EXPLANATION_SYSTEM,
-  USER_EXPLANATION_SCHEMA,
-  parseUserExplanation,
-  type UserExplanation
-} from './user-explanation'
+  primaryExplanationRegions,
+  evidenceForAssessment,
+  buildNarrationFacts,
+  type NarrationCandidate
+} from './explanation-evidence'
+import { USER_EXPLANATION_SYSTEM, type UserExplanation } from './user-explanation'
 
 export interface ExplanationConfig {
   model: string
@@ -45,7 +49,7 @@ const BUILTIN_CONFIG: ExplanationConfig = {
   numCtx: 8192,
   // 简短摘要、权衡与最多三个区域；格式扩展后需重新检查输出预算。
   numPredict: 1200,
-  // 整图及最多两个定位器掩码。
+  // 保留原送图上限配置；目前综合阶段只发送一张带预测外轮廓的原图。
   maxImages: 3
 }
 
@@ -75,7 +79,8 @@ export async function generateExplanation(
   bundle: EvidenceBundle,
   taskId: string,
   modelName?: string,
-  ollamaHost?: string
+  ollamaHost?: string,
+  options?: { onProgress?: (progress: Omit<ExplanationProgress, 'taskId' | 'imageId'>) => void }
 ): Promise<ExplanationReport> {
   const startTime = performance.now()
   const taskDirectory = join(process.cwd(), 'work/analysis-runs', taskId)
@@ -84,6 +89,7 @@ export async function generateExplanation(
   // 每次调用读一次，不缓存：改 JSON 后下一次分析立即生效，不用重启应用。
   const config = await loadExplanationConfig(modelName, ollamaHost)
   const requestSignal = AbortSignal.timeout(120000)
+  const notify = options?.onProgress
 
   // 1. 提取上游报告
   const upstreamReports = bundle.reports
@@ -108,47 +114,54 @@ export async function generateExplanation(
     upstreamDecision
   )
   const disagreements = getDisagreements(manipulationReport)
-  const selectedRegions = [...(manipulationReport?.result?.regions ?? [])]
-    .sort(
-      (a, b) =>
-        Number(b.areaPixels ?? b.bboxXYWH[2] * b.bboxXYWH[3]) -
-        Number(a.areaPixels ?? a.bboxXYWH[2] * a.bboxXYWH[3])
-    )
-    .filter((region) => regionEvidenceIds(region, manipulationReport).length > 0)
-    .slice(0, 3)
+  const allRegions = manipulationReport?.result?.regions ?? []
+  const selectedRegions = primaryExplanationRegions(
+    allRegions.filter((region) => regionEvidenceIds(region, manipulationReport).length > 0)
+  )
   const aliases = selectedRegions.map((_, index) => String.fromCharCode(65 + index))
 
-  // 整图、预测掩码与简洁JSON。
-  const { images, references } = await prepareImages(
+  // 同一张原图上的预测外轮廓与简洁JSON。
+  const { images, references, original } = await prepareImages(
     bundle,
     taskDirectory,
     config.maxImages,
     selectedRegions
   )
   console.log(`[explanation-images] maxImages=${config.maxImages} sent=${images.length}`)
-  const fullImageIndex = references.findIndex((reference) => reference.role === 'full_image')
-  const observations =
-    fullImageIndex >= 0
-      ? await observeRegions({
-          directory: taskDirectory,
-          full: Buffer.from(images[fullImageIndex], 'base64'),
-          regions: selectedRegions,
-          artifacts: bundle.artifacts,
-          model: config.model,
-          host: config.host,
-          numCtx: config.numCtx,
-          signal: requestSignal
-        })
-      : []
+  notify?.({ phase: 'observing', label: '正在对应预测区域与原图位置' })
+  const visualGuidance = await locateCandidates({
+    images,
+    count: selectedRegions.length,
+    regions: selectedRegions.map((region) => region.bboxXYWH),
+    config,
+    signal: requestSignal
+  })
+  if (selectedRegions.length)
+    notify?.({
+      phase: 'observing',
+      label: `正在查看 ${selectedRegions.length} 处候选的未标记原始内容`
+    })
+  const observations = original
+    ? await observeRegions({
+        directory: taskDirectory,
+        full: original,
+        regions: selectedRegions,
+        artifacts: bundle.artifacts,
+        model: config.model,
+        host: config.host,
+        numCtx: config.numCtx,
+        maxImages: config.maxImages,
+        signal: requestSignal
+      })
+    : []
   const prompt = buildPrompt(
-    upstreamDecision,
-    categorizedClaims,
     disagreements,
     manipulationReport,
     aigcReport,
     selectedRegions,
     references,
     bundle.image.width,
+    bundle.image.height,
     observations,
     provenanceReport
   )
@@ -166,9 +179,26 @@ export async function generateExplanation(
   let producerName = `ollama:${config.model}`
   let errorMsg: string | null = null
   const rawJudgements: unknown[] = []
+  const rawNarratives: unknown[] = []
 
   try {
-    answer = await generateAnalysis(prompt, images, config, aliases, rawJudgements, requestSignal)
+    answer = await generateAnalysis(
+      prompt,
+      config,
+      aliases,
+      rawJudgements,
+      requestSignal,
+      notify,
+      rawNarratives,
+      selectedRegions.map((region, index) => ({
+        regionId: aliases[index],
+        location: regionPosition(region, bundle.image.width, bundle.image.height),
+        observedContent: observations[index]?.text ?? null,
+        confidence: region.confidence
+      })),
+      original,
+      visualGuidance.focusIndex
+    )
   } catch (error) {
     console.warn('VLM 调用或校验失败，降级为规则模板:', error)
     mode = 'mock'
@@ -180,13 +210,7 @@ export async function generateExplanation(
     const source = selectedRegions[aliases.indexOf(region.regionId)]
     return {
       ...region,
-      location:
-        region.location ||
-        (source.bboxXYWH[0] + source.bboxXYWH[2] / 2 > (bundle.image.width * 2) / 3
-          ? '图片右侧'
-          : source.bboxXYWH[0] + source.bboxXYWH[2] / 2 < bundle.image.width / 3
-            ? '图片左侧'
-            : '图片中部'),
+      location: region.location || regionPosition(source, bundle.image.width, bundle.image.height),
       regionId: source.regionId,
       evidenceIds: regionEvidenceIds(source, manipulationReport),
       operationSource: 'vlm_hypothesis' as const
@@ -195,7 +219,7 @@ export async function generateExplanation(
 
   const result: ExplanationResult = {
     finalDecision: answer.finalDecision,
-    decisionSource: mode === 'local' ? 'vlm' : 'rule_fallback',
+    decisionSource: mode === 'local' && !answer.extractionFailed ? 'vlm' : 'rule_fallback',
     upstreamDecision,
     confidence: UNAVAILABLE_CONFIDENCE,
     analysis: answer.summary,
@@ -221,14 +245,43 @@ export async function generateExplanation(
   )
   report.extensions = {
     visualObservations: observations,
-    pipeline: 'region_observation_then_evidence_synthesis',
-    rawJudgements
+    pipeline: 'contour_guidance_unmarked_observation_original_assessment_then_narration',
+    visualGuidance,
+    assessment: answer.assessment,
+    narrationFacts: answer.narrationFacts,
+    regionSelection: {
+      strategy: 'primary_per_localizer_by_area',
+      totalCount: allRegions.length,
+      presentedCount: selectedRegions.length
+    },
+    rawJudgements,
+    rawNarratives,
+    structuredExtraction: answer.methodExtractionFailed
+      ? 'failed'
+      : mode === 'local'
+        ? 'completed'
+        : 'not_run',
+    inputPresentation: {
+      type: selectedRegions.length ? 'predicted_region_outer_contours' : 'full_image',
+      imageCount: images.length,
+      regionCount: selectedRegions.length,
+      annotationAddedBy: 'app',
+      forStage: 'visual_guidance',
+      assessment: { type: 'unmarked_original', imageCount: original ? 1 : 0 },
+      observation: { type: 'unmarked_context_crops' },
+      narration: { type: 'text_only_evidence', imageCount: 0 }
+    }
   }
 
   const validationErrors = validateExplanationReport(report, upstreamReports)
   if (validationErrors.length > 0) {
     throw new Error(`解释报告校验失败：${validationErrors.join('; ')}`)
   }
+
+  notify?.({
+    phase: 'finished',
+    label: mode === 'local' ? '综合分析已完成' : '智能分析未完成，检测报告仍可查看'
+  })
 
   return report
 }
@@ -473,7 +526,7 @@ function regionEvidenceIds(region: Region, manipulation: ManipulationReport | un
 
 interface ImageReference {
   index: number
-  role: 'full_image' | 'predicted_mask'
+  role: 'full_image' | 'annotated_input'
   regions?: string[]
 }
 
@@ -482,48 +535,41 @@ async function prepareImages(
   taskDirectory: string,
   maxImages: number,
   regions: Region[]
-): Promise<{ images: string[]; references: ImageReference[] }> {
+): Promise<{ images: string[]; references: ImageReference[]; original?: Buffer }> {
   const base64Images: string[] = []
   const references: ImageReference[] = []
   const displayArtifact = bundle.artifacts.find(
     (artifact) => artifact.artifactId === bundle.image.displayArtifactId
   )
 
-  // 发送整图与各定位器预测掩码，JSON按实际发送顺序标注图片身份。
-  // 不把裁剪或黑白掩码当成另一个独立场景。
-  const area = (artifact: Artifact): number =>
-    artifact.bboxXYWH ? artifact.bboxXYWH[2] * artifact.bboxXYWH[3] : 0
-  const byType = (type: Artifact['type']): Artifact[] =>
-    displayArtifact
-      ? bundle.artifacts
-          .filter(
-            (artifact) =>
-              artifact.type === type && artifact.sourceArtifactId === displayArtifact.artifactId
-          )
-          .sort((a, b) => area(b) - area(a))
-      : []
-
-  const ordered: Artifact[] = displayArtifact ? [displayArtifact, ...byType('mask')] : []
-
-  for (const artifact of ordered.slice(0, maxImages)) {
+  // One scene, with predicted outer contours. Never send a black/white mask as another image.
+  if (displayArtifact && maxImages >= 1) {
     try {
-      const buffer = await readFile(join(taskDirectory, artifact.uri))
-      base64Images.push(buffer.toString('base64'))
-      references.push({
-        index: base64Images.length,
-        role: artifact.type === 'display' ? 'full_image' : 'predicted_mask',
-        ...(artifact.type === 'mask'
-          ? {
-              regions: regions.flatMap((region, index) =>
-                region.maskArtifactId === artifact.artifactId
-                  ? [String.fromCharCode(65 + index)]
-                  : []
-              )
-            }
-          : {})
-      })
+      const original = await readFile(join(taskDirectory, displayArtifact.uri))
+      const groups = new Map<string, Region[]>()
+      for (const region of regions) {
+        if (!region.maskArtifactId) throw new Error('候选区域缺少预测掩码')
+        const group = groups.get(region.maskArtifactId) ?? []
+        group.push(region)
+        groups.set(region.maskArtifactId, group)
+      }
+      const layers = await Promise.all(
+        [...groups].map(async ([id, group]) => {
+          const artifact = bundle.artifacts.find(
+            (item) => item.artifactId === id && item.type === 'mask'
+          )
+          if (!artifact || artifact.sourceArtifactId !== displayArtifact.artifactId)
+            throw new Error('候选掩码与显示图像的关联无效')
+          return { mask: await readFile(join(taskDirectory, artifact.uri)), regions: group }
+        })
+      )
+      const annotated = await drawRegionBoundaries(original, layers)
+      base64Images.push(annotated.toString('base64'))
+      references.push({ index: 1, role: regions.length ? 'annotated_input' : 'full_image' })
+      return { images: base64Images, references, original }
     } catch (error) {
-      console.warn(`读取图片失败（${artifact.type}: ${artifact.uri}）:`, error)
+      console.warn('准备边界标记图失败:', error)
+      throw error
     }
   }
 
@@ -712,14 +758,13 @@ function buildUnresolved(
 // --- Prompt 与 VLM 调用 ---
 
 function buildPrompt(
-  finalDecision: FinalDecision,
-  categorized: CategorizedClaim[],
   disagreements: string[],
   manipulation: ManipulationReport | undefined,
   aigc: AigcReport | undefined,
   selectedRegions: Region[],
   images: ImageReference[],
   imageWidth: number,
+  imageHeight: number,
   observations: RegionObservation[],
   provenance: ProvenanceReport | undefined
 ): string {
@@ -741,30 +786,28 @@ function buildPrompt(
     {
       model: 'SICA',
       task: '通用整图真实性分类',
-      status: sica?.status ?? 'not_run',
       finding:
         classification.predictedClass === 'real'
-          ? '整图未见明显异常'
+          ? '通用伪造筛查未报警'
           : classification.predictedClass === 'fake'
             ? '整图存在可疑线索'
-            : '尚无结果',
+            : '本轮未运行或未完成',
       score: sicaScore,
       threshold: classification.threshold ?? null,
       support: support(
         sicaClassSupport(sicaScore, classification.predictedClass),
-        classification.predictedClass === 'real' ? '整图未见明显异常' : '整图存在可疑线索'
+        classification.predictedClass === 'real' ? '通用伪造筛查未报警' : '整图存在可疑线索'
       )
     },
     {
       model: 'FSD',
       task: 'AI生成分类',
-      status: aigc?.status ?? 'not_run',
       finding:
         aigc?.result?.decision === 'non_ai'
           ? '未检出AI生成线索'
           : aigc?.result?.decision === 'ai_generated'
             ? '存在AI生成线索'
-            : '尚无结果',
+            : '本轮未运行或未完成',
       score: aigc?.result?.score?.value ?? null,
       threshold: aigc?.result?.threshold ?? null,
       support: support(
@@ -784,32 +827,25 @@ function buildPrompt(
     models.push({
       model: backend === 'rita' ? 'RITA' : 'RiSE',
       task: backend === 'rita' ? '照片局部篡改定位' : '文档局部篡改定位',
-      status: detector?.status ?? 'not_run',
+      finding: detector?.status === 'completed' ? '已标记的局部异常候选' : '本轮未运行或未完成',
       regionCount: result.regionCount ?? null,
       support: support(result.confidence),
       shownRegionCount: regions.length,
       regions: regions.map((region) => ({
-        regionId: String.fromCharCode(65 + selectedRegions.indexOf(region)),
         bboxXYWH: region.bboxXYWH,
-        position:
-          region.bboxXYWH[0] + region.bboxXYWH[2] / 2 > (imageWidth * 2) / 3
-            ? '图片右侧'
-            : region.bboxXYWH[0] + region.bboxXYWH[2] / 2 < imageWidth / 3
-              ? '图片左侧'
-              : '图片中部',
-        support: support(region.confidence)
+        position: regionPosition(region, imageWidth, imageHeight),
+        support: support(region.confidence),
+        observedContent: observations[selectedRegions.indexOf(region)]?.text ?? null
       }))
     })
   }
   return JSON.stringify({
-    task: '评估是否存在异常；如有，说明优先核查的目标、候选编辑方式及依据',
-    images,
-    maskLegend: '白色是检测器标记的异常候选；掩码与待分析整图同坐标',
+    images: images.map((image) => ({ index: image.index, role: image.role })),
+    annotation: { type: 'predicted_region_outer_contours', color: '青色', note: BOUNDARY_NOTE },
     imageRelationship:
       '所有图片和局部观察来自同一张待分析输入，没有编辑前参考图；裁剪仅用于看清内容',
     models,
     provenance: {
-      status: provenance?.status ?? 'not_run',
       metadata: {
         format: provenance?.result?.metadata?.details?.format ?? null,
         creatorTool:
@@ -818,41 +854,20 @@ function buildPrompt(
           ] ?? null
       },
       credentials: {
-        status: provenance?.result?.credentials?.status ?? 'not_run',
         outcome: provenance?.result?.credentials?.details?.outcome ?? null
       },
       watermark: {
-        status: provenance?.result?.watermark?.status ?? 'not_run',
         outcome:
           provenance?.result?.watermark?.details?.combinedOutcome ??
           provenance?.result?.watermark?.details?.outcome ??
           null
       }
     },
-    regionObservations: observations.map((observation) => ({
-      regionId: observation.regionId,
-      status: observation.status,
-      ...(observation.text ? { content: observation.text.slice(0, 600) } : {})
-    })),
-    observationSource: '区域观察仅描述可见内容，尚未判定异常',
+    observationSource: '局部观察来自未加标记的原始局部像素，只描述内容，不代表异常已经证实。',
     disagreements,
     evidenceScope:
       '整图筛查、AI生成和局部编辑是不同任务；支持度说明各自结论，综合时结合局部标记与可见内容。',
-    supportMeaning: '支持度描述模型对当前类别或标记像素的响应强度，非正确率',
-    output: {
-      fields: ['finalDecision', 'primaryRegionId', 'subject', 'suspectedOperation', 'explanation'],
-      regionIds: selectedRegions.map((_, index) => String.fromCharCode(65 + index)),
-      operationTypes: {
-        copy_move: '复制移动',
-        splicing: '拼接',
-        removal: '擦除',
-        inpainting: '局部修复或重绘',
-        text_edit: '文字修改',
-        ai_generation: 'AI生成',
-        unknown: '暂不能区分'
-      },
-      style: '选出一个最值得关注的区域；explanation用两句中文概括判断与理由'
-    }
+    supportMeaning: '支持度描述模型对当前类别或标记像素的响应强度，非正确率'
   })
 }
 
@@ -865,74 +880,163 @@ interface OllamaChatResponse {
 
 async function generateAnalysis(
   prompt: string,
-  images: string[],
   config: ExplanationConfig,
   regionIds: string[],
   rawJudgements: unknown[],
-  requestSignal: AbortSignal
+  requestSignal: AbortSignal,
+  notify: ((progress: Omit<ExplanationProgress, 'taskId' | 'imageId'>) => void) | undefined,
+  rawNarratives: unknown[],
+  candidates: NarrationCandidate[],
+  original: Buffer | undefined,
+  visualFocusHintIndex: number | null
 ): Promise<UserExplanation> {
-  let lastProblem: string | null = null
+  notify?.({ phase: 'synthesizing', label: '正在核对未标记原图与真实检测证据', text: '' })
+  const evidence = { ...evidenceForAssessment(prompt, candidates), visualFocusHintIndex }
+  const assessment = await assessOriginal({
+    original,
+    evidence,
+    count: candidates.length,
+    config,
+    signal: requestSignal,
+    rawJudgements
+  })
+  const facts = buildNarrationFacts({
+    evidence: JSON.parse(prompt),
+    decision: assessment.decision,
+    focusIndex: assessment.focusIndex,
+    candidates
+  })
+  const selectedFocus =
+    assessment.focusIndex === null ? undefined : candidates[assessment.focusIndex - 1]
+  const writingQuestion = selectedFocus
+    ? `请按“重点位置、判断依据、可能方式”的顺序组织正文，点明${selectedFocus.location}“${selectedFocus.observedContent ?? '候选区域'}”。判断依据分2条，每条另起一行并以“- ”开头。记录未提供明确手法证据，可能方式只写当前还不能区分具体编辑方式，不写检查建议。不新增事实，不重复综合判断。`
+    : '请按“重点位置、判断依据、可能方式”的顺序组织正文，未选出重点位置时如实说明。判断依据用短项目列表，可能方式只说明有无明确手法依据，不写检查建议。不新增事实，不重复综合判断。'
 
-  // 最多两次：仅当输出无法解析或缺字段时重试；网络/超时直接抛出，由上层降级。
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    const userContent =
-      attempt === 0
-        ? prompt
-        : `${prompt}\n\n【上一次输出未通过校验】${lastProblem ?? '未知问题'}。请按约定格式重写。`
-
-    const response = await fetch(`${config.host}/api/chat`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: config.model,
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: userContent, images }
-        ],
-        stream: false,
-        format: USER_EXPLANATION_SCHEMA,
-        // temperature 固定 0：解释任务要确定性，不属于环境相关配置。
-        options: { temperature: 0, num_predict: config.numPredict, num_ctx: config.numCtx }
-      }),
-      signal: requestSignal
+  notify?.({
+    phase: 'synthesizing',
+    label: '判断已形成，正在整理位置与依据',
+    text: '',
+    decision: assessment.decision
+  })
+  const response = await fetch(`${config.host}/api/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: config.model,
+      messages: [
+        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'user', content: facts + '\n' + writingQuestion }
+      ],
+      stream: !!notify,
+      options: { temperature: 0, num_predict: config.numPredict, num_ctx: config.numCtx }
+    }),
+    signal: requestSignal
+  })
+  if (!response.ok) throw new Error(`Ollama HTTP ${response.status}: ${await response.text()}`)
+  let partialContent = ''
+  let data: OllamaChatResponse
+  try {
+    data = notify
+      ? await readOllamaChat(response, (text) => {
+          partialContent = text
+          notify({ phase: 'synthesizing', label: '正在生成分析说明', text })
+        })
+      : await response.json()
+  } catch (error) {
+    rawNarratives.push({
+      message: { content: partialContent },
+      incomplete: true,
+      error: String(error)
     })
-
-    if (!response.ok) {
-      throw new Error(`Ollama HTTP ${response.status}: ${await response.text()}`)
-    }
-
-    const data = (await response.json()) as OllamaChatResponse
-    rawJudgements.push(data)
-    console.log(
-      `[Ollama] attempt=${attempt + 1} done_reason=${data.done_reason} eval_count=${data.eval_count} prompt_eval_count=${data.prompt_eval_count}`
-    )
-
-    const content = data.message?.content
-    if (!content) throw new Error('Ollama 返回为空')
-
-    let parsed: unknown
-    try {
-      parsed = JSON.parse(content)
-    } catch {
-      lastProblem = '输出不是合法 JSON（可能被截断）'
-      console.warn(`  第 ${attempt + 1} 次输出未通过校验：${lastProblem}`)
-      continue
-    }
-
-    const sections = parseUserExplanation(parsed, regionIds)
-    if (!sections) {
-      lastProblem = '请按约定JSON回答，用日常语言解释并使用已有区域编号'
-      console.warn(`  第 ${attempt + 1} 次输出未通过校验：${lastProblem}`)
-      continue
-    }
-
-    console.log('----- [Ollama] sections -----')
-    console.log(JSON.stringify(sections))
-    console.log('-----------------------------')
-    return sections
+    throw error
   }
+  rawNarratives.push(data)
+  const narrative = data.message?.content
+  if (!narrative?.trim()) throw new Error('Ollama 返回为空')
+  if (data.done_reason === 'length') throw new Error('分析说明达到输出上限，未生成完整回答')
 
-  throw new Error(`VLM 输出未通过校验：${lastProblem ?? '未知问题'}`)
+  // Optional verbatim operation reference; never rewrite the narrative or reclassify the image.
+  notify?.({ phase: 'synthesizing', label: '回答已生成，正在保存证据引用' })
+  let operationQuote: string | undefined,
+    methodExtractionFailed = true
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const extracted = await fetch(`${config.host}/api/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: config.model,
+          stream: false,
+          format: {
+            type: 'object',
+            properties: { suspectedOperationQuote: { type: ['string', 'null'] } },
+            required: ['suspectedOperationQuote'],
+            additionalProperties: false
+          },
+          messages: [
+            {
+              role: 'system',
+              content:
+                '只逐字提取回答实际提出的候选编辑方式短语。若回答没有推测具体手法、明确无法区分或只列举方法类别，填null。不要重新判断图片。'
+            },
+            { role: 'user', content: JSON.stringify({ answer: narrative }) }
+          ],
+          options: { temperature: 0, num_predict: 160, num_ctx: config.numCtx }
+        }),
+        signal: requestSignal
+      })
+      if (!extracted.ok) throw new Error(`手法引用提取HTTP ${extracted.status}`)
+      const raw = (await extracted.json()) as OllamaChatResponse
+      rawJudgements.push({ stage: 'operation_extraction', ...raw })
+      const value = JSON.parse(raw.message?.content ?? '')
+      if (
+        value.suspectedOperationQuote !== null &&
+        typeof value.suspectedOperationQuote !== 'string'
+      )
+        continue
+      if (typeof value.suspectedOperationQuote === 'string') {
+        if (
+          !value.suspectedOperationQuote.trim() ||
+          !narrative.includes(value.suspectedOperationQuote)
+        )
+          continue
+        operationQuote = value.suspectedOperationQuote
+      }
+      methodExtractionFailed = false
+      break
+    } catch (error) {
+      rawJudgements.push({ stage: 'operation_extraction', extractionError: String(error) })
+      if (requestSignal.aborted) break
+    }
+  }
+  const focus = assessment.focusIndex === null ? undefined : candidates[assessment.focusIndex - 1]
+  return {
+    finalDecision: assessment.decision,
+    summary: narrative,
+    evidenceBalance: '',
+    primaryRegionId: focus?.regionId ?? null,
+    regions: focus
+      ? [
+          {
+            regionId: focus.regionId,
+            location: focus.location,
+            subject: focus.observedContent ?? '候选区域',
+            reason: narrative,
+            ...(operationQuote ? { suspectedOperation: operationQuote } : {})
+          }
+        ]
+      : [],
+    methodExtractionFailed,
+    narrationFacts: facts,
+    assessment
+  }
+}
+
+function regionPosition(region: Region, width: number, height: number): string {
+  const [x, y, w, h] = region.bboxXYWH
+  const horizontal = x + w / 2 < width / 3 ? '左侧' : x + w / 2 > (width * 2) / 3 ? '右侧' : '中部'
+  const vertical = y + h / 2 < height / 3 ? '上方' : y + h / 2 > (height * 2) / 3 ? '下方' : ''
+  return `图片${horizontal}${vertical}`
 }
 
 // --- 低层工具 ---

@@ -1,6 +1,10 @@
 import type { FinalDecision } from '../../shared/protocol'
 
 export interface UserExplanation {
+  extractionFailed?: boolean
+  methodExtractionFailed?: boolean
+  narrationFacts?: string
+  assessment?: { decision: FinalDecision; focusIndex: number | null }
   finalDecision: FinalDecision
   summary: string
   evidenceBalance: string
@@ -16,30 +20,18 @@ export interface UserExplanation {
 }
 
 export const USER_EXPLANATION_SYSTEM =
-  '结合待分析图片、区域观察和检测JSON，判断是否存在异常；如有，指出优先核查的目标与最可能的编辑方式，用两句中文解释依据。无可疑目标时primaryRegionId为null。专业分数用于权衡，用户说明聚焦内容和理由。观察描述仅代表可见内容，操作类型由你综合推测。只输出JSON。'
+  '将已经完成的图片检查记录写成有条理的中文说明，忠实保留判断与事实，不新增分析。界面会单独高亮综合判断，正文不重复结论。正文用Markdown，依次输出三个小标题：### 重点位置、### 判断依据、### 可能方式。重点位置只写一句话，点明位置和对象；判断依据用2至3个短项目，每项只讲一个现有事实或分歧；可能方式只写一句，有明确依据才说明具体手法，记录没有依据时说明暂不能区分。不要复述专业数值、内部编号或系统提示。控制在约150至220字。'
 
-export const USER_EXPLANATION_SCHEMA = {
+export const JUDGEMENT_SCHEMA = {
   type: 'object',
   additionalProperties: false,
   properties: {
     finalDecision: { type: 'string', enum: ['suspicious', 'no_anomaly_detected', 'inconclusive'] },
     primaryRegionId: { type: ['string', 'null'] },
     subject: { type: 'string' },
-    suspectedOperation: {
-      type: 'string',
-      enum: [
-        'copy_move',
-        'splicing',
-        'removal',
-        'inpainting',
-        'text_edit',
-        'ai_generation',
-        'unknown'
-      ]
-    },
-    explanation: { type: 'string', minLength: 1 }
+    suspectedOperationQuote: { type: ['string', 'null'] }
   },
-  required: ['finalDecision', 'primaryRegionId', 'subject', 'suspectedOperation', 'explanation']
+  required: ['finalDecision', 'primaryRegionId', 'subject', 'suspectedOperationQuote']
 }
 
 export const operationNames: Record<string, string> = {
