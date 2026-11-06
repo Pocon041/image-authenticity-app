@@ -9,6 +9,7 @@ import {
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import type { AnalysisWorkspace } from '../hooks/useAnalysisWorkspace'
+import '../image-results.css'
 
 function formatSize(bytes: number): string {
   return bytes >= 1024 * 1024
@@ -18,6 +19,35 @@ function formatSize(bytes: number): string {
 
 export function ImagePanel({ workspace: w }: { workspace: AnalysisWorkspace }) {
   const [previewOpen, setPreviewOpen] = useState(false)
+  const [selection, setSelection] = useState<{ taskId: string; view: string } | null>(null)
+  const report = !w.running && w.report?.imageId === w.image?.id ? w.report : null
+  const localizations =
+    report?.workflow?.detectors
+      .filter((d) => d.status === 'completed' && d.localization?.overlayDataUrl)
+      .map((d) => ({
+        key: d.backend,
+        label: d.backend === 'rise' ? 'RiSE' : 'RITA',
+        src: d.localization!.overlayDataUrl
+      })) ??
+    (report?.localization && (report.backend === 'rita' || report.backend === 'rise')
+      ? [
+          {
+            key: report.backend,
+            label: report.backend === 'rise' ? 'RiSE' : 'RITA',
+            src: report.localization.overlayDataUrl
+          }
+        ]
+      : [])
+  const initialView =
+    localizations.find((item) => item.key === report?.workflow?.primary)?.key ??
+    localizations[0]?.key ??
+    'original'
+  const view = selection?.taskId === report?.id ? selection?.view : initialView
+  const displayed = localizations.find((item) => item.key === view)
+  const previewSrc = displayed?.src ?? w.image?.dataUrl ?? ''
+  useEffect(() => {
+    setPreviewOpen(false)
+  }, [w.image?.id])
   useEffect(() => {
     if (!previewOpen) return
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -43,13 +73,41 @@ export function ImagePanel({ workspace: w }: { workspace: AnalysisWorkspace }) {
         </div>
         <span>{w.image ? '1 张图片' : '等待导入'}</span>
       </div>
+      {report && localizations.length > 0 && (
+        <div
+          className="image-result-tabs"
+          role="group"
+          aria-label="左侧图片视图"
+          data-testid="image-result-views"
+        >
+          <button
+            type="button"
+            aria-pressed={!displayed}
+            onClick={() => setSelection({ taskId: report.id, view: 'original' })}
+          >
+            原图
+          </button>
+          {localizations.map((item) => (
+            <button
+              type="button"
+              key={item.key}
+              aria-pressed={view === item.key}
+              onClick={() => setSelection({ taskId: report.id, view: item.key })}
+            >
+              {item.label} 定位
+            </button>
+          ))}
+        </div>
+      )}
       <div className={`preview-area ${w.image ? 'has-image' : ''}`}>
         {w.image ? (
           <img
             data-testid="image-preview"
             className="image-preview"
-            src={w.image.dataUrl}
-            alt={`已导入：${w.image.name}`}
+            src={previewSrc}
+            alt={
+              displayed ? `${displayed.label} 定位结果：${w.image.name}` : `已导入：${w.image.name}`
+            }
           />
         ) : (
           <div className="empty-upload">
@@ -76,7 +134,7 @@ export function ImagePanel({ workspace: w }: { workspace: AnalysisWorkspace }) {
             onClick={() => setPreviewOpen(true)}
             aria-label="放大查看图像预览"
           >
-            图像预览
+            {displayed ? `${displayed.label} 定位结果` : '图像预览'}
           </button>
         )}
       </div>
@@ -100,7 +158,10 @@ export function ImagePanel({ workspace: w }: { workspace: AnalysisWorkspace }) {
                 <X size={20} />
               </button>
             </header>
-            <img src={w.image.dataUrl} alt={`放大预览：${w.image.name}`} />
+            <img
+              src={previewSrc}
+              alt={`放大预览：${displayed?.label ?? '原图'} · ${w.image.name}`}
+            />
           </section>
         </div>
       )}

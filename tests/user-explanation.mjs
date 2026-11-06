@@ -27,10 +27,13 @@ for (const [name, input] of [
 const { generateExplanation } = await import(pathToFileURL(join(output, 'explanation.mjs')))
 const { parseUserExplanation } = await import(pathToFileURL(join(output, 'presentation.mjs')))
 const { validateExplanationReport } = await import(pathToFileURL(join(output, 'protocol.mjs')))
-const { regionContext, observeRegions } = await import(
+const { regionContext, observeRegions, quotedReading } = await import(
   pathToFileURL(join(output, 'observation.mjs'))
 )
 const checks = []
+assert.equal(quotedReading('日21:16在'), '21:16')
+assert.equal(quotedReading('读到“369.00”'), '369.00')
+assert.equal(quotedReading('一只水鸟'), null)
 const { readOllamaChat } = await import(pathToFileURL(join(output, 'stream.mjs')))
 const finalText = '图片右侧的水鸟值得关注。\n\n可能是复制移动，仍需结合画面细节。'
 const makeStream = (complete = true) => {
@@ -337,8 +340,21 @@ globalThis.fetch = async (_url, options) => {
   requests.push(r)
   if (unavailable) throw new Error('Synthetic unavailable service')
   if (r.format?.properties?.decision)
-    return jsonResponse({ decision: verdict, focusIndex: verdict === '未发现明显异常' ? null : 1 })
+    return jsonResponse({
+      decision: verdict,
+      focusIndex: verdict === '未发现明显异常' ? null : 1,
+      targetDescription: '图片右侧的水鸟',
+      operation: verdict === '未发现明显异常' ? 'unknown' : 'copy_move',
+      operationReason: '模型综合判断提出的方式假设。'
+    })
   if (r.format?.properties?.focusIndex) return jsonResponse({ focusIndex: 1 })
+  if (r.format?.properties?.记录)
+    return jsonResponse({ 记录: '图片右侧', 字段: '水鸟', 原文: null })
+  if (r.format?.properties?.context) return jsonResponse({ context: '图片右侧的水鸟' })
+  if (r.format?.properties?.subject)
+    return jsonResponse({ subject: '一只水鸟。', visibleText: null })
+  if (r.format?.properties?.operation)
+    return jsonResponse({ operation: 'copy_move', reason: '模型提出的复制移动假设。' })
   if (r.format?.properties?.suspectedOperationQuote) {
     if (metadataFails) throw new Error('Synthetic method-only failure')
     return jsonResponse({
@@ -347,7 +363,9 @@ globalThis.fetch = async (_url, options) => {
   }
   if (r.messages.some((m) => m.role === 'system'))
     return r.stream ? makeStream(!interrupt) : jsonResponse(narrationText)
-  return jsonResponse('一只水鸟。')
+  return jsonResponse(
+    r.messages[0]?.content?.includes('局部内容读到') ? '图片右侧的水鸟' : '一只水鸟。'
+  )
 }
 try {
   const result = await generateExplanation(
@@ -366,14 +384,17 @@ try {
   assert.equal(result.result.regionAnalyses[0].operationSource, 'vlm_hypothesis')
   assert.deepEqual(validateExplanationReport(result, [manipulation]), [])
   assert.equal(result.result.analysis, finalText)
-  assert.equal(requests.length, 5)
+  assert.equal(requests.length, 6)
   const guidance = requests.find(
     (r) => r.format?.properties?.focusIndex && !r.format.properties.decision
   )
   const assessment = requests.find((r) => r.format?.properties?.decision)
   const narration = requests.find((r) => !r.format && r.messages.some((m) => m.role === 'system'))
   const observation = requests.find(
-    (r) => !r.format && !r.messages.some((m) => m.role === 'system')
+    (r) =>
+      !r.format &&
+      !r.messages.some((m) => m.role === 'system') &&
+      !r.messages[0].content.includes('局部内容读到')
   )
   const user = (r) => r.messages.find((m) => m.role === 'user')
   assert.equal(user(guidance).images.length, 1)
@@ -384,7 +405,7 @@ try {
     'Image judgement must receive the unmarked original'
   )
   assert.deepEqual(
-    Buffer.from(user(observation).images[0], 'base64'),
+    Buffer.from(user(observation).images.at(-1), 'base64'),
     png,
     'The raw context crop has no artificial contour'
   )
@@ -392,7 +413,8 @@ try {
   assert.equal(context.annotation, undefined)
   assert.equal(context.images, undefined)
   assert.equal(context.candidates[0].support.value, 0.88)
-  assert.equal(context.candidates[0].content, '一只水鸟。')
+  assert.ok(context.candidates[0].content.includes('一只水鸟。'))
+  assert.equal(context.candidates[0].context, null)
   assert.equal(user(narration).images, undefined)
   assert.ok(!user(narration).content.includes('0.88'))
   assert.ok(!user(narration).content.includes('青色'))
@@ -405,7 +427,7 @@ try {
   assert.equal(result.extensions.inputPresentation.assessment.type, 'unmarked_original')
   assert.equal(result.extensions.regionSelection.presentedCount, 1)
   checks.push(
-    'only guidance sees contours; assessment and observation see original pixels; writer sees evidence facts without graphics or numerical metrics'
+    'context links full-scene contours to untouched crops; assessment sees original pixels; narration uses contextual targets and three-way method hypotheses'
   )
   const documentRegion = { ...manipulation.result.regions[0], detector: 'rise' }
   for (const limit of [1, 2]) {
@@ -423,11 +445,16 @@ try {
     assert.equal(observed[0].status, 'completed')
     assert.equal(observed[0].inputImageCount, limit)
     const sent = user(requests[before]).images
-    assert.equal(sent.length, limit)
-    for (const image of sent) assert.deepEqual(Buffer.from(image, 'base64'), png)
+    assert.equal(sent.length, 1)
+    assert.deepEqual(Buffer.from(sent[0], 'base64'), png)
+    if (limit > 1) {
+      const sceneRequest = requests[before + 1]
+      assert.equal(user(sceneRequest).images.length, 1)
+      assert.deepEqual(Buffer.from(user(sceneRequest).images[0], 'base64'), png)
+    }
   }
   checks.push(
-    'document observation uses only original scene/crop pixels and respects its per-request image limit'
+    'scene-assisted observation preserves crop pixels and respects its per-request image limit'
   )
   await writeFile(
     join(output, 'request.json'),
@@ -467,7 +494,7 @@ try {
   assert.equal(retained.result.finalDecision, 'suspicious')
   assert.equal(retained.result.decisionSource, 'vlm')
   assert.equal(retained.result.primaryRegionId, 'region-real')
-  assert.equal(retained.result.regionAnalyses[0].suspectedOperation, undefined)
+  assert.equal(retained.result.regionAnalyses[0].suspectedOperation, '复制移动')
   metadataFails = false
   verdict = '未发现明显异常'
   narrationText = '本次没有明确异常线索。'

@@ -1,0 +1,19 @@
+.image-result-tabs {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+  padding: 14px 20px 0;
+}
+.image-result-tabs button {
+  padding: 7px 12px;
+  color: #97a8be;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  font-size: 12px;
+}
+.image-result-tabs button[aria-pressed='true'] {
+  color: #dfe9f7;
+  background: #29374a;
+  border-color: #425671;
+}

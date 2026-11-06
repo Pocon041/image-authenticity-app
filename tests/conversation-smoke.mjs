@@ -15,6 +15,12 @@ const source = join(output, 'fixture.png'),
   hash = createHash('sha256').update(png).digest('hex')
 await writeFile(source, png)
 const dataUrl = `data:image/png;base64,${png.toString('base64')}`
+const overlayBytes = await sharp({
+  create: { width: 640, height: 360, channels: 3, background: '#9b6474' }
+})
+  .png()
+  .toBuffer()
+const overlayDataUrl = `data:image/png;base64,${overlayBytes.toString('base64')}`
 const bundle = {
   image: { imageId: `sha256:${hash}`, sha256: hash, width: 640, height: 360 },
   reports: [],
@@ -72,7 +78,7 @@ const report = {
           score: 0.99,
           regionCount: 1,
           manipulatedAreaFraction: 0.05,
-          overlayDataUrl: dataUrl,
+          overlayDataUrl,
           bundlePath: 'fixture.json',
           bundle
         }
@@ -117,7 +123,7 @@ const explanation = {
     upstreamDecision: 'inconclusive',
     confidence: { value: null, source: 'unavailable', calibrated: false },
     analysis:
-      '### 重点位置\n图片右侧的**水鸟**值得重点核查。\n\n### 判断依据\n- 局部检查集中标记了这只鸟。\n- 整图与局部检查存在分歧。\n\n### 可能方式\n现有线索尚不足以区分具体手法。',
+      '### 重点位置\n图片右侧的**水鸟**值得重点核查。\n\n### 分析依据\n- 局部检查集中标记了这只鸟。\n- 整图与局部检查存在分歧。',
     evidenceBalance: '整图检查与局部检查存在差异，建议先查看标记位置。',
     primaryRegionId: 'region-A',
     regionAnalyses: [
@@ -192,7 +198,29 @@ try {
                           : d
                       )
                     }
-                  : report.workflow
+                  : state.dual
+                    ? {
+                        ...report.workflow,
+                        contentType: 'unsure',
+                        primary: 'rise',
+                        detectors: report.workflow.detectors.map((d) =>
+                          d.backend === 'rise'
+                            ? {
+                                backend: 'rise',
+                                status: 'completed',
+                                elapsedMs: 1,
+                                localization: {
+                                  ...report.workflow.detectors.find((d) => d.backend === 'rita')
+                                    .localization,
+                                  overlayDataUrl: report.workflow.detectors.find(
+                                    (d) => d.backend === 'rita'
+                                  ).localization.overlayDataUrl
+                                }
+                              }
+                            : d
+                        )
+                      }
+                    : report.workflow
               }
             })
           state.cancel = () => resolve({ ok: false, code: 'CANCELLED', error: 'cancelled' })
@@ -295,6 +323,25 @@ try {
   await emit({ workflowPhase: 'aggregate', label: '正在整理结果', steps, percent: 95 })
   await desktop.evaluate(() => globalThis.__conversation.analyze())
   await page.locator('[data-step="explanation"][data-status="running"]').waitFor()
+  const imageViews = page.getByTestId('image-result-views')
+  await imageViews.waitFor()
+  assert.equal(
+    await imageViews
+      .getByRole('button', { name: 'RITA 定位', exact: true })
+      .getAttribute('aria-pressed'),
+    'true'
+  )
+  assert.equal(await page.getByTestId('image-preview').getAttribute('src'), overlayDataUrl)
+  await imageViews.getByRole('button', { name: '原图', exact: true }).click()
+  assert.equal(await page.getByTestId('image-preview').getAttribute('src'), dataUrl)
+  await imageViews.getByRole('button', { name: 'RITA 定位', exact: true }).click()
+  await page.getByRole('button', { name: '放大查看图像预览', exact: true }).click()
+  const leftDialog = page.getByRole('dialog', { name: '图像预览：fixture.png', exact: true })
+  assert.equal(await leftDialog.locator('img').getAttribute('src'), overlayDataUrl)
+  await page.keyboard.press('Escape')
+  checks.push(
+    'completed localization replaces the left image by default; original comparison and enlarged preview follow the selected view'
+  )
   assert.equal(await desktop.evaluate(() => globalThis.__conversation.explainCalls), 1)
   const emitExplanation = (payload) =>
     desktop.evaluate(
@@ -328,7 +375,7 @@ try {
   assert.match(await page.getByTestId('explanation-conclusion').innerText(), /发现可疑线索/)
   assert.equal(
     await page.getByTestId('explanation-summary').getByRole('heading', { level: 4 }).count(),
-    3
+    2
   )
   assert.equal(await page.getByTestId('explanation-summary').locator('ul > li').count(), 2)
   assert.equal(
@@ -377,6 +424,9 @@ try {
   }
   checks.push('1400px and 1060px layouts have no horizontal overflow')
   await choose()
+  await page.getByTestId('image-result-views').waitFor({ state: 'detached' })
+  assert.equal(await page.getByTestId('image-result-views').count(), 0)
+  assert.equal(await page.getByTestId('image-preview').getAttribute('src'), dataUrl)
   await page.getByTestId('analyze-button').click()
   await page.getByTestId('analysis-progress-label').waitFor()
   await page.getByRole('button', { name: '取消分析', exact: true }).click()
@@ -439,6 +489,41 @@ try {
   assert.equal(await page.getByTestId('workflow-technical-details').count(), 1)
   checks.push(
     'template fallback remains in diagnostics and is never displayed as the final VLM answer'
+  )
+  await desktop.evaluate(() => {
+    globalThis.__conversation.dual = true
+    globalThis.__conversation.partial = false
+    globalThis.__conversation.templateFallback = false
+  })
+  await choose()
+  await page.getByTestId('analyze-button').click()
+  await page.getByTestId('analysis-progress-label').waitFor()
+  await emit({ workflowPhase: 'aggregate', label: '整理完成', steps, percent: 95 })
+  await desktop.evaluate(() => globalThis.__conversation.analyze())
+  await page
+    .getByTestId('image-result-views')
+    .getByRole('button', { name: 'RiSE 定位', exact: true })
+    .waitFor()
+  assert.equal(
+    await page
+      .getByTestId('image-result-views')
+      .getByRole('button', { name: 'RiSE 定位', exact: true })
+      .getAttribute('aria-pressed'),
+    'true'
+  )
+  await page
+    .getByTestId('image-result-views')
+    .getByRole('button', { name: 'RITA 定位', exact: true })
+    .click()
+  assert.equal(
+    await page
+      .getByTestId('image-result-views')
+      .getByRole('button', { name: 'RITA 定位', exact: true })
+      .getAttribute('aria-pressed'),
+    'true'
+  )
+  checks.push(
+    'multiple localizers remain independently selectable; the completed report primary selects the initial left view'
   )
   assert.deepEqual(errors, [])
   assert.ok(leftBefore.includes('image-preview'))

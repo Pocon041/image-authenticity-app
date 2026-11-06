@@ -8,6 +8,19 @@ const LABELS: Record<string, FinalDecision> = {
   未发现明显异常: 'no_anomaly_detected',
   暂不能确定: 'inconclusive'
 }
+export const OPERATION_NAMES = {
+  copy_move: '复制移动',
+  splicing: '拼接',
+  removal_inpainting: '移除或修复填补',
+  unknown: '暂不能区分'
+} as const
+export interface EvidenceAssessment {
+  decision: FinalDecision
+  focusIndex: number | null
+  targetDescription: string
+  operation: keyof typeof OPERATION_NAMES
+  operationReason: string
+}
 
 async function request(
   config: ExplanationConfig,
@@ -23,7 +36,7 @@ async function request(
       messages,
       stream: false,
       format,
-      options: { temperature: 0, num_ctx: config.numCtx, num_predict: 240 }
+      options: { temperature: 0, num_ctx: config.numCtx, num_predict: 480 }
     }),
     signal
   })
@@ -83,14 +96,14 @@ export async function assessOriginal(args: {
   config: ExplanationConfig
   signal: AbortSignal
   rawJudgements: unknown[]
-}): Promise<{ decision: FinalDecision; focusIndex: number | null }> {
+}): Promise<EvidenceAssessment> {
   const raw = await request(
     args.config,
     [
       {
         role: 'system',
         content:
-          '这是未添加系统标记的待分析原图。综合原图与各任务的真实检测结果给出初步倾向：存在可疑线索表示值得核查，不是已证实；未发现异常表示本次检查没有明确异常线索；暂不能确定表示结果有分歧。整图筛查未报警与AI生成未检出都不能排除局部编辑。定位响应强度不是正确率。选择优先候选编号，没有可对应对象则null。'
+          '这是未添加系统标记的待分析原图。依据原图与各检测器结果作初步判断：存在可疑线索表示值得核查，并不表示已证实；未发现明显异常表示没有值得关注的检测线索；暂不能确定表示检查结果矛盾。整图筛查与AI生成检测是不同任务，未报警不排除局部修改。定位响应不是正确率。选择优先核查的位置编号，没有可对应对象则null。'
       },
       {
         role: 'user',
@@ -120,5 +133,67 @@ export async function assessOriginal(args: {
         value.focusIndex > args.count))
   )
     throw new Error('原图判断的JSON结构无效')
-  return { decision: LABELS[value.decision], focusIndex: value.focusIndex }
+  return {
+    decision: LABELS[value.decision],
+    focusIndex: value.focusIndex,
+    targetDescription: '',
+    operation: 'unknown',
+    operationReason: ''
+  }
+}
+
+export async function inferOperation(args: {
+  original?: Buffer
+  target: string
+  config: ExplanationConfig
+  signal: AbortSignal
+  rawJudgements: unknown[]
+}): Promise<Pick<EvidenceAssessment, 'operation' | 'operationReason'>> {
+  try {
+    const images = [args.original]
+      .filter((b): b is Buffer => !!b)
+      .slice(0, args.config.maxImages)
+      .map((b) => b.toString('base64'))
+    const raw = await request(
+      args.config,
+      [
+        {
+          role: 'system',
+          content:
+            '推测重点位置最可能的编辑方式：copy_move是同图对象复制移动，splicing是外部内容拼接替换，removal_inpainting是擦除移除或修复填补，unknown是无法区分。图像就是待分析原图，局部描述来自同一张图，不是参考图；不能用裁剪和整图相同来判断复制移动。reason只简述可见线索，分数高低不能区分手法，没有修改前图，不虚构修改前后差异。'
+        },
+        {
+          role: 'user',
+          content: JSON.stringify({
+            target: args.target,
+            imageRoles: images.length > 1 ? ['整图', '原始局部'] : ['整图'],
+            task: '只推测重点位置可能涉及哪类编辑，不判断整图真假'
+          }),
+          images
+        }
+      ],
+      {
+        type: 'object',
+        properties: {
+          operation: { enum: ['unknown', 'copy_move', 'splicing', 'removal_inpainting'] },
+          reason: { type: 'string', maxLength: 90 }
+        },
+        required: ['operation', 'reason']
+      },
+      args.signal
+    )
+    args.rawJudgements.push({ stage: 'operation_hypothesis', ...raw })
+    const value = JSON.parse(raw.message?.content ?? '')
+    if (
+      raw.done_reason === 'length' ||
+      typeof value.operation !== 'string' ||
+      !Object.hasOwn(OPERATION_NAMES, value.operation) ||
+      typeof value.reason !== 'string'
+    )
+      throw new Error('手法分析结构无效')
+    return { operation: value.operation, operationReason: value.reason }
+  } catch (error) {
+    args.rawJudgements.push({ stage: 'operation_hypothesis', error: String(error) })
+    return { operation: 'unknown', operationReason: '本次未获得完整的手法分析结果' }
+  }
 }

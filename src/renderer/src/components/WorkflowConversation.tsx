@@ -345,6 +345,15 @@ export function WorkflowConversation({ workspace: w }: { workspace: AnalysisWork
                       ? '未发现明显异常线索'
                       : '暂不能确定'}
                 </strong>
+                {result?.primaryRegionId && (
+                  <p className="conclusion-target">
+                    {
+                      result.regionAnalyses?.find(
+                        (region) => region.regionId === result.primaryRegionId
+                      )?.subject
+                    }
+                  </p>
+                )}
               </div>
             )}
             <div className="conversation-answer-heading">
