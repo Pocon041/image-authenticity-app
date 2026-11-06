@@ -8,7 +8,6 @@ import type { AnalysisSession } from './services/analysis-session'
 import { generateExplanation } from './services/explanation'
 import type { EvidenceBundle, ExplanationReport } from '../shared/protocol'
 
-
 export function registerDesktopIPC(
   getWindow: () => BrowserWindow | null,
   session: AnalysisSession
@@ -151,7 +150,7 @@ export function registerDesktopIPC(
     IPC.explain,
     async (event, taskId: unknown): Promise<Response<ExplanationReport>> => {
       try {
-        requireWindow(event)
+        const window = requireWindow(event)
         validateId(taskId)
 
         // 从当前会话获取历史分析报告
@@ -164,15 +163,38 @@ export function registerDesktopIPC(
         const bundle = report.workflow.bundle as unknown as EvidenceBundle
 
         // 调用解释生成服务（内部已包含 Ollama 调用与模板兜底）
-        const explanation = await generateExplanation(bundle, taskId as string)
-        const directory = resolve(app.getAppPath(), 'work/analysis-runs', taskId as string, 'reports')
+        const explanation = await generateExplanation(
+          bundle,
+          taskId as string,
+          undefined,
+          undefined,
+          {
+            onProgress(progress) {
+              if (!window.isDestroyed())
+                window.webContents.send(IPC.explanationProgress, {
+                  ...progress,
+                  taskId,
+                  imageId: report.imageId
+                })
+            }
+          }
+        )
+        const directory = resolve(
+          app.getAppPath(),
+          'work/analysis-runs',
+          taskId as string,
+          'reports'
+        )
         await mkdir(directory, { recursive: true })
-        await writeFile(resolve(directory, 'explanation.json'), JSON.stringify(explanation, null, 2))
-        
+        await writeFile(
+          resolve(directory, 'explanation.json'),
+          JSON.stringify(explanation, null, 2)
+        )
+
         return { ok: true, data: explanation }
       } catch (error) {
         return failure(error)
       }
     }
-  )  
+  )
 }

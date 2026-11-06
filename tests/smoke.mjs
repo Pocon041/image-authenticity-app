@@ -58,6 +58,7 @@ try {
         'clearImage',
         'explain',
         'onAnalysisProgress',
+        'onExplanationProgress',
         'openReportDirectory'
       ]
     }

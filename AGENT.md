@@ -142,8 +142,8 @@ Electron 45 延迟下载导致首次启动出现 `Electron uninstall` 的修复�
 - README 已按 `image-authenticity-app` 重写，包含结构、协作边界、启动命令、从基础版增量升级步骤和后续接入位置。
 - 第一阶段报告协议 v1.0 初稿、共享 JSON Schema、样例生成与校验脚本已补齐。
 - 第一阶段材料已整理 12 张原文件，三份原生标注单独保存，唯一 `vlm-input.example.json` 面向 IMD2020 修复样本；材料通过文件级校验。
-- 解释模块：局部观察后结合整图、预测掩码和JSON给出综合判断及候选手法，结果另存`reports/explanation.json`；原接口保留，质量仍待验证。见`docs/EXPLANATION_HANDOFF.md`。
-- 右侧按真实进度逐步显示关键信息，检测完成后自动生成说明；左侧输入不变，指标和报告折叠。
+- 解释模块：预测外轮廓用于对应位置，未标记原图与检测JSON用于判断，最终文字独立表述，避免把人工标记当作编辑证据；原接口保留，质量仍待验证。见`docs/EXPLANATION_HANDOFF.md`。
+- 右侧展示真实分析动态及可展开的定位预览；VLM结论先行高亮，说明按重点位置、判断依据、可能方式组织，过程与指标可展开。左侧输入不变。
 - 模型报告新增可选结论/区域支持度，原阈值和掩码不变；字段见`docs/REPORT_PROTOCOL_V1.md`。
 - 本地解释默认使用 `srdp-qwen3-vl-2b`（由 `Qwen/Qwen3-VL-2B-Instruct-GGUF` 导入 Ollama 的本地标签）；`explanation:setup` 只生成 Git 忽略的本机配置，不下载模型。原有 `generateExplanation` 的 `modelName` / `ollamaHost` 参数和云端 host/model 配置继续保留。
 - SICA 独立二分类模式、RITA 独立定位模式、RiSE-9 RGB 独立文档定位模式、FSD 独立 AIGC 分析入口均已接入；HiFi-Net 运行入口已移除，不参与联合流程。

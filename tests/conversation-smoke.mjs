@@ -116,16 +116,18 @@ const explanation = {
     decisionSource: 'vlm',
     upstreamDecision: 'inconclusive',
     confidence: { value: null, source: 'unavailable', calibrated: false },
-    analysis: '图片右侧有一处值得重点核查的区域。',
+    analysis:
+      '### 重点位置\n图片右侧的**水鸟**值得重点核查。\n\n### 判断依据\n- 局部检查集中标记了这只鸟。\n- 整图与局部检查存在分歧。\n\n### 可能方式\n现有线索尚不足以区分具体手法。',
     evidenceBalance: '整图检查与局部检查存在差异，建议先查看标记位置。',
-    primaryRegionId:'region-A',
+    primaryRegionId: 'region-A',
     regionAnalyses: [
       {
         regionId: 'region-A',
         subject: '局部对象',
         location: '图片右侧',
         reason: '局部检查集中标记了这个对象。',
-        suspectedOperation:'复制移动', operationSource:'vlm_hypothesis',
+        suspectedOperation: '复制移动',
+        operationSource: 'vlm_hypothesis',
         evidenceIds: ['test-evidence']
       }
     ],
@@ -204,7 +206,16 @@ try {
             resolve(
               state.explainFail
                 ? { ok: false, error: 'Synthetic explanation failure', code: 'INFERENCE_FAILED' }
-                : { ok: true, data: { ...explanation, taskId } }
+                : {
+                    ok: true,
+                    data: {
+                      ...explanation,
+                      taskId,
+                      ...(state.templateFallback
+                        ? { mode: 'mock', producer: { name: 'template-fallback', version: 'test' } }
+                        : {})
+                    }
+                  }
             )
         })
       })
@@ -255,21 +266,102 @@ try {
     'real IPC events reveal ordered loading messages, key information and exact step count'
   )
   steps[2] = { backend: 'rita', status: 'completed', message: '已标记 1 处候选区域。' }
+  steps[2].preview = { overlayDataUrl: dataUrl, regionCount: 1, manipulatedAreaFraction: 0.05 }
+  await emit({ workflowPhase: 'detectors', label: 'RITA检查完成', steps, percent: 90 })
+  await page.getByTestId('step-preview-rita').locator('summary').click()
+  await page.getByRole('img', { name: 'RITA定位叠加', exact: true }).waitFor()
+  assert.equal(await page.getByTestId('workflow-technical-details').count(), 0)
+  await page.getByRole('button', { name: '原图', exact: true }).click()
+  await page.getByRole('img', { name: 'RITA原图', exact: true }).waitFor()
+  await page.getByRole('button', { name: '放大 RITA 定位结果', exact: true }).click()
+  const localizationDialog = page.getByRole('dialog', { name: 'RITA定位大图', exact: true })
+  await localizationDialog.waitFor()
+  await localizationDialog.getByRole('button', { name: '原始比例', exact: true }).click()
+  assert.ok(await localizationDialog.locator('.actual-size').count())
+  await localizationDialog.getByRole('button', { name: '定位叠加', exact: true }).click()
+  await page.keyboard.press('Escape')
+  await localizationDialog.waitFor({ state: 'detached' })
+  await emit({
+    workflowPhase: 'detectors',
+    label: '定位图已缓存，继续整理',
+    steps: steps.map(({ preview, ...step }) => step),
+    percent: 91
+  })
+  await page.getByRole('img', { name: 'RITA定位叠加', exact: true }).waitFor()
+  await page.screenshot({ path: join(output, 'intermediate-preview.png'), fullPage: true })
+  checks.push(
+    'localization can be expanded and compared with the original before the final report exists'
+  )
   await emit({ workflowPhase: 'aggregate', label: '正在整理结果', steps, percent: 95 })
   await desktop.evaluate(() => globalThis.__conversation.analyze())
   await page.locator('[data-step="explanation"][data-status="running"]').waitFor()
   assert.equal(await desktop.evaluate(() => globalThis.__conversation.explainCalls), 1)
-  await desktop.evaluate(() => globalThis.__conversation.explain())
+  const emitExplanation = (payload) =>
+    desktop.evaluate(
+      ({ BrowserWindow }, payload) =>
+        BrowserWindow.getAllWindows()[0].webContents.send('srdp:analysis:explanation-progress', {
+          taskId: globalThis.__conversation.taskId,
+          imageId: globalThis.__conversation.imageId,
+          ...payload
+        }),
+      payload
+    )
+  await emitExplanation({
+    phase: 'synthesizing',
+    label: '正在生成分析说明',
+    decision: 'suspicious',
+    text: '图片右侧的水鸟'
+  })
   await page.getByTestId('explanation-summary').waitFor()
-  assert.ok(await page.getByTestId('explanation-region').isVisible())
-  assert.match(await page.getByTestId('explanation-region').innerText(),/优先关注/)
-  assert.match(await page.getByTestId('explanation-region').innerText(),/可能方式：复制移动/)
+  assert.equal(await page.getByTestId('explanation-summary').textContent(), '图片右侧的水鸟')
+  assert.match(await page.getByTestId('explanation-conclusion').innerText(), /发现可疑线索/)
+  await emitExplanation({
+    taskId: 'unrelated-task',
+    phase: 'synthesizing',
+    label: 'stale',
+    text: 'STALE'
+  })
+  assert.equal(await page.getByTestId('explanation-summary').textContent(), '图片右侧的水鸟')
+  await page.screenshot({ path: join(output, 'streaming.png'), fullPage: true })
+  await desktop.evaluate(() => globalThis.__conversation.explain())
+  await page.getByRole('heading', { name: '分析说明', exact: true }).waitFor()
+  assert.match(await page.getByTestId('explanation-conclusion').innerText(), /发现可疑线索/)
+  assert.equal(
+    await page.getByTestId('explanation-summary').getByRole('heading', { level: 4 }).count(),
+    3
+  )
+  assert.equal(await page.getByTestId('explanation-summary').locator('ul > li').count(), 2)
+  assert.equal(
+    await page
+      .getByTestId('analysis-report')
+      .evaluate(
+        (node) =>
+          !!(
+            node
+              .querySelector('[data-testid="explanation-conclusion"]')
+              .compareDocumentPosition(node.querySelector('[data-testid="explanation-summary"]')) &
+            Node.DOCUMENT_POSITION_FOLLOWING
+          )
+      ),
+    true
+  )
+  assert.ok(
+    await page
+      .getByTestId('explanation-conclusion')
+      .evaluate((node) => getComputedStyle(node).backgroundColor !== 'rgba(0, 0, 0, 0)')
+  )
+  assert.equal(await page.getByTestId('explanation-region').count(), 0)
+  assert.match(await page.getByTestId('explanation-summary').innerText(), /图片右侧的水鸟/)
+  assert.equal(await page.locator('.conversation-activity').getAttribute('open'), null)
   assert.equal(await page.getByTestId('workflow-technical-details').getAttribute('open'), null)
   assert.ok(
     !/SICA|FSD|RITA|RiSE|阈值|z-score/.test(await page.getByTestId('analysis-report').innerText())
   )
   checks.push(
-    'analysis automatically requests one explanation; friendly result is visible and technical data starts collapsed'
+    'one automatic explanation streams genuine events, rejects stale tasks, and ends with prose only and collapsed activity'
+  )
+  checks.push(
+    'actual VLM conclusion appears before the explanation with a distinct highlight; Markdown headings and evidence bullets render clearly'
   )
   for (const width of [1400, 1060]) {
     await desktop.evaluate(
@@ -331,6 +423,22 @@ try {
   await page.getByTestId('explanation-summary').waitFor()
   checks.push(
     'partial detection and explanation failure retain reports; retry successfully generates a result'
+  )
+  await choose()
+  await desktop.evaluate(() => {
+    globalThis.__conversation.templateFallback = true
+  })
+  await page.getByTestId('analyze-button').click()
+  await page.getByTestId('analysis-progress-label').waitFor()
+  await emit({ workflowPhase: 'aggregate', label: '整理完成', steps, percent: 95 })
+  await desktop.evaluate(() => globalThis.__conversation.analyze())
+  await page.locator('[data-step="explanation"][data-status="running"]').waitFor()
+  await desktop.evaluate(() => globalThis.__conversation.explain())
+  await page.getByRole('button', { name: '重新生成说明', exact: true }).waitFor()
+  assert.equal(await page.getByTestId('analysis-report').count(), 0)
+  assert.equal(await page.getByTestId('workflow-technical-details').count(), 1)
+  checks.push(
+    'template fallback remains in diagnostics and is never displayed as the final VLM answer'
   )
   assert.deepEqual(errors, [])
   assert.ok(leftBefore.includes('image-preview'))

@@ -1,5 +1,10 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import { IPC, type AnalysisProgress, type DesktopAPI } from '../shared/contracts'
+import {
+  IPC,
+  type AnalysisProgress,
+  type ExplanationProgress,
+  type DesktopAPI
+} from '../shared/contracts'
 
 const desktop: DesktopAPI = {
   openReportDirectory: (taskId) => ipcRenderer.invoke(IPC.openReportDirectory, taskId),
@@ -10,6 +15,12 @@ const desktop: DesktopAPI = {
   cancelAnalysis: (taskId) => ipcRenderer.invoke(IPC.cancelAnalysis, taskId),
   // 新增：第四人的解释生成接口
   explain: (taskId) => ipcRenderer.invoke(IPC.explain, taskId),
+  onExplanationProgress(listener) {
+    const handler = (_event: Electron.IpcRendererEvent, progress: ExplanationProgress) =>
+      listener(progress)
+    ipcRenderer.on(IPC.explanationProgress, handler)
+    return () => ipcRenderer.removeListener(IPC.explanationProgress, handler)
+  },
   onAnalysisProgress(listener) {
     const handler = (_event: Electron.IpcRendererEvent, progress: AnalysisProgress) =>
       listener(progress)

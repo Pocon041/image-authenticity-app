@@ -36,8 +36,16 @@ export class WorkflowAnalysisService implements AnalysisService {
     }
     const detectors: DetectorResult[] = []
     const steps: WorkflowStep[] = []
+    const preview = (localization: AnalysisReport['localization']) =>
+      localization
+        ? {
+            overlayDataUrl: localization.overlayDataUrl,
+            regionCount: localization.regionCount,
+            manipulatedAreaFraction: localization.manipulatedAreaFraction
+          }
+        : undefined
     let phase: 'prepare' | 'routing' | 'detectors' | 'aggregate' = 'prepare'
-    const notify = (percent: number, label: string) =>
+    const notify = (percent: number, label: string, previewBackend?: DetectorBackend) =>
       context.onProgress({
         taskId: context.taskId,
         imageId: input.asset.id,
@@ -46,7 +54,10 @@ export class WorkflowAnalysisService implements AnalysisService {
         label,
         workflowPhase: phase,
         routingStatus: routing?.status,
-        steps: steps.map((step) => ({ ...step }))
+        steps: steps.map(({ preview, ...step }) => ({
+          ...step,
+          ...(step.backend === previewBackend && preview ? { preview } : {})
+        }))
       })
     let resolvedType: ContentType = 'unsure'
     let routing: WorkflowRouting | undefined
@@ -62,7 +73,7 @@ export class WorkflowAnalysisService implements AnalysisService {
             routing: routing ?? null,
             previousTaskId: options.supplementFromTaskId ?? null,
             status,
-            steps
+            steps: steps.map(({ preview: _preview, ...step }) => step)
           },
           null,
           2
@@ -86,10 +97,7 @@ export class WorkflowAnalysisService implements AnalysisService {
             context: {
               ...context,
               onProgress: (progress) =>
-                notify(
-                  2 + Math.round((3 * progress.percent) / 100),
-                  `内容路由 · ${progress.label}`
-                )
+                notify(2 + Math.round((3 * progress.percent) / 100), `内容路由 · ${progress.label}`)
             }
           })
           resolvedType = routing.decision ?? 'unsure'
@@ -110,7 +118,10 @@ export class WorkflowAnalysisService implements AnalysisService {
           }
           resolvedType = 'unsure'
         }
-        notify(5, `内容路由判定：${routing?.status === 'failed' ? '未完成，运行全部检测' : resolvedType === 'unsure' ? '不确定，运行全部检测' : resolvedType === 'photo' ? '普通照片' : '文档 / 票据 / 截图'}`)
+        notify(
+          5,
+          `内容路由判定：${routing?.status === 'failed' ? '未完成，运行全部检测' : resolvedType === 'unsure' ? '不确定，运行全部检测' : resolvedType === 'photo' ? '普通照片' : '文档 / 票据 / 截图'}`
+        )
       } else {
         resolvedType = options.contentType
         routing = {
@@ -136,10 +147,14 @@ export class WorkflowAnalysisService implements AnalysisService {
         if (cached) {
           detectors.push({ ...structuredClone(cached), reused: true })
           steps[index].status = 'reused'
-          steps[index].message = cached.localization ? `复用已完成的区域检查，保留 ${cached.localization.regionCount} 处候选区域。` : '复用上次已完成的检查结果。'
+          steps[index].preview = preview(cached.localization)
+          steps[index].message = cached.localization
+            ? `复用已完成的区域检查，保留 ${cached.localization.regionCount} 处候选区域。`
+            : '复用上次已完成的检查结果。'
           notify(
             5 + Math.round((85 * (index + 1)) / planned.length),
-            `复用 ${detectorNames[backend]} 已完成证据`
+            `复用 ${detectorNames[backend]} 已完成证据`,
+            backend
           )
           continue
         }
@@ -166,7 +181,11 @@ export class WorkflowAnalysisService implements AnalysisService {
           if (
             result.mode !== 'local' ||
             result.imageId !== input.asset.id ||
-            (backend === 'aigc' ? !result.aigc : backend === 'sica' ? !result.classification : !result.localization)
+            (backend === 'aigc'
+              ? !result.aigc
+              : backend === 'sica'
+                ? !result.classification
+                : !result.localization)
           )
             throw new AppError('INFERENCE_FAILED', '检测器返回了不完整或非真实报告。')
           detectors.push({
@@ -178,10 +197,20 @@ export class WorkflowAnalysisService implements AnalysisService {
             ...(result.localization ? { localization: result.localization } : {})
           })
           steps[index].status = 'completed'
+          steps[index].preview = preview(result.localization)
           steps[index].message = result.localization
-            ? result.localization.regionCount > 0 ? `已标记 ${result.localization.regionCount} 处候选区域。` : '本轮未标记候选区域。'
-            : result.aigc ? result.aigc.decision === 'ai_generated' ? '发现图像生成线索。' : result.aigc.decision === 'non_ai' ? '未发现明显的图像生成线索。' : '生成线索检查已完成。'
-            : result.classification?.decision === 'fake' ? '整图检查发现可疑线索。' : '整图检查倾向正常，继续结合局部结果分析。'
+            ? result.localization.regionCount > 0
+              ? `已标记 ${result.localization.regionCount} 处候选区域。`
+              : '本轮未标记候选区域。'
+            : result.aigc
+              ? result.aigc.decision === 'ai_generated'
+                ? '发现图像生成线索。'
+                : result.aigc.decision === 'non_ai'
+                  ? '未发现明显的图像生成线索。'
+                  : '生成线索检查已完成。'
+              : result.classification?.decision === 'fake'
+                ? '整图检查发现可疑线索。'
+                : '整图检查倾向正常，继续结合局部结果分析。'
         } catch (error) {
           if (context.signal.aborted) throw error
           detectors.push({
@@ -196,6 +225,11 @@ export class WorkflowAnalysisService implements AnalysisService {
           steps[index].status = 'failed'
           steps[index].message = '这项检查未完成，继续保留其他检查结果。'
         }
+        notify(
+          5 + Math.round((85 * (index + 1)) / planned.length),
+          `${detectorNames[backend]} 检查${steps[index].status === 'completed' ? '完成' : '未完成'}`,
+          backend
+        )
         await manifest('running')
       }
       for (const backend of ['aigc', 'sica', 'rita', 'rise'] as const)
@@ -247,12 +281,7 @@ export class WorkflowAnalysisService implements AnalysisService {
         disclaimer: '当前输出为视觉检测证据，整图真实性尚无经校准的融合结论。',
         workflow: {
           contentType: resolvedType,
-          primary:
-            resolvedType === 'photo'
-              ? 'rita'
-              : resolvedType === 'document'
-                ? 'rise'
-                : null,
+          primary: resolvedType === 'photo' ? 'rita' : resolvedType === 'document' ? 'rise' : null,
           status: merged.status,
           detectors,
           flags,

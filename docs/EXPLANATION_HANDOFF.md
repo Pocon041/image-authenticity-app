@@ -15,24 +15,29 @@
 
 ## 当前实现：综合判断与用户解释
 
-`generateExplanation(bundle, taskId, modelName?, host?)`保持原有本地/服务端入口，按两个阶段工作：
+`generateExplanation(bundle, taskId, modelName?, host?)`保持原有本地/服务端入口；可选第五参数 `options.onProgress` 提供真实阶段进度及增量正文。当前把不同职责分开调用现有2B：
 
-1. 区域观察：从预测bbox截取带20%上下文（至少16像素）的原始局部图，每次只发送一张，让模型描述内容。只裁剪，不着色、不锐化或重绘，最多观察3个有证据引用的主要区域。
-2. 综合判断：继续发送完整待分析图和原尺寸预测掩码，附上精简JSON：检测结论、分数、阈值、支持度、区域观察、图片对应和实际分歧。类别real/non_ai转换为“整图未见明显异常”/“未检出AI生成线索”，并把支持度与它支持的结论绑定，减少跨任务混淆。
+1. 位置对应：按原报告面积顺序，每个定位器选一处有证据引用的主要候选（最多3处），生成无填色的预测外轮廓图。轮廓按真实8连通组件与bbox/areaPixels匹配，内孔不描线；只用于对应候选位置，不用于得出编辑手法。其余候选保留在上游完整报告，选择策略与数量写入extensions.regionSelection，面积不代表可疑概率。
+2. 内容观察：从未加线的原图裁取带20%上下文（至少16像素）的局部，不附任何人工线条。文档定位可附同一张未标记整图作场景上下文（受maxImages约束）。自身任一边小于8像素的候选标记skipped，不放大后猜对象。观察内容保留原始返回，不能当作已确认异常。
+3. 原图判断：发送未标记整图和JSON中的实际模型任务、评分/阈值、支持度、区域内容、来源及分歧。VLM给出定性倾向与优先候选编号，解析后映射正式regionId；不采用上游标签强制覆盖VLM，也不将轮廓图作为原图证据。
+4. 用户表述：把前一步判断、位置/对象、局部检测反馈和相关分歧转换为简短事实记录。此阶段不送图、不送人工标记说明或原始专业数值，VLM仅负责将已有记录写成自然中文。定位响应0.8/0.5以上分别表述为较强/中等，其余较弱，仅为本模型响应的显示措辞，不是正确率或融合阈值。未完成项不写成正常，AI生成阴性在已有局部重点时不重复展开以免跨任务否决，所有实际数值仍保留在判断输入与原报告。
+5. 可选手法引用：只逐字提取正文实际提出的候选手法；无明确方式填null。提取失败不改变正文、原图阶段的判断和区域引用。手法仍为vlm_hypothesis，不写回检测器operationHints。
 
-实际模型输出简化为5个字段：finalDecision、primaryRegionId、subject、suspectedOperation、explanation。选择最值得关注的目标；没有目标时primaryRegionId为null。候选手法支持复制移动、拼接、擦除、局部修复/重绘、文字修改、AI生成或暂不能区分。它是模型推测，不写回检测器的operationHints。
-
-仅检查JSON可解析、必要字段类型、枚举及区域引用，不再按专业词、文风、重复句或预期真假筛选输出。结构不符时最多重试一次，原始模型响应保存到报告extensions.rawJudgements；区域观察保存到extensions.visualObservations。模型判断与描述照实保留，不能把结构通过当作内容正确。所有模型调用共享120秒总预算，区域调用各自最多60秒。
+不按专业词、文风、重复句或预期真假筛选正文。只检查必要JSON类型、枚举和引用，手法引用最多重试一次；完整正文留在extensions.rawNarratives，判断和提取响应在rawJudgements，局部观察在visualObservations，位置对应在visualGuidance，供表述的事实记录在narrationFacts。inputPresentation按阶段记录轮廓图、原图和无图表述的实际输入方式。连接中断或正文达到输出上限保留原始片段并明确失败；全部调用共享120秒总预算，不伪造推理或进度。
 
 最终 `ExplanationReport.result` 保持现有核心字段，并增加：
 
 - `decisionSource=vlm/rule_fallback`：综合结论来源。
 - `upstreamDecision`：上游原始判定，保留追溯，不固定VLM判断。
 - `evidenceBalance`：面向用户的简短证据权衡。
-- `primaryRegionId`：模型选择的优先目标，映射回正式区域ID。
+- `primaryRegionId`：原图判断阶段选择的优先目标，映射回正式区域ID。
 - `regionAnalyses`：位置、对象、理由、suspectedOperation及证据ID；operationSource=vlm_hypothesis明确来源。位置按bbox对应整图计算，不依赖模型把编号解释成位置。
 
-`analysis` 为用户摘要，`confidence` 仍为unavailable；技术claims/unresolved保留在原始记录。IPC将成功返回的解释保存至任务目录 `reports/explanation.json`，不重写原始bundle。右侧对话界面在检测完成后自动请求解释，技术报告默认折叠；换图后不展示迟到的解释。
+`analysis` 为原始完整正文，`confidence` 仍为unavailable；技术claims/unresolved保留在原始记录。IPC将解释保存至任务目录 `reports/explanation.json`，不重写原始bundle。右侧在检测完成后自动请求解释；上方分析过程可展开各定位器已完成的预览（不必等待全流程），正文完成后自动收起过程。只将本任务的实时文字显示为正文，换图后忽略迟到事件。Markdown仅渲染文字、强调和列表，不执行HTML或加载外部资源。
+
+呈现顺序为结论先行：用原图判断阶段实际返回的finalDecision显示高亮“综合判断”，可疑/未发现明显异常/暂不能确定分别采用不同配色；阶段进度可提前传递这个实际判断，不依据定位分数生成结论。下方正文要求依次使用“重点位置、判断依据、可能方式”小标题，依据用短列表；没有手法证据时简短说明暂不能区分。仅调整生成要求和Markdown呈现，不按文风过滤或事后改写正文。
+
+定位预览支持打开大图、按原始比例查看及Esc关闭；预览字节仅在单项完成时发送一次，后续进度复用本任务缓存。模型失败或回答不完整时，界面保留过程和重试入口，基础模板仅留在诊断记录，不作为最终VLM回答展示。
 
 ## 类型与运行时校验
 
@@ -59,9 +64,13 @@ if (errors.length) throw new Error(errors.join('; '))
 .\run.cmd run smoke:conversation
 ```
 
-测试覆盖图片/掩码顺序、区域别名与证据映射、独立VLM判定、基础说明回退，以及真实Electron中的进度消息、自动请求、取消、换图和窄窗口布局。测试使用明确的合成IPC/模型响应，不代表真实模型解释质量。
+测试覆盖真实连通区域外轮廓、同bbox内其他组件排除、内孔/图像边缘/无效几何、非边界原像素保持、单张轮廓图及人工标记说明、独立结构提取、NDJSON拆包/中断与故障回退，以及真实Electron中的逐步预览、增量显示、自动请求、取消、换图和窄窗口布局。测试使用合成IPC/模型响应，不代表真实模型解释质量。
+
+本轮还验证轮廓仅用于位置对应、原图判断收到未标记原始字节、文档观察遵守单请求图片上限、表述输入没有人工标记/专业数值、可选手法引用失败不改变已有判断。真实2B四例与桌面联调保存在work/evidence-role-20261106/run-1793967125195及desktop；鸟类输出已避免将青线当作编辑、复述0.9898，但文档内容识别仍不精确，真实对照仍有误判。本轮属于输入职责修正，不等于解释质量整体通过验收。
 
 此前7个真实样例的运行数据属于旧的六段文本实现，不作为本版本模型质量验收。新版本已实测鸟类、票据、短信及真实对照快照；对象识别有改善，但手法猜测、理由编造与误判仍存在，未通过质量验收。完整对照在work/vlm-optimization-20261105，不能只挑选成功输出。模型支持度的定义见报告协议第10节，LPC保留在内部；图片和掩码空间对应本身不保证模型理解正确。
+
+2026-11-06对照保存在work/vlm-conversation-20261106，使用既有真实检测快照，不重跑检测或注入真值。正文与结构拆分后，鸟类例可指出右侧水鸟，但2B模型仍会复述指标、误读文档内容和把预测掩码当作对比图；真实对照还出现输出达到上限。这一轮不能宣称已达到高质量解释验收。
 
 ## 配置（`config/explanation.example.json` / `.local.json`）
 
@@ -77,7 +86,7 @@ if (errors.length) throw new Error(errors.join('; '))
 
 `temperature` **不配置化**，代码固定为 `0`：解释任务要求确定性，不属于环境相关参数。JSON 不支持注释，模板里的 `_comment` 字段仅作文档说明，加载时被忽略。
 
-`numPredict=1200` 为简短摘要、证据权衡和最多3个区域保留输出预算；扩展格式时需重新检查截断情况。默认 `maxImages=3`，加载顺序为整图和最多两个定位器的掩码，不发送裁剪图。较小显存可减少图片上限；JSON只列实际读取成功的图片及其顺序。
+`numPredict=1200` 控制用户正文输出上限；判断和位置对应单次最多240token，手法引用最多160token。`maxImages=3` 保留为单次请求图片上限：位置对应1张轮廓图、原图判断1张原图、文档观察最多2张未标记原图与局部；表述阶段0张。检测掩码保留后台，不作为独立图片发送给VLM。
 
 优先级链（高 → 低，逐字段覆盖）：
 
@@ -120,5 +129,5 @@ $env:SRDP_EXPLANATION_CONFIG = "E:\temp\test-explanation.json"
 
 ```
 [explanation-config] model=... (explicit) host=... (config/explanation.local.json) numCtx=8192 (builtin) ...
-[explanation-images] maxImages=3 sent=2
+[explanation-images] maxImages=3 sent=1
 ```

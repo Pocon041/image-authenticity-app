@@ -174,32 +174,24 @@ const aigc = {
   evidence: [evidence('fsd-test', 'aigc_classification')]
 }
 const originalFetch = globalThis.fetch
-let captured
+let captured, narrativeRequest, assessmentRequest
 globalThis.fetch = async (url, options) => {
   assert.ok(String(url).endsWith('/api/chat'))
   captured = JSON.parse(options.body)
-  const sentence = '这是合成测试返回的分区说明，仅用于检查传输，不代表实际推理或检测结果。'
-  return new Response(
-    JSON.stringify({
-      done_reason: 'stop',
-      message: {
-        content: JSON.stringify({
-          finalDecision: 'suspicious',
-          summary: '图片右侧有一处值得关注的区域。',
-          evidenceBalance: '整图检查与局部检查存在分歧，应重点查看标记位置。',
-          regions: [
-            {
-              regionId: 'A',
-              location: '图片右侧',
-              subject: '局部对象',
-              reason: '局部检查集中标记了这个对象，值得优先核查。'
-            }
-          ]
-        })
-      }
-    }),
-    { status: 200, headers: { 'Content-Type': 'application/json' } }
-  )
+  let content
+  if (captured.format?.properties?.decision) {
+    assessmentRequest = captured
+    content = JSON.stringify({ decision: '存在可疑线索', focusIndex: 1 })
+  } else if (captured.format?.properties?.focusIndex) content = JSON.stringify({ focusIndex: 1 })
+  else if (captured.format) content = JSON.stringify({ suspectedOperationQuote: null })
+  else {
+    narrativeRequest = captured
+    content = '这是合成测试返回的分区说明，仅用于检查传输，不代表实际推理或检测结果。'
+  }
+  return new Response(JSON.stringify({ done_reason: 'stop', message: { content } }), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' }
+  })
 }
 try {
   const report = await generateExplanation(
@@ -208,8 +200,9 @@ try {
     'test-local-model',
     'http://127.0.0.1:11434'
   )
-  const prompt = captured.messages.find((m) => m.role === 'user').content
+  const prompt = assessmentRequest.messages.find((m) => m.role === 'user').content
   const context = JSON.parse(prompt)
+  assert.equal(narrativeRequest.messages.find((m) => m.role === 'user').images, undefined)
   assert.equal(
     context.models.find((i) => i.model === 'SICA').support.value,
     Number(sicaSupport.value.toFixed(4))
@@ -220,7 +213,7 @@ try {
   )
   assert.equal(context.models.find((i) => i.model === 'RITA').regions[0].support.value, 0.88)
   assert.equal(context.models.find((i) => i.model === 'RiSE').support, null)
-  assert.equal(context.models.find((i) => i.model === 'RiSE').status, 'not_run')
+  assert.equal(context.models.find((i) => i.model === 'RiSE').finding, '本轮未运行或未完成')
   assert.ok(!prompt.includes('必须说明的限制'))
   assert.equal(report.result.finalDecision, 'suspicious')
   assert.equal(report.result.upstreamDecision, 'inconclusive')
@@ -234,7 +227,7 @@ try {
   globalThis.fetch = originalFetch
 }
 checks.push(
-  'actual explanation request includes JSON confidence and scope limits without changing decisions or final probability'
+  'original assessment receives native JSON confidence; narration receives only facts; detector thresholds and final numeric confidence remain unchanged'
 )
 console.log(
   JSON.stringify({ passed: true, checks, example: { sica: sicaSupport, fsd: fsdSupport } }, null, 2)
