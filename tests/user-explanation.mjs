@@ -343,6 +343,7 @@ globalThis.fetch = async (_url, options) => {
     return jsonResponse({
       decision: verdict,
       focusIndex: verdict === '未发现明显异常' ? null : 1,
+      reason: '原图判断实际采用了局部定位及整图筛查；这是测试中的原始判断依据。',
       targetDescription: '图片右侧的水鸟',
       operation: verdict === '未发现明显异常' ? 'unknown' : 'copy_move',
       operationReason: '模型综合判断提出的方式假设。'
@@ -350,6 +351,8 @@ globalThis.fetch = async (_url, options) => {
   if (r.format?.properties?.focusIndex) return jsonResponse({ focusIndex: 1 })
   if (r.format?.properties?.记录)
     return jsonResponse({ 记录: '图片右侧', 字段: '水鸟', 原文: null })
+  if (r.format?.properties?.字段 && !r.format?.properties?.记录)
+    return jsonResponse({ 字段: '水鸟' })
   if (r.format?.properties?.context) return jsonResponse({ context: '图片右侧的水鸟' })
   if (r.format?.properties?.subject)
     return jsonResponse({ subject: '一只水鸟。', visibleText: null })
@@ -414,12 +417,16 @@ try {
   assert.equal(context.annotation, undefined)
   assert.equal(context.images, undefined)
   assert.equal(context.candidates[0].support.value, 0.88)
+  assert.equal(context.models.find((model) => model.model === 'SICA').scope, 'whole_image')
+  assert.equal(context.models.find((model) => model.model === 'RITA').scope, 'localized_regions')
   assert.ok(context.candidates[0].content.includes('一只水鸟。'))
   assert.equal(context.candidates[0].context, null)
   assert.equal(user(narration).images, undefined)
   assert.ok(!user(narration).content.includes('0.88'))
   assert.ok(!user(narration).content.includes('青色'))
   assert.ok(user(narration).content.includes('水鸟'))
+  assert.ok(user(narration).content.includes('这是测试中的原始判断依据'))
+  assert.match(result.extensions.assessment.decisionReason, /测试中的原始判断依据/)
   assert.ok(user(narration).content.includes('较强'))
   assert.equal(result.extensions.inputPresentation.narration.imageCount, 0)
   assert.equal(result.extensions.rawNarratives[0].message.content, finalText)
@@ -458,6 +465,70 @@ try {
   checks.push(
     'scene-assisted observation preserves crop pixels and respects its per-request image limit'
   )
+  const beforeOcr = requests.length
+  const ocrObservation = await observeRegions({
+    directory,
+    full: png,
+    regions: [documentRegion],
+    artifacts: bundle.artifacts,
+    model: 'fixture',
+    host: 'http://127.0.0.1:11434',
+    numCtx: 8192,
+    maxImages: 2,
+    ocrTexts: [{ recognizedText: '原始行文字', bboxXYWH: [0, 1, 14, 8], region: 'full_image' }]
+  })
+  assert.equal(
+    requests.length - beforeOcr,
+    2,
+    'OCR geometry uses one bounded field interpretation call'
+  )
+  assert.equal(ocrObservation[0].context, '水鸟')
+  assert.equal(ocrObservation[0].contextSource, 'ocr_geometry_vlm')
+  assert.deepEqual(ocrObservation[0].requestImageCounts, [1, 2])
+  assert.equal(ocrObservation[0].nearbyText[0].text, '原始行文字')
+  const sourceWithOcr = {
+    ...manipulation,
+    reportId: 'fixture-source-ocr',
+    moduleId: 'provenance',
+    evidence: [],
+    result: {
+      preprocessing: { originalPreserved: true, displayTransform: 'exif_auto_orient_no_resize' },
+      metadata: { status: 'completed', details: {} },
+      credentials: { status: 'completed', details: { outcome: 'no_manifest_container_found' } },
+      watermark: {
+        status: 'completed',
+        details: {
+          detectors: {
+            visible: {
+              status: 'completed',
+              recognizedTexts: [
+                { recognizedText: '原始行文字', bboxXYWH: [0, 1, 14, 8], region: 'full_image' }
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+  const beforeLinked = requests.length
+  const linked = await generateExplanation(
+    {
+      ...bundle,
+      reports: [
+        { ...manipulation, result: { ...manipulation.result, regions: [{ ...documentRegion }] } },
+        sourceWithOcr
+      ]
+    },
+    taskId,
+    'fixture-model',
+    'http://127.0.0.1:11434'
+  )
+  const linkedRequest = requests.slice(beforeLinked).find((r) => r.format?.properties?.decision)
+  const linkedEvidence = JSON.parse(user(linkedRequest).content)
+  assert.equal(linkedEvidence.candidates[0].contextSource, 'ocr_geometry_vlm')
+  assert.equal(linkedEvidence.candidates[0].nearbyText[0].text, '原始行文字')
+  assert.match(linkedEvidence.imageRelationship, /同一张待分析输入/)
+  assert.equal(linked.extensions.visualObservations[0].contextSource, 'ocr_geometry_vlm')
   await writeFile(
     join(output, 'request.json'),
     JSON.stringify(
@@ -509,6 +580,7 @@ try {
   assert.equal(independent.result.finalDecision, 'no_anomaly_detected')
   assert.equal(independent.result.primaryRegionId, null)
   assert.equal(independent.result.analysis, narrationText)
+  assert.equal(independent.result.lead, '目前没有发现明确的异常线索。')
   verdict = '存在可疑线索'
   narrationText = finalText
   interrupt = true

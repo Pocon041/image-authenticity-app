@@ -360,16 +360,15 @@ try {
     text: '图片右侧的水鸟'
   })
   await page.getByTestId('explanation-summary').waitFor()
-  assert.equal(await page.getByTestId('explanation-summary').textContent(), '')
-  assert.match(await page.getByTestId('explanation-conclusion').innerText(), /图片右侧的水鸟/)
-  assert.match(await page.getByTestId('explanation-conclusion').innerText(), /发现可疑线索/)
+  assert.match(await page.getByTestId('explanation-conclusion').innerText(), /正在综合判断/)
+  assert.doesNotMatch(await page.getByTestId('explanation-conclusion').innerText(), /发现可疑线索/)
   await emitExplanation({
     taskId: 'unrelated-task',
     phase: 'synthesizing',
     label: 'stale',
     text: 'STALE'
   })
-  assert.equal(await page.getByTestId('explanation-summary').textContent(), '')
+  assert.ok(await page.getByTestId('explanation-summary').textContent())
   await page.screenshot({ path: join(output, 'streaming.png'), fullPage: true })
   await desktop.evaluate(() => globalThis.__conversation.explain())
   await page.getByRole('heading', { name: '分析说明', exact: true }).waitFor()

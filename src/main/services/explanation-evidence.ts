@@ -1,5 +1,7 @@
 import type { FinalDecision, Region } from '../../shared/protocol'
 import { OPERATION_NAMES, type EvidenceAssessment } from './evidence-assessment'
+import { provenanceNarrationFacts } from './provenance-input'
+import type { NearbyText } from './region-text'
 
 type ObjectValue = Record<string, unknown>
 const object = (v: unknown): ObjectValue =>
@@ -37,6 +39,8 @@ export interface NarrationCandidate {
   detector?: string
   context?: string | null
   visibleText?: string | null
+  contextSource?: string
+  nearbyText?: NearbyText[]
 }
 
 /** Verbal presentation of a bounded locator response only; not a correctness or fusion threshold. */
@@ -60,6 +64,8 @@ export function buildNarrationFacts(input: {
     '这是已经完成检查的图片分析记录。',
     `本次最终分析倾向：${DECISION_TEXT[decision]}。`
   ]
+  if (assessment?.decisionReason)
+    lines.push(`VLM原图判断时返回的简短依据：${assessment.decisionReason}`)
   if (focus) {
     lines.push(
       `重点位置：${assessment?.targetDescription || focus.context || focus.observedContent || focus.location}。`
@@ -77,18 +83,17 @@ export function buildNarrationFacts(input: {
     if (model.finding === '本轮未运行或未完成') continue
     if (model.model === 'SICA')
       lines.push(
-        `SICA整图伪造筛查：${String(model.finding)}${responseWording(model.support) ? `，对这个分类结果的支持${responseWording(model.support)}` : ''}。`
+        `SICA整图伪造筛查（作用范围：整张图片）：${String(model.finding)}${responseWording(model.decisionConfidence ?? model.support) ? `，对这个分类结果的阈值距离支持${responseWording(model.decisionConfidence ?? model.support)}` : ''}。`
       )
     if (model.model === 'FSD')
       lines.push(
-        `FSD的AI生成检测：${String(model.finding)}${responseWording(model.support) ? `，对这个结果的支持${responseWording(model.support)}` : ''}，该项只评价AI生成。`
+        `FSD的AI生成检测（作用范围：整张图片）：${String(model.finding)}${responseWording(model.support) ? `，对这个结果的支持${responseWording(model.support)}` : ''}，该项只评价AI生成。`
       )
   }
   if (Array.isArray(evidence.disagreements) && evidence.disagreements.length)
     lines.push(
       '检查结果之间存在分歧，最终分析倾向已综合这些结果；某一检查未触发提示，不能直接抵消局部候选。'
     )
-  const provenance = object(evidence.provenance)
   if (assessment) {
     lines.push(`VLM综合图像与证据后提出的可能方式：${OPERATION_NAMES[assessment.operation]}。`)
     if (assessment.operationEvidence !== 'none')
@@ -98,11 +103,7 @@ export function buildNarrationFacts(input: {
     if (assessment.operationReason)
       lines.push(`模型提出该方式的理由（推测）：${assessment.operationReason}`)
   }
-  const credential = object(provenance.credentials).outcome
-  if (credential === 'manifest_container_found')
-    lines.push('来源检查发现了内嵌凭证标记；该标记不等于内容已验证真实。')
-  if (object(provenance.watermark).outcome === 'candidate_watermark_indicators_found')
-    lines.push('来源检查发现了水印候选线索，尚不能据此确定生成平台或是否篡改。')
+  lines.push(...provenanceNarrationFacts(evidence.provenance))
   return lines.join('\n')
 }
 
@@ -112,12 +113,15 @@ export function evidenceForAssessment(prompt: string, candidates: NarrationCandi
   return {
     models: parsed.models,
     provenance: parsed.provenance,
+    imageRelationship: parsed.imageRelationship,
     disagreements: parsed.disagreements,
     candidates: candidates.map((c, index) => ({
       index: index + 1,
       position: c.location,
       content: c.observedContent,
       context: c.context ?? null,
+      ...(c.contextSource ? { contextSource: c.contextSource } : {}),
+      ...(c.nearbyText?.length ? { nearbyText: c.nearbyText } : {}),
       visibleText: c.visibleText ?? null,
       detector: c.detector,
       support: c.confidence ?? null

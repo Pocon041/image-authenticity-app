@@ -16,6 +16,7 @@ export const OPERATION_NAMES = {
 } as const
 export interface EvidenceAssessment {
   decision: FinalDecision
+  decisionReason?: string
   focusIndex: number | null
   targetDescription: string
   operation: keyof typeof OPERATION_NAMES
@@ -104,7 +105,7 @@ export async function assessOriginal(args: {
       {
         role: 'system',
         content:
-          '这是未添加系统标记的待分析原图。依据原图与各检测器结果作初步判断：存在可疑线索表示值得核查，并不表示已证实；未发现明显异常表示没有值得关注的检测线索；暂不能确定表示检查结果矛盾。整图筛查与AI生成检测是不同任务，未报警不排除局部修改。定位响应不是正确率。选择优先核查的位置编号，没有可对应对象则null。'
+          '结合未标记原图、各检测器结果和来源线索作综合判断，返回存在可疑线索、未发现明显异常或暂不能确定，并选择重点位置编号，无重点位置填null。reason用一两句话指出本次判断采用的已有证据，保留检测器或来源记录名称。SICA和FSD的scope=whole_image只评价整张图片；RITA和RiSE的scope=localized_regions只表示局部定位，不能把整图分类结果当作某个区域的结论，也不能把局部响应当作整图概率。支持度表示各模型对自身结果的支持程度。来源凭证的生成工具、AI声明和编辑记录参与判断，verification说明实际校验情况；输入只列已有来源线索，不代表完整编辑历史。'
       },
       {
         role: 'user',
@@ -116,9 +117,10 @@ export async function assessOriginal(args: {
       type: 'object',
       properties: {
         decision: { enum: Object.keys(LABELS) },
-        focusIndex: { enum: [...Array.from({ length: args.count }, (_, i) => i + 1), null] }
+        focusIndex: { enum: [...Array.from({ length: args.count }, (_, i) => i + 1), null] },
+        reason: { type: 'string', maxLength: 160 }
       },
-      required: ['decision', 'focusIndex']
+      required: ['decision', 'focusIndex', 'reason']
     },
     args.signal
   )
@@ -136,6 +138,7 @@ export async function assessOriginal(args: {
     throw new Error('原图判断的JSON结构无效')
   return {
     decision: LABELS[value.decision],
+    decisionReason: typeof value.reason === 'string' ? value.reason : '',
     focusIndex: value.focusIndex,
     targetDescription: '',
     operation: 'unknown',

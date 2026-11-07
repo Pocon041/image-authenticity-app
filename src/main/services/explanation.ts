@@ -15,7 +15,11 @@ import type {
 } from '../../shared/protocol'
 import type { Region } from '../../shared/protocol'
 import { validateExplanationReport } from '../../shared/protocol'
-import { sicaClassSupport, fsdClassSupport } from '../../shared/decision-confidence'
+import {
+  sicaClassSupport,
+  fsdClassSupport,
+  sicaDecisionConfidence
+} from '../../shared/decision-confidence'
 import { observeRegions, type RegionObservation } from './visual-observation'
 import { drawRegionBoundaries, BOUNDARY_NOTE } from './visual-boundary'
 import { readOllamaChat } from './ollama-stream'
@@ -34,6 +38,7 @@ import {
   type NarrationCandidate
 } from './explanation-evidence'
 import { USER_EXPLANATION_SYSTEM, type UserExplanation } from './user-explanation'
+import { provenanceForVlm, provenanceNarrationFacts } from './provenance-input'
 
 export interface ExplanationConfig {
   model: string
@@ -108,6 +113,9 @@ export async function generateExplanation(
   const aigcReport = upstreamReports.find(
     (report): report is AigcReport => report.moduleId === 'aigc'
   )
+  const visibleOcr = asRecord(
+    asRecord(provenanceReport?.result?.watermark?.details?.detectors).visible
+  )
 
   // 上游事实用于追溯，不固定模型的综合判断。
   const upstreamDecision = deriveFinalDecision(manipulationReport)
@@ -157,6 +165,7 @@ export async function generateExplanation(
         host: config.host,
         numCtx: config.numCtx,
         maxImages: config.maxImages,
+        ocrTexts: visibleOcr.status === 'completed' ? visibleOcr.recognizedTexts : undefined,
         signal: requestSignal
       })
     : []
@@ -202,6 +211,8 @@ export async function generateExplanation(
         observedContent: observations[index]?.text ?? null,
         confidence: region.confidence,
         context: observations[index]?.context ?? null,
+        contextSource: observations[index]?.contextSource,
+        nearbyText: observations[index]?.nearbyText,
         visibleText: observations[index]?.visibleText ?? null,
         detector: typeof region.detector === 'string' ? region.detector : undefined
       })),
@@ -672,12 +683,7 @@ function buildClaims(
   if (metadataEvidence) {
     const details = asRecord(provenance?.result?.metadata?.details)
     const format = asString(details.format) ?? '未知'
-    const fields = asRecord(asRecord(details.xmp).fields)
-    const creatorToolValue = fields['xmp:CreatorTool']
-    const creatorTool =
-      Array.isArray(creatorToolValue) && typeof creatorToolValue[0] === 'string'
-        ? creatorToolValue[0]
-        : null
+    const creatorTool = asRecord(provenanceForVlm(provenance).metadata).creatorTool
     push('provenance', {
       text: `图像元数据格式为 ${format}，EXIF=${details.hasExif === true ? '有' : '无'}、XMP=${
         details.hasXmp === true ? '有' : '无'
@@ -689,10 +695,10 @@ function buildClaims(
   // C2PA 凭证
   const c2paEvidence = findEvidence(provenance, 'c2pa_manifest_presence')
   if (c2paEvidence) {
-    const details = asRecord(provenance?.result?.credentials?.details)
-    const outcome = asString(details.outcome) ?? '未知'
+    const source = provenanceForVlm(provenance)
+    const outcome = asRecord(provenance?.result?.credentials?.details).outcome ?? '未知'
     push('provenance', {
-      text: `C2PA 凭证检查结果为 ${outcome}；未发现嵌入清单不排除外部凭证，签名也未在本地验证。`,
+      text: `C2PA 凭证检查结果为 ${outcome}。${provenanceNarrationFacts({ credentials: source.credentials }).join(' ')}`,
       evidenceIds: [c2paEvidence.evidenceId]
     })
   }
@@ -751,7 +757,11 @@ function buildUnresolved(
   }
 
   if (asString(asRecord(provenance?.result?.credentials?.details).outcome)) {
-    items.push('C2PA 签名未在本地完成验证，未发现清单不排除外部凭证。')
+    const credentials = asRecord(provenanceForVlm(provenance).credentials)
+    if (asRecord(provenance?.result?.credentials?.details).outcome === 'manifest_container_found') {
+      if (credentials.verification !== '本地凭证验证通过')
+        items.push(`C2PA：${credentials.verification}。`)
+    } else items.push('未发现内嵌来源凭证。')
   }
   if (asString(asRecord(provenance?.result?.watermark?.details).outcome)) {
     items.push('水印与元数据的“未命中/缺失”不等于图像真实或被剥离。')
@@ -796,6 +806,7 @@ function buildPrompt(
     {
       model: 'SICA',
       task: '通用整图真实性分类',
+      scope: 'whole_image',
       finding:
         classification.predictedClass === 'real'
           ? '通用伪造筛查未报警'
@@ -804,6 +815,7 @@ function buildPrompt(
             : '本轮未运行或未完成',
       score: sicaScore,
       threshold: classification.threshold ?? null,
+      decisionConfidence: sicaDecisionConfidence(sicaScore, classification.threshold),
       support: support(
         sicaClassSupport(sicaScore, classification.predictedClass),
         classification.predictedClass === 'real' ? '通用伪造筛查未报警' : '整图存在可疑线索'
@@ -812,6 +824,7 @@ function buildPrompt(
     {
       model: 'FSD',
       task: 'AI生成分类',
+      scope: 'whole_image',
       finding:
         aigc?.result?.decision === 'non_ai'
           ? '未检出AI生成线索'
@@ -837,6 +850,7 @@ function buildPrompt(
     models.push({
       model: backend === 'rita' ? 'RITA' : 'RiSE',
       task: backend === 'rita' ? '照片局部篡改定位' : '文档局部篡改定位',
+      scope: 'localized_regions',
       finding: detector?.status === 'completed' ? '已标记的局部异常候选' : '本轮未运行或未完成',
       regionCount: result.regionCount ?? null,
       support: support(result.confidence),
@@ -855,24 +869,7 @@ function buildPrompt(
     imageRelationship:
       '所有图片和局部观察来自同一张待分析输入，没有编辑前参考图；裁剪仅用于看清内容',
     models,
-    provenance: {
-      metadata: {
-        format: provenance?.result?.metadata?.details?.format ?? null,
-        creatorTool:
-          asRecord(asRecord(provenance?.result?.metadata?.details?.xmp).fields)[
-            'xmp:CreatorTool'
-          ] ?? null
-      },
-      credentials: {
-        outcome: provenance?.result?.credentials?.details?.outcome ?? null
-      },
-      watermark: {
-        outcome:
-          provenance?.result?.watermark?.details?.combinedOutcome ??
-          provenance?.result?.watermark?.details?.outcome ??
-          null
-      }
-    },
+    provenance: provenanceForVlm(provenance),
     observationSource: '局部观察来自未加标记的原始局部像素，只描述内容，不代表异常已经证实。',
     disagreements,
     evidenceScope:
@@ -915,7 +912,10 @@ async function generateAnalysis(
     ? [
         focus.location,
         focus.context || focus.observedContent,
-        focus.visibleText ? `“${focus.visibleText}”` : null
+        focus.visibleText &&
+        !(focus.context || focus.observedContent || '').includes(focus.visibleText)
+          ? `“${focus.visibleText}”`
+          : null
       ]
         .filter(Boolean)
         .join('，')
@@ -1081,6 +1081,12 @@ async function generateAnalysis(
 }
 
 function buildLead(assessment: EvidenceAssessment, focus: NarrationCandidate | undefined): string {
+  if (!focus) {
+    if (assessment.decision === 'no_anomaly_detected') return '目前没有发现明确的异常线索。'
+    if (assessment.decision === 'inconclusive')
+      return '现有检查结果暂不能形成明确判断，具体依据见下文。'
+    return '当前检查发现了值得关注的图像异常线索，主要依据见下文。'
+  }
   const target =
     assessment.targetDescription || focus?.context || focus?.observedContent || '图中被定位的位置'
   const method =

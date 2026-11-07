@@ -66,6 +66,7 @@
 - `schemas/`：JSON Schema，模块报告与 VLM 证据包共用同一份字段定义。
 - `examples/USAGE.md`、`examples/sample-selection.example.json`：样例使用说明与选择模板。
 - `examples/stage1-materials/`、`examples/local-selection.json`：第一阶段材料包与实际选择清单，Git 忽略，不自动公开发布。
+- `examples/image/`：用户提供的本地测试图片，Git 忽略，不上传 GitHub；实际测试产物保存在同样忽略的 `work/`。
 - `tests/`：真实 Electron 窗口的端到端 Smoke 验证。
 - `scripts/`：运行时检查和安装；Windows 从官方发布地址下载 Electron，并按 npm 包提供的 SHA256 校验。
 - `backend/rita/`：RITA 单图执行、掩码解码和测试；`config/rita.example.json` 为共享配置模板，`config/rita.local.json` 为 Git 忽略的本机配置。
@@ -105,6 +106,7 @@ Windows 启动入口为 `start.cmd`；`run.cmd` 负责优先使用 `.tools/` 下
 - `run.cmd run rise:setup` / `rise:infer` / `smoke:rise`：RiSE 源码准备、真实单图与桌面检查。
 - `run.cmd run provenance:setup`：在项目统一的 `.venv` 安装 C2PA、图像元数据、RapidOCR 与水印检测依赖。
 - `run.cmd run explanation:setup -- --model <本地Ollama标签>`：生成 Git 忽略的本地 Qwen3-VL/Ollama 配置；只写配置，不下载模型，不修改云端解释接口。
+- `run.cmd run vlm:evaluate -- --cases <本地清单>`：复用检测快照对照真实解释，参考标注不进入模型；请求和结果仅保存至`work/`。评价范围见`docs/VLM_EVALUATION.md`。
 - `run.cmd run test:workflow` / `smoke:workflow`：联合编排逻辑与真实桌面流程检查。
 - `run.cmd run report:validate -- <analysis.json>`：简明报告 Schema、身份、相对路径与引用校验。
 - `<配置的Python> backend/sica/evaluate.py --casia-root <划分清单目录> --output <目录>`：只读运行本地 CASIA 子集，阈值固定 0.5，记录每图预测和分组统计，不声称独立泛化。
@@ -151,6 +153,9 @@ Electron 45 延迟下载导致首次启动出现 `Electron uninstall` 的修复�
 - 第一人来源模块 v0.1.0：完整联合包增加 `provenance` 报告及独立 `reports/provenance.json`；记录原文件 SHA-256、显示副本、EXIF/XMP/IPTC/GPS 摘要、C2PA 活动清单与签名验证状态、可见水印候选和 SDXL 固定 48 位 DWT-DCT 载荷。
 - `provenance:setup` 使用项目统一 `.venv`，安装 C2PA 0.38.0、RapidOCR 3.10.0、ONNX Runtime 1.31.1、OpenCV headless 4.14.0.94、PyWavelets 1.10.0 和 invisible-watermark 0.2.0。
 - 来源检查界面展示 C2PA `claim_generator_info.name`；旧报告回退展示 `claim_generator`。图片工作区“图像预览”支持大图查看、点击遮罩或 Esc 关闭。
+- 来源交接只列编辑工具、C2PA生成/AI声明/操作与单句验证摘要、水印具体候选及未完成项目；省略空字段和常规未命中，普通正文重复不单独触发水印候选，原始OCR和验证详情留完整报告。
+- RiSE定位区域优先使用来源OCR的几何邻近文字形成上下文，再用一次整图/局部请求只解释字段作用；无相交文字才请求VLM同时确认记录/字段。原图判断保留VLM返回的简短reason供最终说明引用。
+- 解释运行中只显示“正在综合判断”，不把中间stream decision标成最终综合判断；最终类别和首段只在解释报告返回后显示。
 - main 已整合已验证 `czh` 功能；整合版本通过生产构建（含类型检查）、9 组工作流测试、6 组协议测试，以及实际 `start.cmd` 启动 3 项检查。本轮未重跑模型准确率评测。
 - 本地 `czh` 已包含远端 `main` 截至 `e1e59b4` 的 `yht` 来源模块，同时保留第四人的 `protocol.ts` 类型与本地共用校验适配。
 

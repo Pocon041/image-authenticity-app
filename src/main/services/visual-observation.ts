@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import sharp from 'sharp'
 import type { Artifact, Region } from '../../shared/protocol'
+import { textNearRegion, textContext, type NearbyText } from './region-text'
 
 export interface RegionObservation {
   regionId: string
@@ -20,6 +21,8 @@ export interface RegionObservation {
   subject?: string | null
   contextRecord?: string | null
   contextField?: string | null
+  contextSource?: 'ocr_geometry' | 'ocr_geometry_vlm' | 'vlm_scene'
+  nearbyText?: NearbyText[]
 }
 
 /** Preserve the model's quoted reading verbatim; no digits or field values are invented here. */
@@ -63,6 +66,7 @@ export async function observeRegions(args: {
   host: string
   numCtx: number
   maxImages?: number
+  ocrTexts?: unknown
   signal?: AbortSignal
 }): Promise<RegionObservation[]> {
   const observations: RegionObservation[] = []
@@ -121,8 +125,14 @@ export async function observeRegions(args: {
         record: null as string | null,
         field: null as string | null
       }
+      const metadata = await sharp(args.full).metadata()
+      const nearbyText =
+        region.detector === 'rise'
+          ? textNearRegion(args.ocrTexts, region, metadata.width!, metadata.height!)
+          : []
+      if (nearbyText.length) content.context = textContext(nearbyText, content.visibleText)
       let contextResponse: unknown
-      if (withScene) {
+      if (withScene && !nearbyText.length) {
         try {
           const response = await fetch(`${args.host}/api/chat`, {
             method: 'POST',
@@ -132,11 +142,8 @@ export async function observeRegions(args: {
               stream: false,
               format: {
                 type: 'object',
-                properties: {
-                  记录: { type: ['string', 'null'], maxLength: 40 },
-                  字段: { type: ['string', 'null'], maxLength: 30 }
-                },
-                required: ['记录', '字段']
+                properties: { 字段: { type: ['string', 'null'], maxLength: 30 } },
+                required: ['字段']
               },
               messages: [
                 {
@@ -180,6 +187,60 @@ export async function observeRegions(args: {
           contextResponse = { error: String(error) }
         }
       }
+      if (withScene && nearbyText.length) {
+        try {
+          const relation = nearbyText[0]
+          const response = await fetch(`${args.host}/api/chat`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              model: args.model,
+              stream: false,
+              format: {
+                type: 'object',
+                properties: {
+                  记录: { type: ['string', 'null'], maxLength: 40 },
+                  字段: { type: ['string', 'null'], maxLength: 30 }
+                },
+                required: ['记录', '字段']
+              },
+              messages: [
+                {
+                  role: 'system',
+                  content:
+                    '图1是完整图片，图2是目标位置的原始局部。来源OCR文字和它与目标的空间关系是实测信息，不是字段名称。请根据两图判断目标所属记录和字段作用。记录用自然名称，例如第二条短信、退货凭证；字段用作用名称，例如存款时间、订单号、原价。不要把OCR读到的数字或文字直接当作字段名；看不清填null。'
+                },
+                {
+                  role: 'user',
+                  content: `目标附近实测文字为“${relation.text}”，目标位于该文字的${relation.relation === 'left_neighbor' ? '右侧' : relation.relation === 'right_neighbor' ? '左侧' : '同一文字区域'}。${content.visibleText ? `目标局部读到“${content.visibleText}”。` : ''}请只输出目标字段作用，不要输出记录名称。`,
+                  images: [args.full.toString('base64'), context.bytes.toString('base64')]
+                }
+              ],
+              options: { temperature: 0, num_ctx: args.numCtx, num_predict: 180 }
+            }),
+            signal: args.signal
+              ? AbortSignal.any([args.signal, AbortSignal.timeout(60000)])
+              : AbortSignal.timeout(60000)
+          })
+          if (!response.ok) throw new Error(`OCR字段上下文HTTP ${response.status}`)
+          const result = await response.json()
+          contextResponse = result
+          const parsed = JSON.parse(result.message?.content ?? '')
+          if (
+            result.done_reason === 'length' ||
+            !(parsed.字段 === null || typeof parsed.字段 === 'string')
+          )
+            throw new Error('OCR字段上下文结构无效')
+          const valid = (value: unknown) =>
+            typeof value === 'string' && value.trim() && !value.includes(relation.text)
+          if (valid(parsed.字段)) content.field = parsed.字段
+          if (content.record || content.field)
+            content.context =
+              [content.record, content.field].filter(Boolean).join('中的') || content.context
+        } catch (error) {
+          contextResponse = { error: String(error), source: 'ocr_geometry' }
+        }
+      }
       observations.push({
         regionId,
         status: 'completed',
@@ -195,11 +256,20 @@ export async function observeRegions(args: {
         visibleText: content.visibleText,
         contextRecord: content.record,
         contextField: content.field,
+        contextSource:
+          content.record || content.field
+            ? 'ocr_geometry_vlm'
+            : nearbyText.length
+              ? 'ocr_geometry'
+              : withScene
+                ? 'vlm_scene'
+                : undefined,
+        nearbyText: nearbyText.length ? nearbyText : undefined,
         finishReason: data.done_reason,
         contextBBoxXYWH: context.bbox,
         presentation: 'unmarked_context_crop',
         inputImageCount: withScene ? 2 : 1,
-        requestImageCounts: withScene ? [1, 1] : [1],
+        requestImageCounts: withScene ? [1, 2] : [1],
         rawResponse: data,
         contextResponse
       })

@@ -11,6 +11,7 @@ work/
 examples/local-selection.json
 examples/local-data/
 examples/stage1-materials/
+examples/image/
 weights/
 config/rita.local.json
 config/sica.local.json

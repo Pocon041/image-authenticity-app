@@ -187,10 +187,11 @@ export function WorkflowConversation({ workspace: w }: { workspace: AnalysisWork
   const visible = items.filter((item) => item.status !== 'pending')
   const started = w.running || !!trace || !!report
   const result = explanation?.mode === 'local' ? explanation.result : undefined
-  const verdict =
-    result?.finalDecision ?? (explainState === 'running' ? stream?.decision : undefined)
+  // stream.decision is an intermediate assessment; only the completed report is a final verdict.
+  const verdict = result?.finalDecision
+  const pendingAssessment = !result && explainState === 'running' && !!stream?.decision
   const answerText = String(result?.analysis ?? stream?.text ?? '')
-  const lead = String(result?.lead ?? answerText.split(/\n\s*\n/).map((text) => text.trim()).find((text) => text && !text.startsWith('#')) ?? '')
+  const lead = String(result?.lead ?? '')
   const detailText =
     lead && answerText.startsWith(lead) ? answerText.slice(lead.length).trim() : answerText
   useEffect(() => {
@@ -334,9 +335,9 @@ export function WorkflowConversation({ workspace: w }: { workspace: AnalysisWork
             )}
           </>
         )}
-        {(result || (explainState === 'running' && (stream?.text || verdict))) && (
+        {(result || (explainState === 'running' && (stream?.text || pendingAssessment))) && (
           <article className="conversation-answer" data-testid="analysis-report">
-            {verdict && (
+            {verdict ? (
               <div
                 className={`conversation-conclusion ${verdict}`}
                 data-testid="explanation-conclusion"
@@ -351,7 +352,15 @@ export function WorkflowConversation({ workspace: w }: { workspace: AnalysisWork
                 </strong>
                 {lead && <p className="conclusion-target conclusion-lead">{lead}</p>}
               </div>
-            )}
+            ) : pendingAssessment ? (
+              <div className="conversation-conclusion pending" data-testid="explanation-conclusion">
+                <span>综合判断</span>
+                <strong>正在综合判断</strong>
+                <p className="conclusion-target conclusion-lead">
+                  正在结合完整图片、局部区域和检测证据。
+                </p>
+              </div>
+            ) : null}
             <div className="conversation-answer-heading">
               <span className="assistant-avatar">
                 <MessageSquareText size={17} />

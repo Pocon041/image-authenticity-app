@@ -8,10 +8,22 @@ import unittest
 import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
-from detect_watermark import SDXL_WATERMARK_BITS, known_markers, visible_watermark, sdxl_invisible_watermark
+from detect_watermark import SDXL_WATERMARK_BITS, known_markers, visible_watermark, sdxl_invisible_watermark, watermark_candidate_evidence
 
 
 class PixelWatermarkTests(unittest.TestCase):
+    def test_repeated_body_text_and_corner_placement_are_not_watermarks(self):
+        item = {'recognizedText': '中国农业银行 您尾号8481的信用卡', 'position': 'top_left',
+                'visualFeatures': {'crossesCentralImage': True, 'tiltDegrees': 0, 'surroundingLuminanceDelta': 25}}
+        self.assertIsNone(watermark_candidate_evidence(item, 5))
+        item['recognizedText'] = '12月19日周四18:50'
+        self.assertIsNone(watermark_candidate_evidence(item, 3))
+        item['recognizedText'] = 'Adobe Stock'
+        self.assertIn('adobe_stock', watermark_candidate_evidence(item, 1)[0])
+        item['recognizedText'] = '作者名字'
+        item['visualFeatures']['tiltDegrees'] = 25
+        self.assertIn('tilted_text_crosses_subject_with_local_contrast', watermark_candidate_evidence(item, 1)[1])
+
     def test_common_chinese_watermark_phrases_are_candidates(self):
         markers = known_markers('版权所有，未经授权请勿转载')
         self.assertIn('generic_copyright_text', markers)
