@@ -277,7 +277,25 @@
       "additionalProperties": true,
       "required": ["finalDecision", "confidence", "analysis", "claims", "unresolved"],
       "properties": {
-        "decisionSource": { "enum": ["vlm", "rule_fallback"] },
+        "decisionSource": { "enum": ["vlm", "evidence_fusion", "rule_fallback"] },
+        "aiGenerationSource": { "const": "credentials" },
+        "evidenceLinks": {
+          "type": "array", "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["relation", "question", "models", "evidenceIds", "regionIds", "description"],
+            "properties": {
+              "relation": { "enum": ["corroborates", "different_tasks", "different_findings"] },
+              "question": { "enum": ["local_editing", "ai_generation", "image_anomaly"] },
+              "strength": { "enum": ["strong", "supporting"] },
+              "models": { "type": "array", "items": { "type": "string" }, "minItems": 2, "uniqueItems": true },
+              "evidenceIds": { "type": "array", "items": { "type": "string" }, "minItems": 1, "uniqueItems": true },
+              "regionIds": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+              "description": { "type": "string", "minLength": 1 }
+            }
+          }
+        },
+        "aiGeneration": { "enum": ["supported", "not_detected", "uncertain"] },
+        "localManipulation": { "enum": ["supported", "not_detected", "uncertain"] },
         "upstreamDecision": { "enum": ["suspicious", "no_anomaly_detected", "inconclusive"] },
         "evidenceBalance": { "type": "string" },
         "primaryRegionId": { "type": ["string", "null"] },

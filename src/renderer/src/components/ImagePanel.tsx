@@ -1,12 +1,4 @@
-import {
-  ArrowRight,
-  FileImage,
-  ImagePlus,
-  LoaderCircle,
-  LockKeyhole,
-  Sparkles,
-  X
-} from 'lucide-react'
+import { ArrowRight, FileImage, ImagePlus, LoaderCircle, Sparkles, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import type { AnalysisWorkspace } from '../hooks/useAnalysisWorkspace'
 import '../image-results.css'
@@ -115,7 +107,7 @@ export function ImagePanel({ workspace: w }: { workspace: AnalysisWorkspace }) {
               <ImagePlus size={35} strokeWidth={1.4} />
             </div>
             <h3>选择一张待分析的图片</h3>
-            <p>从本地导入，图片不会上传到服务器</p>
+            <p>保留原图，使用副本进行分析</p>
             <button
               className="primary-button import-button"
               onClick={w.chooseImage}
@@ -193,12 +185,7 @@ export function ImagePanel({ workspace: w }: { workspace: AnalysisWorkspace }) {
             </div>
           </div>
         </div>
-      ) : (
-        <div className="image-details empty-details">
-          <LockKeyhole size={15} />
-          <span>文件仅在本次会话中读取，不修改原图</span>
-        </div>
-      )}
+      ) : null}
       {w.backend === 'workflow' && (
         <div className="simple-content-type">
           <label htmlFor="content-type">图片类型</label>
@@ -210,26 +197,28 @@ export function ImagePanel({ workspace: w }: { workspace: AnalysisWorkspace }) {
               w.selectContentType(event.target.value as 'auto' | 'photo' | 'document' | 'unsure')
             }
           >
-            <option value="auto">自动路由（推荐）</option>
+            <option value="auto">自动识别（推荐）</option>
             <option value="photo">普通照片</option>
             <option value="document">文档 / 票据 / 截图</option>
             <option value="unsure">不确定 / 混合内容</option>
           </select>
           <small data-testid="route-plan">
             {w.contentType === 'auto'
-              ? '预处理后自动判定类型并选择检测器；低置信度时运行全部检测。'
+              ? '自动选择适合这张图片的检查方式。'
               : w.contentType === 'document'
                 ? '包括拍摄的小票和文字截图。'
                 : w.contentType === 'photo'
                   ? '适用于人物、物品和自然场景。'
-                  : '将运行两种定位检查，耗时稍长。'}
+                  : '进行全面检查，耗时略长。'}
           </small>
         </div>
       )}
       <div className="image-actions">
-        <button className="secondary-button" onClick={w.chooseImage} disabled={w.busy}>
-          {w.image ? '更换图片' : '浏览文件'}
-        </button>
+        {w.image && (
+          <button className="secondary-button" onClick={w.chooseImage} disabled={w.busy}>
+            更换图片
+          </button>
+        )}
         <button
           data-testid="analyze-button"
           className="primary-button"

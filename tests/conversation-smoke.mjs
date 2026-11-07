@@ -125,6 +125,17 @@ const explanation = {
     analysis:
       '这张图片右侧的水鸟存在值得核查的局部编辑线索，可能涉及局部修改，具体手法暂不能区分。\n\n### 补充依据\n- 局部检查集中标记了这只鸟。\n- 整图与局部检查存在分歧。\n\n### 手法判断\n当前证据不足以区分具体方式。',
     evidenceBalance: '整图检查与局部检查存在差异，建议先查看标记位置。',
+    evidenceLinks: [
+      {
+        relation: 'corroborates',
+        question: 'local_editing',
+        strength: 'strong',
+        models: ['sica', 'rita'],
+        evidenceIds: ['test-evidence'],
+        regionIds: ['region-A'],
+        description: '整图筛查与局部定位相互支持。'
+      }
+    ],
     primaryRegionId: 'region-A',
     regionAnalyses: [
       {
@@ -230,7 +241,12 @@ try {
       ipcMain.handle('srdp:analysis:explain', (_event, taskId) => {
         state.explainCalls++
         return new Promise((resolve) => {
-          state.explain = () =>
+          state.cancelExplain = () => {
+            state.cancelExplain = null
+            resolve({ ok: false, error: '已停止生成说明。', code: 'CANCELLED' })
+          }
+          state.explain = () => {
+            state.cancelExplain = null
             resolve(
               state.explainFail
                 ? { ok: false, error: 'Synthetic explanation failure', code: 'INFERENCE_FAILED' }
@@ -239,17 +255,36 @@ try {
                     data: {
                       ...explanation,
                       taskId,
+                      ...(state.sourceSummary
+                        ? {
+                            producer: { name: 'verified-source-summary', version: 'test' },
+                            result: {
+                              ...explanation.result,
+                              decisionSource: 'evidence_fusion',
+                              aiGeneration: 'supported',
+                              aiGenerationSource: 'credentials',
+                              lead: '来源凭证记录了Example App的AI生成操作，FSD检测也支持AI生成。',
+                              analysis:
+                                '### 补充依据\n- 来源记录与FSD结果相互印证。\n\n### 来源检查\n声明签名与文件内容绑定检查通过。',
+                              evidenceBalance: '',
+                              primaryRegionId: null,
+                              regionAnalyses: []
+                            }
+                          }
+                        : {}),
                       ...(state.templateFallback
                         ? { mode: 'mock', producer: { name: 'template-fallback', version: 'test' } }
                         : {})
                     }
                   }
             )
+          }
         })
       })
       ipcMain.removeHandler('srdp:analysis:cancel')
       ipcMain.handle('srdp:analysis:cancel', () => {
-        state.cancel()
+        if (state.cancelExplain) state.cancelExplain()
+        else state.cancel()
         return { ok: true, data: true }
       })
     },
@@ -360,19 +395,19 @@ try {
     text: '图片右侧的水鸟'
   })
   await page.getByTestId('explanation-summary').waitFor()
-  assert.equal(await page.getByTestId('explanation-summary').textContent(), '')
-  assert.match(await page.getByTestId('explanation-conclusion').innerText(), /图片右侧的水鸟/)
-  assert.match(await page.getByTestId('explanation-conclusion').innerText(), /发现可疑线索/)
+  assert.match(await page.getByTestId('explanation-conclusion').innerText(), /正在综合判断/)
+  assert.doesNotMatch(await page.getByTestId('explanation-conclusion').innerText(), /发现可疑线索/)
   await emitExplanation({
     taskId: 'unrelated-task',
     phase: 'synthesizing',
     label: 'stale',
     text: 'STALE'
   })
-  assert.equal(await page.getByTestId('explanation-summary').textContent(), '')
+  assert.ok(await page.getByTestId('explanation-summary').textContent())
   await page.screenshot({ path: join(output, 'streaming.png'), fullPage: true })
   await desktop.evaluate(() => globalThis.__conversation.explain())
   await page.getByRole('heading', { name: '分析说明', exact: true }).waitFor()
+  assert.equal(await page.locator('.conversation-body').evaluate((node) => node.scrollTop), 0)
   assert.match(await page.getByTestId('explanation-conclusion').innerText(), /发现可疑线索/)
   assert.equal(
     await page.getByTestId('explanation-summary').getByRole('heading', { level: 4 }).count(),
@@ -400,6 +435,8 @@ try {
   )
   assert.equal(await page.getByTestId('explanation-region').count(), 0)
   assert.match(await page.getByTestId('explanation-summary').innerText(), /局部检查集中标记/)
+  assert.equal(await page.getByTestId('explanation-evidence-links').count(), 1)
+  assert.match(await page.getByTestId('explanation-evidence-links').innerText(), /相互支持/)
   assert.equal(await page.locator('.conversation-activity').getAttribute('open'), null)
   assert.equal(await page.getByTestId('workflow-technical-details').getAttribute('open'), null)
   assert.ok(
@@ -525,6 +562,35 @@ try {
   )
   checks.push(
     'multiple localizers remain independently selectable; the completed report primary selects the initial left view'
+  )
+  await page.getByRole('button', { name: '停止生成', exact: true }).click()
+  await page.getByText('已停止生成说明。', { exact: true }).waitFor()
+  assert.equal(await page.getByTestId('image-result-views').count(), 1)
+  await page.getByRole('button', { name: '重新生成说明', exact: true }).click()
+  await page.getByRole('button', { name: '停止生成', exact: true }).waitFor()
+  await desktop.evaluate(() => globalThis.__conversation.explain())
+  await page.getByRole('heading', { name: '分析说明', exact: true }).waitFor()
+  checks.push('explanation can be stopped and retried while detection results remain visible')
+  await desktop.evaluate(() => {
+    globalThis.__conversation.sourceSummary = true
+  })
+  await choose()
+  await page.getByTestId('analyze-button').click()
+  await page.getByTestId('analysis-progress-label').waitFor()
+  await desktop.evaluate(() => globalThis.__conversation.analyze())
+  await page.locator('[data-step="explanation"][data-status="running"]').waitFor()
+  await desktop.evaluate(() => globalThis.__conversation.explain())
+  await page.getByText('说明已生成', { exact: true }).waitFor()
+  assert.match(
+    await page.getByTestId('explanation-conclusion').innerText(),
+    /来源明确：AI生成或合成/
+  )
+  assert.ok(!(await page.getByTestId('explanation-conclusion').innerText()).includes('暂不能确定'))
+  assert.equal(await page.locator('.conversation-balance').count(), 0)
+  assert.equal(await page.getByTestId('workflow-technical-details').getAttribute('open'), null)
+  await page.screenshot({ path: join(output, 'source-result.png'), fullPage: true })
+  checks.push(
+    'explicit AI source records have a clear conclusion, source evidence details and no repeated balance paragraph'
   )
   assert.deepEqual(errors, [])
   assert.ok(leftBefore.includes('image-preview'))

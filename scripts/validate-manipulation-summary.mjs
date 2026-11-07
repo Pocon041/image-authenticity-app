@@ -61,6 +61,14 @@ for (const region of summary.regions) {
   )
   if (region.crop) await bytes(region.crop)
 }
+const auditEvidence = new Set(
+  audit.reports.flatMap((report) => report.evidence.map((entry) => entry.evidenceId))
+)
+for (const link of summary.evidenceLinks ?? []) {
+  for (const id of link.evidenceIds)
+    assert.ok(auditEvidence.has(id), 'Unresolved linked evidence ID')
+  for (const id of link.regionIds) assert.ok(regionIds.has(id), 'Unresolved linked region ID')
+}
 console.log(
   `PASS: concise report, references and image identity (${(await readFile(path)).length} bytes)`
 )

@@ -171,11 +171,15 @@ export interface ExplanationClaim {
 
 export interface ExplanationResult {
   finalDecision: FinalDecision
+  aiGeneration?: 'supported' | 'not_detected' | 'uncertain'
+  localManipulation?: 'supported' | 'not_detected' | 'uncertain'
+  aiGenerationSource?: 'credentials'
+  evidenceLinks?: EvidenceLink[]
   confidence: Confidence
   analysis: string // minLength 1
   claims: ExplanationClaim[]
   unresolved: string[]
-  decisionSource?: 'vlm' | 'rule_fallback'
+  decisionSource?: 'vlm' | 'evidence_fusion' | 'rule_fallback'
   upstreamDecision?: FinalDecision
   evidenceBalance?: string
   primaryRegionId?: Id | null
@@ -191,6 +195,16 @@ export interface ExplanationResult {
   }[]
   // schema: additionalProperties: true
   [key: string]: unknown
+}
+
+export interface EvidenceLink {
+  relation: 'corroborates' | 'different_tasks' | 'different_findings'
+  question: 'local_editing' | 'ai_generation' | 'image_anomaly'
+  strength: 'strong' | 'supporting'
+  models: string[]
+  evidenceIds: Id[]
+  regionIds: Id[]
+  description: string
 }
 
 // ===== 模块报告 =====
@@ -340,5 +354,11 @@ export function validateExplanationReport(
   }
   if (report.result?.primaryRegionId && !(report.result.regionAnalyses ?? []).some(region=>region.regionId===report.result?.primaryRegionId))
     errors.push('primaryRegionId must reference an explained region')
+  for (const link of report.result?.evidenceLinks ?? []) {
+    for (const id of link.evidenceIds)
+      if (!evidenceOwners.has(id)) errors.push(`evidence link references unknown evidenceId: ${id}`)
+    for (const id of link.regionIds)
+      if (!knownRegions.has(id)) errors.push(`evidence link references unknown regionId: ${id}`)
+  }
   return errors
 }

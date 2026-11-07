@@ -150,6 +150,25 @@ def visual_features(image, points, bbox, width, height):
     }
 
 
+def watermark_candidate_evidence(item, repeated):
+    """Repeated body text is context, not sufficient evidence of a watermark."""
+    markers = known_markers(item['recognizedText'])
+    features = item['visualFeatures']
+    overlay = (features['crossesCentralImage'] and
+               abs(features['tiltDegrees']) >= 12 and
+               (features['surroundingLuminanceDelta'] or 0) >= 8)
+    if not markers and not overlay:
+        return None
+    reasons = ['keyword_match'] if markers else []
+    if repeated >= 2:
+        reasons.append('similar_text_style_and_content_repeated')
+    if item['position'] != 'other':
+        reasons.append(f"{item['position']}_corner_placement")
+    if overlay:
+        reasons.append('tilted_text_crosses_subject_with_local_contrast')
+    return markers or ['generic_visual_watermark_candidate'], reasons
+
+
 def visible_watermark(path):
     try:
         import cv2
@@ -240,19 +259,12 @@ def visible_watermark(path):
         group_for_index = {index: f'repeat-{number + 1}' for number, group in enumerate(repeated_groups) for index in group}
         candidates = []
         for index, item in enumerate(detections):
-            markers = known_markers(item['recognizedText'])
             repeated = next((len(group) for group in repeated_groups if index in group), 1)
             features = item['visualFeatures']
-            visual_overlay_hint = features['crossesCentralImage'] and abs(features['tiltDegrees']) >= 12 and (features['surroundingLuminanceDelta'] or 0) >= 8
-            if not markers and repeated < 2 and not visual_overlay_hint:
+            evidence = watermark_candidate_evidence(item, repeated)
+            if evidence is None:
                 continue
-            reasons = ['keyword_match'] if markers else []
-            if repeated >= 2:
-                reasons.append('similar_text_style_and_content_repeated')
-            if item['position'] != 'other':
-                reasons.append(f"{item['position']}_corner_placement")
-            if visual_overlay_hint:
-                reasons.append('tilted_text_crosses_subject_with_local_contrast')
+            markers, reasons = evidence
             candidates.append({
                 'markers': markers or ['generic_visual_watermark_candidate'],
                 'recognizedText': item['recognizedText'],
@@ -276,6 +288,7 @@ def visible_watermark(path):
             'recognizedTexts': [{key: value for key, value in item.items() if key != 'normalized'} for item in detections[:200]],
             'candidates': candidates[:40],
             'rules': ['keyword_match', 'corner_placement', 'similar_text_style_and_content_repeated', 'tilted_text_crosses_subject_with_local_contrast'],
+            'candidatePolicy': 'keyword_or_tilted_overlay_required; repetition_and_corner_are_context_only',
             'limitation': '对全图及四角区域执行OCR，保留所有识别文本及位置/颜色/几何特征；字体未被分类，颜色/尺寸仅是近似量。规则仅输出疑似叠加文字候选，可能误报，不验证图像来源。',
         }
     except Exception as error:

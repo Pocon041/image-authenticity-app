@@ -12,8 +12,38 @@ from PIL import ExifTags, Image
 AI_SOURCE_TYPES = {
     'trainedAlgorithmicMedia',
     'compositeWithTrainedAlgorithmicMedia',
-    'algorithmicMedia',
 }
+
+
+def validation_summary(store, manifest):
+    # SDK versions expose these on the store, not necessarily on the manifest.
+    active = (store.get('validation_results') or {}).get('activeManifest') or {}
+    success = active.get('success') or []
+    failure = active.get('failure') or []
+    informational = active.get('informational') or []
+    statuses = []
+    for item in (store.get('validation_status') or []) + (manifest.get('validation_status') or []) + failure + informational:
+        if item not in statuses:
+            statuses.append(item)
+    passed = {item.get('code') for item in success}
+    failed = {item.get('code') for item in failure + statuses}
+
+    def check(success_codes, failure_prefixes):
+        if any(code and any(code.startswith(prefix) for prefix in failure_prefixes) for code in failed):
+            return 'failed'
+        return 'passed' if passed.intersection(success_codes) else 'not_checked'
+
+    return {
+        'validationStatus': statuses,
+        'validationResults': {'success': success, 'informational': informational, 'failure': failure},
+        'validationChecks': {
+            'claimSignature': check({'claimSignature.validated'}, ('claimSignature.mismatch', 'claimSignature.invalid', 'claimSignature.missing')),
+            'contentBinding': check({'assertion.dataHash.match', 'assertion.bmffHash.match', 'assertion.boxesHash.match'}, ('assertion.dataHash.mismatch', 'assertion.bmffHash.mismatch', 'assertion.boxesHash.mismatch')),
+            'signerTrust': 'untrusted' if 'signingCredential.untrusted' in failed else 'trusted' if 'signingCredential.trusted' in passed else 'not_checked',
+            'timestampIntegrity': check({'timeStamp.validated'}, ('timeStamp.mismatch', 'timeStamp.invalid')),
+            'timestampTrust': 'untrusted' if 'timeStamp.untrusted' in failed else 'trusted' if 'timeStamp.trusted' in passed else 'not_checked',
+        },
+    }
 
 
 def active_manifest_summary(reader):
@@ -60,7 +90,8 @@ def active_manifest_summary(reader):
             'time': signature.get('time'),
         },
         'validationState': str(reader.get_validation_state()),
-        'validationStatus': manifest.get('validation_status') or [],
+        **validation_summary(store, manifest),
+        'verificationScope': {'remoteManifestFetch': False, 'ocspFetch': False},
         'aiDeclaration': ai_declaration,
         'actions': actions[:64],
         'ingredients': [

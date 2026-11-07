@@ -26,6 +26,12 @@ const {
   fsdClassSupport
 } = await import(pathToFileURL(join(output, 'confidence.mjs')))
 const { generateExplanation } = await import(pathToFileURL(join(output, 'explanation.mjs')))
+await build({
+  input: join(root, 'src/main/services/explanation-evidence.ts'),
+  platform: 'node',
+  output: { file: join(output, 'evidence.mjs'), format: 'esm' }
+})
+const { buildNarrationFacts } = await import(pathToFileURL(join(output, 'evidence.mjs')))
 const checks = []
 assert.equal(sica(0.5, 0.5).value, 0)
 assert.equal(fsd(-2, -2).value, 0)
@@ -36,6 +42,23 @@ assert.equal(sica(0, 0).value, 0)
 assert.equal(sica(1, 1).value, 0)
 assert.equal(sica(0.6, 0.2).value, (0.6 - 0.2) / 0.8)
 assert.ok(sica(0.1, 0.5).value > sica(0.4, 0.5).value)
+const borderlineFacts = buildNarrationFacts({
+  evidence: {
+    models: [
+      {
+        model: 'SICA',
+        finding: '通用伪造筛查未报警',
+        support: { value: 0.5006 },
+        decisionConfidence: sica(0.4994, 0.5)
+      }
+    ]
+  },
+  decision: 'inconclusive',
+  focusIndex: null,
+  candidates: []
+})
+assert.match(borderlineFacts, /阈值距离支持较弱/)
+assert.ok(!borderlineFacts.includes('支持中等'))
 assert.ok(sica(0.9, 0.5).value > sica(0.6, 0.5).value)
 assert.ok(fsd(-5, -2).value > fsd(-3, -2).value)
 assert.ok(fsd(1, -2).value > fsd(-1, -2).value)
@@ -184,6 +207,7 @@ globalThis.fetch = async (url, options) => {
     content = JSON.stringify({
       decision: '存在可疑线索',
       focusIndex: 1,
+      reason: '测试依据：整图分类和局部定位结果。',
       targetDescription: '图片右侧水鸟',
       operation: 'unknown',
       operationReason: '尚不能区分具体方式'
@@ -211,17 +235,19 @@ try {
   const prompt = assessmentRequest.messages.find((m) => m.role === 'user').content
   const context = JSON.parse(prompt)
   assert.equal(narrativeRequest.messages.find((m) => m.role === 'user').images, undefined)
+  assert.equal(context.models.find((i) => i.model === 'SICA').supportLevel, '未提供')
+  assert.equal(context.models.find((i) => i.model === 'FSD').supportLevel, '未提供')
+  assert.equal(context.models.find((i) => i.model === 'RITA').regions[0].supportLevel, '未提供')
   assert.equal(
-    context.models.find((i) => i.model === 'SICA').support.value,
-    Number(sicaSupport.value.toFixed(4))
+    context.models.find((i) => i.model === 'RiSE'),
+    undefined
   )
-  assert.equal(
-    context.models.find((i) => i.model === 'FSD').support.value,
-    Number(fsdSupport.value.toFixed(4))
+  assert.ok(
+    !Object.hasOwn(
+      context.models.find((i) => i.model === 'SICA'),
+      'score'
+    )
   )
-  assert.equal(context.models.find((i) => i.model === 'RITA').regions[0].support.value, 0.88)
-  assert.equal(context.models.find((i) => i.model === 'RiSE').support, null)
-  assert.equal(context.models.find((i) => i.model === 'RiSE').finding, '本轮未运行或未完成')
   assert.ok(!prompt.includes('必须说明的限制'))
   assert.equal(report.result.finalDecision, 'suspicious')
   assert.equal(report.result.upstreamDecision, 'inconclusive')
@@ -235,7 +261,7 @@ try {
   globalThis.fetch = originalFetch
 }
 checks.push(
-  'original assessment receives native JSON confidence; narration receives only facts; detector thresholds and final numeric confidence remain unchanged'
+  'original assessment receives task-scoped qualitative support; raw detector scores stay in reports and detector thresholds and final numeric confidence remain unchanged'
 )
 console.log(
   JSON.stringify({ passed: true, checks, example: { sica: sicaSupport, fsd: fsdSupport } }, null, 2)

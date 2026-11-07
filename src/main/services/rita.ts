@@ -1,4 +1,3 @@
-import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { access, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { basename, join, resolve } from 'node:path'
@@ -7,7 +6,7 @@ import Ajv from 'ajv'
 import addFormats from 'ajv-formats'
 import sharp from 'sharp'
 import reportSchema from '../../../schemas/report-bundle.schema.json'
-import type { AnalysisReport, ErrorCode } from '../../shared/contracts'
+import type { AnalysisReport } from '../../shared/contracts'
 import type { ModelSupport } from '../../shared/decision-confidence'
 import { AppError } from '../errors'
 import type { ImportedImage } from '../image-import'
@@ -17,6 +16,7 @@ import { WorkflowAnalysisService } from './workflow'
 import { SicaAnalysisService } from './sica'
 // [第三人任务] FSD 独立适配器。
 import { AigcAnalysisService } from './aigc'
+import { runPythonWorker } from './python-worker'
 
 interface RitaConfig {
   pythonPath: string
@@ -50,14 +50,6 @@ const validator = new Ajv({ allErrors: true, strict: false })
 addFormats(validator)
 const validateBundle = validator.compile(reportSchema)
 const digest = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex')
-const knownErrors = new Set<ErrorCode>([
-  'MODEL_NOT_READY',
-  'INVALID_MODEL',
-  'INFERENCE_FAILED',
-  'INVALID_IMAGE',
-  'INVALID_REQUEST'
-])
-
 async function configFor(root: string): Promise<RitaConfig> {
   const file = process.env.SRDP_RITA_CONFIG
     ? resolve(root, process.env.SRDP_RITA_CONFIG)
@@ -286,91 +278,15 @@ export class RoutedAnalysisService implements AnalysisService {
     context: AnalysisContext,
     imageId: string
   ): Promise<void> {
-    return new Promise((resolveRun, reject) => {
-      const child = spawn(
-        config.pythonPath,
-        ['-u', join(root, 'backend/rita/worker.py'), '--request', request],
-        {
-          cwd: root,
-          windowsHide: true,
-          stdio: ['ignore', 'pipe', 'pipe'],
-          env: { ...process.env, PYTHONIOENCODING: 'utf-8' }
-        }
-      )
-      child.stdout.setEncoding('utf8')
-      child.stderr.setEncoding('utf8')
-      let stdout = '',
-        stderr = '',
-        workerError: AppError | undefined,
-        timedOut = false,
-        receivedResult = false
-      const cancel = () => child.kill()
-      context.signal.addEventListener('abort', cancel, { once: true })
-      if (context.signal.aborted) cancel()
-      const timer = setTimeout(() => {
-        timedOut = true
-        child.kill()
-      }, config.timeoutMs)
-      child.stdout.on('data', (chunk: string) => {
-        stdout += chunk
-        if (stdout.length > 1024 * 1024) {
-          workerError = new AppError('INFERENCE_FAILED', '推理进程返回了过多数据。')
-          child.kill()
-          return
-        }
-        let index: number
-        while ((index = stdout.indexOf('\n')) >= 0) {
-          const line = stdout.slice(0, index)
-          stdout = stdout.slice(index + 1)
-          try {
-            const event = JSON.parse(line)
-            if (
-              event.type === 'progress' &&
-              Number.isFinite(event.percent) &&
-              typeof event.label === 'string'
-            )
-              context.onProgress({
-                taskId: context.taskId,
-                imageId,
-                stage: 'analyzing',
-                percent: Math.max(0, Math.min(100, event.percent)),
-                label: event.label
-              })
-            if (event.type === 'error')
-              workerError = new AppError(
-                knownErrors.has(event.code) ? event.code : 'INFERENCE_FAILED',
-                String(event.message)
-              )
-            if (event.type === 'result') receivedResult = true
-          } catch {
-            /* Non-protocol stdout is ignored; final JSON and exit code remain mandatory. */
-          }
-        }
-      })
-      child.stderr.on('data', (chunk: string) => {
-        stderr = (stderr + chunk).slice(-8000)
-      })
-      child.once('error', () => {
-        clearTimeout(timer)
-        context.signal.removeEventListener('abort', cancel)
-        reject(
-          new AppError('MODEL_NOT_READY', '无法启动配置的 Python，请检查 config/rita.local.json。')
-        )
-      })
-      child.once('close', (code) => {
-        clearTimeout(timer)
-        context.signal.removeEventListener('abort', cancel)
-        if (context.signal.aborted) return reject(new AppError('CANCELLED', '分析已取消。'))
-        if (timedOut) return reject(new AppError('TIMEOUT', 'RITA 推理超时，进程已停止。'))
-        if (workerError) return reject(workerError)
-        if (code !== 0 || !receivedResult) {
-          console.error('[RITA]', stderr)
-          return reject(
-            new AppError('INFERENCE_FAILED', 'RITA 推理未完成，请检查 Python 依赖和终端日志。')
-          )
-        }
-        resolveRun()
-      })
+    return runPythonWorker({
+      pythonPath: config.pythonPath,
+      workerPath: join(root, 'backend/rita/worker.py'),
+      requestPath: request,
+      cwd: root,
+      timeoutMs: config.timeoutMs,
+      name: 'RITA',
+      imageId,
+      context
     })
   }
 }

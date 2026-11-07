@@ -7,6 +7,11 @@ export interface UserExplanation {
   lead?: string
   narrationFacts?: string
   assessment?: EvidenceAssessment
+  aiGeneration?: EvidenceAssessment['aiGeneration']
+  localManipulation?: EvidenceAssessment['localManipulation']
+  aiGenerationSource?: 'credentials'
+  decisionSource?: 'vlm' | 'evidence_fusion'
+  narrationSource?: 'evidence_records'
   finalDecision: FinalDecision
   summary: string
   evidenceBalance: string

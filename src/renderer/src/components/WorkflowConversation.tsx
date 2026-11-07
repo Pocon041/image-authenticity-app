@@ -31,6 +31,7 @@ export function WorkflowConversation({ workspace: w }: { workspace: AnalysisWork
   const [retry, setRetry] = useState(0)
   const [activityOpen, setActivityOpen] = useState(true)
   const [stream, setStream] = useState<ExplanationProgress | null>(null)
+  const [stopping, setStopping] = useState(false)
   const request = useRef<{ key: string; promise: Promise<Response<ExplanationReport>> } | null>(
     null
   )
@@ -75,6 +76,7 @@ export function WorkflowConversation({ workspace: w }: { workspace: AnalysisWork
     setExplanation(null)
     setStream(null)
     setExplainState('running')
+    setStopping(false)
     setExplainError('')
     const key = `${report.id}:${retry}`
     if (request.current?.key !== key)
@@ -82,6 +84,7 @@ export function WorkflowConversation({ workspace: w }: { workspace: AnalysisWork
     request.current.promise
       .then((result) => {
         if (!active) return
+        setStopping(false)
         if (result.ok) {
           setExplanation(result.data)
           setExplainState(result.data.mode === 'local' ? 'done' : 'error')
@@ -96,6 +99,7 @@ export function WorkflowConversation({ workspace: w }: { workspace: AnalysisWork
       })
       .catch(() => {
         if (active) {
+          setStopping(false)
           setExplainError('综合说明暂未生成，可以重试。')
           setExplainState('error')
         }
@@ -104,6 +108,21 @@ export function WorkflowConversation({ workspace: w }: { workspace: AnalysisWork
       active = false
     }
   }, [report?.id, w.running, retry])
+
+  async function stopExplanation() {
+    if (!report || stopping) return
+    setStopping(true)
+    try {
+      const result = await window.desktop.cancelAnalysis(report.id)
+      if (!result.ok || !result.data) {
+        setStopping(false)
+        if (!result.ok) setExplainError(result.error)
+      }
+    } catch {
+      setStopping(false)
+      setExplainError('暂时无法停止生成，请稍后重试。')
+    }
+  }
 
   const trace = w.progress ?? w.lastProgress
   const finished = !!workflow && !w.running && (!trace || trace.taskId === report?.id)
@@ -187,14 +206,17 @@ export function WorkflowConversation({ workspace: w }: { workspace: AnalysisWork
   const visible = items.filter((item) => item.status !== 'pending')
   const started = w.running || !!trace || !!report
   const result = explanation?.mode === 'local' ? explanation.result : undefined
-  const verdict =
-    result?.finalDecision ?? (explainState === 'running' ? stream?.decision : undefined)
+  // stream.decision is an intermediate assessment; only the completed report is a final verdict.
+  const verdict = result?.finalDecision
+  const pendingAssessment = !result && explainState === 'running' && !!stream?.decision
   const answerText = String(result?.analysis ?? stream?.text ?? '')
-  const lead = String(result?.lead ?? answerText.split(/\n\s*\n/).map((text) => text.trim()).find((text) => text && !text.startsWith('#')) ?? '')
+  const lead = String(result?.lead ?? '')
   const detailText =
     lead && answerText.startsWith(lead) ? answerText.slice(lead.length).trim() : answerText
   useEffect(() => {
-    if (follow.current && body.current) body.current.scrollTop = body.current.scrollHeight
+    if (!body.current) return
+    if (explainState === 'done') body.current.scrollTop = 0
+    else if (follow.current) body.current.scrollTop = body.current.scrollHeight
   }, [
     trace?.label,
     trace?.steps?.map((step) => `${step.backend}:${step.status}`).join(','),
@@ -210,7 +232,7 @@ export function WorkflowConversation({ workspace: w }: { workspace: AnalysisWork
       <div className="panel-heading">
         <div>
           <MessageSquareText size={18} />
-          <h2>图像分析</h2>
+          <h2>分析结果</h2>
         </div>
         <span>{explainState === 'done' ? '说明已生成' : started ? '分析进程' : '待开始'}</span>
       </div>
@@ -229,11 +251,14 @@ export function WorkflowConversation({ workspace: w }: { workspace: AnalysisWork
             <span className="assistant-avatar">
               <MessageSquareText size={17} />
             </span>
-            <p>
-              {w.image
-                ? '图片已就绪。开始分析后，我会逐步检查并说明值得注意的位置。'
-                : '选择一张图片，我会结合检测结果和图像内容给出分析。'}
-            </p>
+            <div>
+              <h3>{w.image ? '图片已就绪' : '等待一张图片'}</h3>
+              <p>
+                {w.image
+                  ? '点击左侧“开始分析”，查看结论与区域说明。'
+                  : '导入图片后，结论、定位与分析依据会显示在这里。'}
+              </p>
+            </div>
           </div>
         )}
         {started && (
@@ -302,26 +327,6 @@ export function WorkflowConversation({ workspace: w }: { workspace: AnalysisWork
                   </li>
                 ))}
               </ol>
-              {report && (
-                <details
-                  className="conversation-technical"
-                  data-testid="workflow-technical-details"
-                >
-                  <summary>检测指标与 JSON 报告</summary>
-                  <WorkflowReport
-                    report={report}
-                    originalDataUrl={w.image?.dataUrl ?? ''}
-                    onSupplement={w.supplement}
-                    hideExplanation
-                  />
-                  {explanation && (
-                    <details>
-                      <summary>解释原始记录</summary>
-                      <pre>{JSON.stringify(explanation, null, 2)}</pre>
-                    </details>
-                  )}
-                </details>
-              )}
             </details>
             {w.running && (
               <button
@@ -334,9 +339,14 @@ export function WorkflowConversation({ workspace: w }: { workspace: AnalysisWork
             )}
           </>
         )}
-        {(result || (explainState === 'running' && (stream?.text || verdict))) && (
+        {workflow?.status === 'partial' && (
+          <p className="partial-result-note" role="status">
+            有部分检查未完成。当前结果已保留，完整原因可在检测详情中查看。
+          </p>
+        )}
+        {(result || (explainState === 'running' && (stream?.text || pendingAssessment))) && (
           <article className="conversation-answer" data-testid="analysis-report">
-            {verdict && (
+            {verdict ? (
               <div
                 className={`conversation-conclusion ${verdict}`}
                 data-testid="explanation-conclusion"
@@ -344,14 +354,31 @@ export function WorkflowConversation({ workspace: w }: { workspace: AnalysisWork
                 <span>综合判断</span>
                 <strong>
                   {verdict === 'suspicious'
-                    ? '发现可疑线索'
+                    ? result?.aiGenerationSource === 'credentials'
+                      ? '来源明确：AI生成或合成'
+                      : result?.aiGeneration === 'supported'
+                        ? '检测到AI生成或合成线索'
+                        : result?.decisionSource === 'evidence_fusion' &&
+                            result?.localManipulation === 'supported'
+                          ? '检测到局部篡改'
+                          : result?.localManipulation === 'supported'
+                            ? '疑似局部篡改'
+                            : '发现可疑线索'
                     : verdict === 'no_anomaly_detected'
                       ? '未发现明显异常线索'
                       : '暂不能确定'}
                 </strong>
                 {lead && <p className="conclusion-target conclusion-lead">{lead}</p>}
               </div>
-            )}
+            ) : pendingAssessment ? (
+              <div className="conversation-conclusion pending" data-testid="explanation-conclusion">
+                <span>综合判断</span>
+                <strong>正在综合判断</strong>
+                <p className="conclusion-target conclusion-lead">
+                  正在结合完整图片、局部区域和检测证据。
+                </p>
+              </div>
+            ) : null}
             <div className="conversation-answer-heading">
               <span className="assistant-avatar">
                 <MessageSquareText size={17} />
@@ -359,10 +386,40 @@ export function WorkflowConversation({ workspace: w }: { workspace: AnalysisWork
               <h3>{explainState === 'running' ? '正在撰写分析' : '分析说明'}</h3>
             </div>
             <ResponseText text={detailText} streaming={explainState === 'running'} />
+            {!!result?.evidenceLinks?.length && (
+              <section
+                className="conversation-evidence-links"
+                data-testid="explanation-evidence-links"
+              >
+                <h4>证据关系</h4>
+                <ul>
+                  {result.evidenceLinks.map((link, index) => (
+                    <li key={`${link.relation}-${link.question}-${index}`}>
+                      <span className={`evidence-link-strength ${link.strength}`}>
+                        {link.strength === 'strong' ? '相互支持' : '补充关系'}
+                      </span>
+                      {link.description}
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
             {result?.evidenceBalance && (
               <p className="conversation-balance">{result.evidenceBalance}</p>
             )}
           </article>
+        )}
+        {explainState === 'running' && (
+          <div className="generation-controls">
+            <button
+              type="button"
+              className="text-button"
+              onClick={stopExplanation}
+              disabled={stopping}
+            >
+              {stopping ? '正在停止…' : '停止生成'}
+            </button>
+          </div>
         )}
         {(explainState === 'error' || explanation?.mode === 'mock') && (
           <div className="conversation-retry">
@@ -371,6 +428,26 @@ export function WorkflowConversation({ workspace: w }: { workspace: AnalysisWork
               重新生成说明
             </button>
           </div>
+        )}
+        {report && (
+          <details
+            className="conversation-technical report-details"
+            data-testid="workflow-technical-details"
+          >
+            <summary>检测详情与报告</summary>
+            <WorkflowReport
+              report={report}
+              originalDataUrl={w.image?.dataUrl ?? ''}
+              onSupplement={w.supplement}
+              hideExplanation
+            />
+            {explanation && (
+              <details>
+                <summary>解释原始记录</summary>
+                <pre>{JSON.stringify(explanation, null, 2)}</pre>
+              </details>
+            )}
+          </details>
         )}
       </div>
     </section>

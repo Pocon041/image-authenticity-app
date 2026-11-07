@@ -15,7 +15,11 @@ import type {
 } from '../../shared/protocol'
 import type { Region } from '../../shared/protocol'
 import { validateExplanationReport } from '../../shared/protocol'
-import { sicaClassSupport, fsdClassSupport } from '../../shared/decision-confidence'
+import {
+  sicaClassSupport,
+  fsdClassSupport,
+  sicaDecisionConfidence
+} from '../../shared/decision-confidence'
 import { observeRegions, type RegionObservation } from './visual-observation'
 import { drawRegionBoundaries, BOUNDARY_NOTE } from './visual-boundary'
 import { readOllamaChat } from './ollama-stream'
@@ -23,6 +27,7 @@ import type { ExplanationProgress } from '../../shared/contracts'
 import {
   locateCandidates,
   assessOriginal,
+  describeLinkedEvidence,
   inferOperation,
   OPERATION_NAMES,
   type EvidenceAssessment
@@ -31,9 +36,16 @@ import {
   primaryExplanationRegions,
   evidenceForAssessment,
   buildNarrationFacts,
+  linkAssessment,
+  linkedExplanation,
   type NarrationCandidate
 } from './explanation-evidence'
 import { USER_EXPLANATION_SYSTEM, type UserExplanation } from './user-explanation'
+import { provenanceForVlm, provenanceNarrationFacts } from './provenance-input'
+import { releaseLocalModel } from './local-model'
+import { AppError } from '../errors'
+import { sourceConclusion } from './source-conclusion'
+import { buildEvidenceLinks } from './evidence-links'
 
 export interface ExplanationConfig {
   model: string
@@ -81,20 +93,54 @@ const SYSTEM_PROMPT = USER_EXPLANATION_SYSTEM
  * VLM给出独立定性判断和简洁区域解释；代码映射区域与证据引用。
  * 原始检测结论和技术指标保留，失败时返回明确标记的基础说明。
  */
+interface ExplanationOptions {
+  onProgress?: (progress: Omit<ExplanationProgress, 'taskId' | 'imageId'>) => void
+  signal?: AbortSignal
+  releaseModel?: boolean
+}
+
+export async function releaseConfiguredLocalModel(): Promise<void> {
+  try {
+    const config = await loadExplanationConfig()
+    await releaseLocalModel(config.host, config.model)
+  } catch (error) {
+    console.warn('准备检测时未能释放本地解释模型:', error)
+  }
+}
+
 export async function generateExplanation(
   bundle: EvidenceBundle,
   taskId: string,
   modelName?: string,
   ollamaHost?: string,
-  options?: { onProgress?: (progress: Omit<ExplanationProgress, 'taskId' | 'imageId'>) => void }
+  options?: ExplanationOptions
+): Promise<ExplanationReport> {
+  const config = await loadExplanationConfig(modelName, ollamaHost)
+  let shouldRelease = options?.releaseModel
+  try {
+    const report = await runExplanation(bundle, taskId, config, options)
+    if (report.result?.aiGenerationSource === 'credentials') shouldRelease = false
+    return report
+  } finally {
+    if (shouldRelease) await releaseLocalModel(config.host, config.model)
+  }
+}
+
+async function runExplanation(
+  bundle: EvidenceBundle,
+  taskId: string,
+  config: ExplanationConfig,
+  options?: ExplanationOptions
 ): Promise<ExplanationReport> {
   const startTime = performance.now()
   const taskDirectory = join(process.cwd(), 'work/analysis-runs', taskId)
 
   // 配置：显式参数 > 环境变量 > local（或 SRDP_EXPLANATION_CONFIG 指定的文件）> example > 内置默认。
   // 每次调用读一次，不缓存：改 JSON 后下一次分析立即生效，不用重启应用。
-  const config = await loadExplanationConfig(modelName, ollamaHost)
-  const requestSignal = AbortSignal.timeout(120000)
+  const requestSignal = options?.signal
+    ? AbortSignal.any([options.signal, AbortSignal.timeout(120000)])
+    : AbortSignal.timeout(120000)
+  options?.signal?.throwIfAborted()
   const notify = options?.onProgress
 
   // 1. 提取上游报告
@@ -107,6 +153,9 @@ export async function generateExplanation(
   )
   const aigcReport = upstreamReports.find(
     (report): report is AigcReport => report.moduleId === 'aigc'
+  )
+  const visibleOcr = asRecord(
+    asRecord(provenanceReport?.result?.watermark?.details?.detectors).visible
   )
 
   // 上游事实用于追溯，不固定模型的综合判断。
@@ -125,24 +174,27 @@ export async function generateExplanation(
     allRegions.filter((region) => regionEvidenceIds(region, manipulationReport).length > 0)
   )
   const aliases = selectedRegions.map((_, index) => String.fromCharCode(65 + index))
+  const sourceAnswer = sourceConclusion(provenanceReport, aigcReport)
 
   // 同一张原图上的预测外轮廓与简洁JSON。
-  const { images, references, original } = await prepareImages(
-    bundle,
-    taskDirectory,
-    config.maxImages,
-    selectedRegions
-  )
+  const { images, references, original } = sourceAnswer
+    ? { images: [], references: [], original: undefined }
+    : await prepareImages(bundle, taskDirectory, config.maxImages, selectedRegions)
   console.log(`[explanation-images] maxImages=${config.maxImages} sent=${images.length}`)
-  notify?.({ phase: 'observing', label: '正在对应预测区域与原图位置' })
-  const visualGuidance = await locateCandidates({
-    images,
-    count: selectedRegions.length,
-    regions: selectedRegions.map((region) => region.bboxXYWH),
-    config,
-    signal: requestSignal
+  notify?.({
+    phase: 'observing',
+    label: sourceAnswer ? '正在整理来源凭证与AI检测结果' : '正在对应预测区域与原图位置'
   })
-  if (selectedRegions.length)
+  const visualGuidance = sourceAnswer
+    ? { status: 'skipped', focusIndex: null, raw: null }
+    : await locateCandidates({
+        images,
+        count: selectedRegions.length,
+        regions: selectedRegions.map((region) => region.bboxXYWH),
+        config,
+        signal: requestSignal
+      })
+  if (!sourceAnswer && selectedRegions.length)
     notify?.({
       phase: 'observing',
       label: `正在查看 ${selectedRegions.length} 处候选的未标记原始内容`
@@ -157,6 +209,7 @@ export async function generateExplanation(
         host: config.host,
         numCtx: config.numCtx,
         maxImages: config.maxImages,
+        ocrTexts: visibleOcr.status === 'completed' ? visibleOcr.recognizedTexts : undefined,
         signal: requestSignal
       })
     : []
@@ -182,39 +235,46 @@ export async function generateExplanation(
     regions: []
   }
   let mode: 'local' | 'mock' = 'local'
-  let producerName = `ollama:${config.model}`
+  let producerName = sourceAnswer ? 'verified-source-summary' : `ollama:${config.model}`
   let errorMsg: string | null = null
   const rawJudgements: unknown[] = []
   const rawNarratives: unknown[] = []
 
   try {
-    answer = await generateAnalysis(
-      prompt,
-      config,
-      aliases,
-      rawJudgements,
-      requestSignal,
-      notify,
-      rawNarratives,
-      selectedRegions.map((region, index) => ({
-        regionId: aliases[index],
-        location: regionPosition(region, bundle.image.width, bundle.image.height),
-        observedContent: observations[index]?.text ?? null,
-        confidence: region.confidence,
-        context: observations[index]?.context ?? null,
-        visibleText: observations[index]?.visibleText ?? null,
-        detector: typeof region.detector === 'string' ? region.detector : undefined
-      })),
-      original,
-      visualGuidance.focusIndex
-    )
+    answer =
+      sourceAnswer ??
+      (await generateAnalysis(
+        prompt,
+        config,
+        aliases,
+        rawJudgements,
+        requestSignal,
+        notify,
+        rawNarratives,
+        selectedRegions.map((region, index) => ({
+          regionId: aliases[index],
+          sourceRegionId: region.regionId,
+          location: regionPosition(region, bundle.image.width, bundle.image.height),
+          observedContent: observations[index]?.text ?? null,
+          confidence: region.confidence,
+          context: observations[index]?.context ?? null,
+          contextSource: observations[index]?.contextSource,
+          nearbyText: observations[index]?.nearbyText,
+          visibleText: observations[index]?.visibleText ?? null,
+          detector: typeof region.detector === 'string' ? region.detector : undefined
+        })),
+        original,
+        visualGuidance.focusIndex
+      ))
   } catch (error) {
+    if (options?.signal?.aborted) throw new AppError('CANCELLED', '已停止生成说明。')
     console.warn('VLM 调用或校验失败，降级为规则模板:', error)
     mode = 'mock'
     producerName = 'template-fallback'
     errorMsg = error instanceof Error ? error.message : String(error)
   }
 
+  if (options?.signal?.aborted) throw new AppError('CANCELLED', '已停止生成说明。')
   const regionAnalyses = answer.regions.map((region) => {
     const source = selectedRegions[aliases.indexOf(region.regionId)]
     return {
@@ -222,13 +282,23 @@ export async function generateExplanation(
       location: region.location || regionPosition(source, bundle.image.width, bundle.image.height),
       regionId: source.regionId,
       evidenceIds: regionEvidenceIds(source, manipulationReport),
-      operationSource: 'vlm_hypothesis' as const
+      ...(region.suspectedOperation && region.suspectedOperation !== OPERATION_NAMES.unknown
+        ? { operationSource: 'vlm_hypothesis' as const }
+        : {})
     }
   })
 
   const result: ExplanationResult = {
     finalDecision: answer.finalDecision,
-    decisionSource: mode === 'local' && !answer.extractionFailed ? 'vlm' : 'rule_fallback',
+    ...(answer.aiGeneration ? { aiGeneration: answer.aiGeneration } : {}),
+    ...(answer.aiGenerationSource ? { aiGenerationSource: answer.aiGenerationSource } : {}),
+    ...(answer.localManipulation ? { localManipulation: answer.localManipulation } : {}),
+    evidenceLinks: buildEvidenceLinks(manipulationReport, aigcReport, provenanceReport),
+    decisionSource: sourceAnswer
+      ? 'evidence_fusion'
+      : mode === 'local' && !answer.extractionFailed
+        ? (answer.decisionSource ?? 'vlm')
+        : 'rule_fallback',
     upstreamDecision,
     confidence: UNAVAILABLE_CONFIDENCE,
     analysis: answer.summary,
@@ -247,7 +317,7 @@ export async function generateExplanation(
     bundle,
     taskId,
     result,
-    producerName,
+    answer.narrationSource === 'evidence_records' ? 'linked-evidence-summary' : producerName,
     mode,
     startTime,
     upstreamReports,
@@ -255,31 +325,59 @@ export async function generateExplanation(
   )
   report.extensions = {
     visualObservations: observations,
-    pipeline: 'contour_guidance_unmarked_observation_original_assessment_then_narration',
+    pipeline: sourceAnswer
+      ? 'verified_source_record_summary'
+      : answer.narrationSource === 'evidence_records'
+        ? 'linked_evidence_with_visual_context'
+        : 'contour_guidance_unmarked_observation_original_assessment_then_narration',
     visualGuidance,
     assessment: answer.assessment,
     narrationFacts: answer.narrationFacts,
     regionSelection: {
       strategy: 'primary_per_localizer_by_area',
       totalCount: allRegions.length,
-      presentedCount: selectedRegions.length
+      presentedCount: sourceAnswer ? 0 : selectedRegions.length
     },
     rawJudgements,
     rawNarratives,
-    structuredExtraction: answer.methodExtractionFailed
-      ? 'failed'
-      : mode === 'local'
-        ? 'completed'
-        : 'not_run',
+    structuredExtraction:
+      sourceAnswer || answer.narrationSource === 'evidence_records'
+        ? 'not_run'
+        : answer.methodExtractionFailed
+          ? 'failed'
+          : mode === 'local'
+            ? 'completed'
+            : 'not_run',
     inputPresentation: {
-      type: selectedRegions.length ? 'predicted_region_outer_contours' : 'full_image',
+      type: sourceAnswer
+        ? 'source_records'
+        : selectedRegions.length
+          ? 'predicted_region_outer_contours'
+          : 'full_image',
       imageCount: images.length,
-      regionCount: selectedRegions.length,
-      annotationAddedBy: 'app',
-      forStage: 'visual_guidance',
-      assessment: { type: 'unmarked_original', imageCount: original ? 1 : 0 },
-      observation: { type: 'original_scene_with_unmarked_context_crops' },
-      narration: { type: 'text_only_evidence', imageCount: 0 }
+      regionCount: sourceAnswer ? 0 : selectedRegions.length,
+      annotationAddedBy: sourceAnswer ? null : 'app',
+      forStage: sourceAnswer ? 'source_records' : 'visual_guidance',
+      assessment: {
+        type: sourceAnswer
+          ? 'source_records'
+          : answer.narrationSource === 'evidence_records'
+            ? 'linked_detection_records'
+            : 'unmarked_original',
+        imageCount:
+          sourceAnswer || answer.narrationSource === 'evidence_records' ? 0 : original ? 1 : 0
+      },
+      observation: {
+        type: sourceAnswer ? 'not_run' : 'unmarked_region_and_document_context'
+      },
+      narration: {
+        type: sourceAnswer
+          ? 'source_record_summary'
+          : answer.narrationSource === 'evidence_records'
+            ? 'linked_evidence_summary'
+            : 'text_only_evidence',
+        imageCount: 0
+      }
     }
   }
 
@@ -672,12 +770,7 @@ function buildClaims(
   if (metadataEvidence) {
     const details = asRecord(provenance?.result?.metadata?.details)
     const format = asString(details.format) ?? '未知'
-    const fields = asRecord(asRecord(details.xmp).fields)
-    const creatorToolValue = fields['xmp:CreatorTool']
-    const creatorTool =
-      Array.isArray(creatorToolValue) && typeof creatorToolValue[0] === 'string'
-        ? creatorToolValue[0]
-        : null
+    const creatorTool = asRecord(provenanceForVlm(provenance).metadata).creatorTool
     push('provenance', {
       text: `图像元数据格式为 ${format}，EXIF=${details.hasExif === true ? '有' : '无'}、XMP=${
         details.hasXmp === true ? '有' : '无'
@@ -689,10 +782,10 @@ function buildClaims(
   // C2PA 凭证
   const c2paEvidence = findEvidence(provenance, 'c2pa_manifest_presence')
   if (c2paEvidence) {
-    const details = asRecord(provenance?.result?.credentials?.details)
-    const outcome = asString(details.outcome) ?? '未知'
+    const source = provenanceForVlm(provenance)
+    const outcome = asRecord(provenance?.result?.credentials?.details).outcome ?? '未知'
     push('provenance', {
-      text: `C2PA 凭证检查结果为 ${outcome}；未发现嵌入清单不排除外部凭证，签名也未在本地验证。`,
+      text: `C2PA 凭证检查结果为 ${outcome}。${provenanceNarrationFacts({ credentials: source.credentials }).join(' ')}`,
       evidenceIds: [c2paEvidence.evidenceId]
     })
   }
@@ -738,7 +831,7 @@ function buildUnresolved(
   }
 
   const unfinished = getDetectors(manipulation)
-    .filter((detector) => typeof detector.status === 'string' && detector.status !== 'completed')
+    .filter((detector) => detector.status === 'failed')
     .map((detector) => String(detector.backend))
   if (unfinished.length > 0) {
     items.push(`以下检测器未完成：${unfinished.join('、')}。`)
@@ -751,7 +844,11 @@ function buildUnresolved(
   }
 
   if (asString(asRecord(provenance?.result?.credentials?.details).outcome)) {
-    items.push('C2PA 签名未在本地完成验证，未发现清单不排除外部凭证。')
+    const credentials = asRecord(provenanceForVlm(provenance).credentials)
+    if (asRecord(provenance?.result?.credentials?.details).outcome === 'manifest_container_found') {
+      if (credentials.verification !== '本地凭证验证通过')
+        items.push(`C2PA：${credentials.verification}。`)
+    } else items.push('未发现内嵌来源凭证。')
   }
   if (asString(asRecord(provenance?.result?.watermark?.details).outcome)) {
     items.push('水印与元数据的“未命中/缺失”不等于图像真实或被剥离。')
@@ -788,6 +885,10 @@ function buildPrompt(
       ? {
           value: Number(record.value.toFixed(4)),
           meaning: record.description,
+          source: record.source,
+          target: record.target,
+          calibrated: false,
+          comparableAcrossModels: false,
           ...(supports ? { supports } : {})
         }
       : null
@@ -796,6 +897,7 @@ function buildPrompt(
     {
       model: 'SICA',
       task: '通用整图真实性分类',
+      scope: 'whole_image',
       finding:
         classification.predictedClass === 'real'
           ? '通用伪造筛查未报警'
@@ -804,6 +906,7 @@ function buildPrompt(
             : '本轮未运行或未完成',
       score: sicaScore,
       threshold: classification.threshold ?? null,
+      decisionConfidence: sicaDecisionConfidence(sicaScore, classification.threshold),
       support: support(
         sicaClassSupport(sicaScore, classification.predictedClass),
         classification.predictedClass === 'real' ? '通用伪造筛查未报警' : '整图存在可疑线索'
@@ -812,6 +915,7 @@ function buildPrompt(
     {
       model: 'FSD',
       task: 'AI生成分类',
+      scope: 'whole_image',
       finding:
         aigc?.result?.decision === 'non_ai'
           ? '未检出AI生成线索'
@@ -837,6 +941,7 @@ function buildPrompt(
     models.push({
       model: backend === 'rita' ? 'RITA' : 'RiSE',
       task: backend === 'rita' ? '照片局部篡改定位' : '文档局部篡改定位',
+      scope: 'localized_regions',
       finding: detector?.status === 'completed' ? '已标记的局部异常候选' : '本轮未运行或未完成',
       regionCount: result.regionCount ?? null,
       support: support(result.confidence),
@@ -849,35 +954,27 @@ function buildPrompt(
       }))
     })
   }
+  const unavailableModels = getDetectors(manipulation)
+    .filter((detector) => detector.status === 'failed')
+    .map((detector) => ({
+      model: detector.backend,
+      status: 'failed',
+      code: asRecord(detector.error).code
+    }))
   return JSON.stringify({
     images: images.map((image) => ({ index: image.index, role: image.role })),
     annotation: { type: 'predicted_region_outer_contours', color: '青色', note: BOUNDARY_NOTE },
     imageRelationship:
       '所有图片和局部观察来自同一张待分析输入，没有编辑前参考图；裁剪仅用于看清内容',
-    models,
-    provenance: {
-      metadata: {
-        format: provenance?.result?.metadata?.details?.format ?? null,
-        creatorTool:
-          asRecord(asRecord(provenance?.result?.metadata?.details?.xmp).fields)[
-            'xmp:CreatorTool'
-          ] ?? null
-      },
-      credentials: {
-        outcome: provenance?.result?.credentials?.details?.outcome ?? null
-      },
-      watermark: {
-        outcome:
-          provenance?.result?.watermark?.details?.combinedOutcome ??
-          provenance?.result?.watermark?.details?.outcome ??
-          null
-      }
-    },
+    models: models.filter((model) => model.finding !== '本轮未运行或未完成'),
+    evidenceLinks: buildEvidenceLinks(manipulation, aigc, provenance),
+    ...(unavailableModels.length ? { unavailableModels } : {}),
+    provenance: provenanceForVlm(provenance),
     observationSource: '局部观察来自未加标记的原始局部像素，只描述内容，不代表异常已经证实。',
     disagreements,
     evidenceScope:
       '整图筛查、AI生成和局部编辑是不同任务；支持度说明各自结论，综合时结合局部标记与可见内容。',
-    supportMeaning: '支持度描述模型对当前类别或标记像素的响应强度，非正确率'
+    supportMeaning: '支持度描述模型对当前类别或标记像素的响应强度，非正确率，不跨模型按数值大小排名'
   })
 }
 
@@ -902,25 +999,61 @@ async function generateAnalysis(
 ): Promise<UserExplanation> {
   notify?.({ phase: 'synthesizing', label: '正在核对未标记原图与真实检测证据', text: '' })
   const evidence = { ...evidenceForAssessment(prompt, candidates), visualFocusHintIndex }
-  const assessment = await assessOriginal({
-    original,
-    evidence,
-    count: candidates.length,
-    config,
-    signal: requestSignal,
-    rawJudgements
-  })
+  const links = JSON.parse(prompt).evidenceLinks ?? []
+  const linkedAssessment = linkAssessment(null, links, candidates)
+  const assessment =
+    linkedAssessment.decisionSource === 'evidence_fusion'
+      ? linkedAssessment
+      : await assessOriginal({
+          original,
+          evidence,
+          count: candidates.length,
+          config,
+          signal: requestSignal,
+          rawJudgements
+        })
   const focus = assessment.focusIndex === null ? undefined : candidates[assessment.focusIndex - 1]
+  const subject = (focus?.context || focus?.observedContent || '')
+    .trim()
+    .replace(/[。！!？?，,；;]+$/u, '')
   assessment.targetDescription = focus
     ? [
-        focus.location,
-        focus.context || focus.observedContent,
-        focus.visibleText ? `“${focus.visibleText}”` : null
+        subject ? `${focus.location}的${subject}` : focus.location,
+        focus.visibleText &&
+        !(focus.context || focus.observedContent || '').includes(focus.visibleText)
+          ? `“${focus.visibleText}”`
+          : null
       ]
         .filter(Boolean)
         .join('，')
     : ''
-  if (focus && assessment.decision !== 'no_anomaly_detected') {
+  let linkedDescription: Awaited<ReturnType<typeof describeLinkedEvidence>> = null
+  if (focus && assessment.decisionSource === 'evidence_fusion') {
+    linkedDescription = await describeLinkedEvidence({
+      original,
+      target: assessment.targetDescription,
+      evidence: { ...evidence, candidate: candidates[assessment.focusIndex! - 1] },
+      config,
+      signal: requestSignal,
+      rawJudgements
+    })
+    if (linkedDescription) {
+      assessment.targetDescription = `${focus.location}的${linkedDescription.subject}`
+      assessment.operation = linkedDescription.operation
+      assessment.operationReason = linkedDescription.operationReason
+    }
+  }
+  if (
+    focus &&
+    assessment.decision !== 'no_anomaly_detected' &&
+    assessment.decisionSource !== 'evidence_fusion' &&
+    !links.some(
+      (link: { relation: string; question: string; models: string[] }) =>
+        link.relation === 'different_tasks' &&
+        link.question === 'ai_generation' &&
+        link.models.includes('aigc')
+    )
+  ) {
     notify?.({ phase: 'synthesizing', label: '正在比较复制移动、拼接和移除修复三类方式' })
     Object.assign(
       assessment,
@@ -945,6 +1078,16 @@ async function generateAnalysis(
     candidates,
     assessment
   })
+  const linked = linkedExplanation(assessment, links, candidates)
+  if (linked) {
+    notify?.({
+      phase: 'synthesizing',
+      label: '正在汇总相互印证的筛查与定位证据',
+      text: linked.summary,
+      decision: linked.finalDecision
+    })
+    return { ...linked, narrationFacts: facts }
+  }
   const selectedFocus =
     assessment.focusIndex === null ? undefined : candidates[assessment.focusIndex - 1]
   const lead = buildLead(assessment, selectedFocus)
@@ -1081,6 +1224,12 @@ async function generateAnalysis(
 }
 
 function buildLead(assessment: EvidenceAssessment, focus: NarrationCandidate | undefined): string {
+  if (!focus) {
+    if (assessment.decision === 'no_anomaly_detected') return '目前没有发现明确的异常线索。'
+    if (assessment.decision === 'inconclusive')
+      return '现有检查结果暂不能形成明确判断，具体依据见下文。'
+    return '当前检查发现了值得关注的图像异常线索，主要依据见下文。'
+  }
   const target =
     assessment.targetDescription || focus?.context || focus?.observedContent || '图中被定位的位置'
   const method =
@@ -1096,9 +1245,23 @@ function buildLead(assessment: EvidenceAssessment, focus: NarrationCandidate | u
 
 function regionPosition(region: Region, width: number, height: number): string {
   const [x, y, w, h] = region.bboxXYWH
-  const horizontal = x + w / 2 < width / 3 ? '左侧' : x + w / 2 > (width * 2) / 3 ? '右侧' : '中部'
-  const vertical = y + h / 2 < height / 3 ? '上方' : y + h / 2 > (height * 2) / 3 ? '下方' : ''
-  return `图片${horizontal}${vertical}`
+  const horizontal =
+    w >= (width * 2) / 3
+      ? ''
+      : x + w / 2 < width / 3
+        ? '左侧'
+        : x + w / 2 > (width * 2) / 3
+          ? '右侧'
+          : '中部'
+  const vertical =
+    h >= (height * 2) / 3
+      ? ''
+      : y + h / 2 < height / 3
+        ? '上方'
+        : y + h / 2 > (height * 2) / 3
+          ? '下方'
+          : ''
+  return `图片${horizontal || vertical ? horizontal + vertical : w >= (width * 2) / 3 && h >= (height * 2) / 3 ? '大部分区域' : '中部'}`
 }
 
 // --- 低层工具 ---

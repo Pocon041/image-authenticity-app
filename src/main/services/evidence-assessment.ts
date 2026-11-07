@@ -16,6 +16,13 @@ export const OPERATION_NAMES = {
 } as const
 export interface EvidenceAssessment {
   decision: FinalDecision
+  aiGeneration?: 'supported' | 'not_detected' | 'uncertain'
+  aiReason?: string
+  localManipulation?: 'supported' | 'not_detected' | 'uncertain'
+  decisionSource?: 'vlm' | 'evidence_fusion'
+  visualDecision?: FinalDecision
+  visualReason?: string
+  decisionReason?: string
   focusIndex: number | null
   targetDescription: string
   operation: keyof typeof OPERATION_NAMES
@@ -104,7 +111,7 @@ export async function assessOriginal(args: {
       {
         role: 'system',
         content:
-          '这是未添加系统标记的待分析原图。依据原图与各检测器结果作初步判断：存在可疑线索表示值得核查，并不表示已证实；未发现明显异常表示没有值得关注的检测线索；暂不能确定表示检查结果矛盾。整图筛查与AI生成检测是不同任务，未报警不排除局部修改。定位响应不是正确率。选择优先核查的位置编号，没有可对应对象则null。'
+          '结合未标记原图、实际检测和evidenceLinks作判断，返回存在可疑线索、未发现明显异常或暂不能确定，并选择重点局部编号，无重点填null。reason简述已有依据，不改写检测器实际结果。SICA是覆盖AI生成与局部编辑等类型的通用伪造筛查；FSD专门检查AI生成，non_ai不否定传统编辑。RITA/RiSE提供位置证据，局部异常可以支持图像含有局部编辑线索，不要求整张图片每处异常。支持度是各模型自身响应或阈值距离，不是正确率，不跨模型按大小排序。来源声明与图像检测结合查看，局部手法不明不等于没有篡改。'
       },
       {
         role: 'user',
@@ -116,9 +123,10 @@ export async function assessOriginal(args: {
       type: 'object',
       properties: {
         decision: { enum: Object.keys(LABELS) },
-        focusIndex: { enum: [...Array.from({ length: args.count }, (_, i) => i + 1), null] }
+        focusIndex: { enum: [...Array.from({ length: args.count }, (_, i) => i + 1), null] },
+        reason: { type: 'string', maxLength: 160 }
       },
-      required: ['decision', 'focusIndex']
+      required: ['decision', 'focusIndex', 'reason']
     },
     args.signal
   )
@@ -136,11 +144,75 @@ export async function assessOriginal(args: {
     throw new Error('原图判断的JSON结构无效')
   return {
     decision: LABELS[value.decision],
+    decisionReason: typeof value.reason === 'string' ? value.reason : '',
     focusIndex: value.focusIndex,
     targetDescription: '',
     operation: 'unknown',
     operationReason: '',
     operationEvidence: 'none'
+  }
+}
+
+export async function describeLinkedEvidence(args: {
+  original?: Buffer
+  target: string
+  evidence: unknown
+  config: ExplanationConfig
+  signal: AbortSignal
+  rawJudgements: unknown[]
+}) {
+  try {
+    const response = await request(
+      args.config,
+      [
+        {
+          role: 'system',
+          content:
+            '检测器关系已经确定图像存在需要说明的异常线索。你只负责看原图，为已定位位置给出通俗短名称，并推测可能的局部编辑方式。不要改变或否定检测器的结论，不把AI生成线索改写成局部编辑。subject只写对象或场景名称，不要写图1、图2、坐标或分析过程。没有清楚手法证据就用unknown。'
+        },
+        {
+          role: 'user',
+          content: JSON.stringify({
+            target: args.target,
+            evidence: args.evidence,
+            task: '只返回位置名称和手法假设'
+          }),
+          ...(args.original ? { images: [args.original.toString('base64')] } : {})
+        }
+      ],
+      {
+        type: 'object',
+        properties: {
+          subject: { type: 'string', maxLength: 60 },
+          operation: { enum: ['unknown', 'copy_move', 'splicing', 'removal_inpainting'] },
+          reason: { type: 'string', maxLength: 120 }
+        },
+        required: ['subject', 'operation', 'reason']
+      },
+      args.signal
+    )
+    args.rawJudgements.push({ stage: 'linked_evidence_description', ...response })
+    const value = JSON.parse(response.message?.content ?? '')
+    if (
+      response.done_reason === 'length' ||
+      typeof value.subject !== 'string' ||
+      !value.subject.trim() ||
+      !Object.hasOwn(OPERATION_NAMES, value.operation) ||
+      typeof value.reason !== 'string'
+    )
+      throw new Error('联动证据说明结构无效')
+    const rawReason = value.reason.trim()
+    const contaminated =
+      rawReason.length > 120 ||
+      /检测器关系已确定|你只负责|不要改变|不要否定|只返回位置名称/u.test(rawReason)
+    return {
+      subject: value.subject.trim().replace(/[。！!？?，,；;]+$/u, ''),
+      operation: value.operation as keyof typeof OPERATION_NAMES,
+      operationReason: contaminated ? '当前证据不足以区分具体编辑手法' : rawReason
+    }
+  } catch (error) {
+    args.rawJudgements.push({ stage: 'linked_evidence_description', error: String(error) })
+    return null
   }
 }
 

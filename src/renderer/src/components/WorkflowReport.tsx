@@ -328,10 +328,9 @@ export function WorkflowReport({
         <summary>检测详情</summary>
         {(sicaConfidence || fsdConfidence) && (
           <p data-testid="workflow-decision-confidence">
-            模型结论支持度：
-            {sicaConfidence && ` SICA ${sicaConfidence.value.toFixed(3)}`}
-            {fsdConfidence && ` FSD ${fsdConfidence.value.toFixed(3)}`}。
-            SICA为预测类别分数，FSD为AI分类阈值距离。
+            {sicaConfidence && `SICA类别响应 ${sicaConfidence.value.toFixed(3)}；`}
+            {fsdConfidence && `FSD阈值距离支持 ${fsdConfidence.value.toFixed(3)}；`}
+            定位器另报区域像素响应。不同口径的数值不作大小排名，经验可靠度尚未校准。
           </p>
         )}
         {classification && (

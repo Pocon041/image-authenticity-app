@@ -287,6 +287,13 @@
 .conversation-conclusion.inconclusive > span {
   color: #9aafcd;
 }
+.conversation-conclusion.pending {
+  background: #26313b;
+  color: #d8e5ef;
+}
+.conversation-conclusion.pending > span {
+  color: #9fb8c9;
+}
 .conversation-answer h3 {
   font-size: 13px;
   margin: 0;
