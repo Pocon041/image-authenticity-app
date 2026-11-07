@@ -83,6 +83,8 @@ export async function observeRegions(args: {
       if (!mask) throw new Error('区域缺少预测掩码')
       const maskBytes = await readFile(join(args.directory, mask.uri))
       const context = await regionContext(args.full, maskBytes, region)
+      // Record/field correspondence is meaningful for document localization only.
+      // Photo localization uses the unmarked crop; the original full image is used later for assessment.
       const withScene = region.detector === 'rise' && (args.maxImages ?? 2) >= 2
       const response = await fetch(`${args.host}/api/chat`, {
         method: 'POST',
@@ -140,7 +142,7 @@ export async function observeRegions(args: {
                 {
                   role: 'system',
                   content:
-                    '根据整图确认局部内容属于哪一条记录、哪个字段。记录填写记录的自然名称，字段填写字段的作用。只填简短名称，不抄录提问，无法辨认填null。'
+                    '图1是整图，图2是对应的原始局部。根据两张图确认局部属于哪条记录和哪个字段。记录填写自然名称，例如第二条短信、第二笔交易、退货凭证中的商品条目；绝对不要填1、2等数字编号。字段填写具体作用，例如存款时间、订单号、原价。无法确定就填null，不抄录问题。'
                 },
                 {
                   role: 'user',
@@ -148,7 +150,7 @@ export async function observeRegions(args: {
                     '局部实际读到的内容：' +
                     (content.visibleText || content.subject) +
                     '。请在这张整图中确认它所属的记录和字段。',
-                  images: [args.full.toString('base64')]
+                  images: [args.full.toString('base64'), context.bytes.toString('base64')]
                 }
               ],
               options: { temperature: 0, num_ctx: args.numCtx, num_predict: 240 }

@@ -123,7 +123,7 @@ const explanation = {
     upstreamDecision: 'inconclusive',
     confidence: { value: null, source: 'unavailable', calibrated: false },
     analysis:
-      '### 重点位置\n图片右侧的**水鸟**值得重点核查。\n\n### 分析依据\n- 局部检查集中标记了这只鸟。\n- 整图与局部检查存在分歧。',
+      '这张图片右侧的水鸟存在值得核查的局部编辑线索，可能涉及局部修改，具体手法暂不能区分。\n\n### 补充依据\n- 局部检查集中标记了这只鸟。\n- 整图与局部检查存在分歧。\n\n### 手法判断\n当前证据不足以区分具体方式。',
     evidenceBalance: '整图检查与局部检查存在差异，建议先查看标记位置。',
     primaryRegionId: 'region-A',
     regionAnalyses: [
@@ -360,7 +360,8 @@ try {
     text: '图片右侧的水鸟'
   })
   await page.getByTestId('explanation-summary').waitFor()
-  assert.equal(await page.getByTestId('explanation-summary').textContent(), '图片右侧的水鸟')
+  assert.equal(await page.getByTestId('explanation-summary').textContent(), '')
+  assert.match(await page.getByTestId('explanation-conclusion').innerText(), /图片右侧的水鸟/)
   assert.match(await page.getByTestId('explanation-conclusion').innerText(), /发现可疑线索/)
   await emitExplanation({
     taskId: 'unrelated-task',
@@ -368,7 +369,7 @@ try {
     label: 'stale',
     text: 'STALE'
   })
-  assert.equal(await page.getByTestId('explanation-summary').textContent(), '图片右侧的水鸟')
+  assert.equal(await page.getByTestId('explanation-summary').textContent(), '')
   await page.screenshot({ path: join(output, 'streaming.png'), fullPage: true })
   await desktop.evaluate(() => globalThis.__conversation.explain())
   await page.getByRole('heading', { name: '分析说明', exact: true }).waitFor()
@@ -398,7 +399,7 @@ try {
       .evaluate((node) => getComputedStyle(node).backgroundColor !== 'rgba(0, 0, 0, 0)')
   )
   assert.equal(await page.getByTestId('explanation-region').count(), 0)
-  assert.match(await page.getByTestId('explanation-summary').innerText(), /图片右侧的水鸟/)
+  assert.match(await page.getByTestId('explanation-summary').innerText(), /局部检查集中标记/)
   assert.equal(await page.locator('.conversation-activity').getAttribute('open'), null)
   assert.equal(await page.getByTestId('workflow-technical-details').getAttribute('open'), null)
   assert.ok(

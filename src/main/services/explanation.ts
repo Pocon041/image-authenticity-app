@@ -24,7 +24,8 @@ import {
   locateCandidates,
   assessOriginal,
   inferOperation,
-  OPERATION_NAMES
+  OPERATION_NAMES,
+  type EvidenceAssessment
 } from './evidence-assessment'
 import {
   primaryExplanationRegions,
@@ -231,6 +232,7 @@ export async function generateExplanation(
     upstreamDecision,
     confidence: UNAVAILABLE_CONFIDENCE,
     analysis: answer.summary,
+    lead: answer.lead,
     evidenceBalance: answer.evidenceBalance,
     regionAnalyses,
     primaryRegionId: answer.primaryRegionId
@@ -925,6 +927,11 @@ async function generateAnalysis(
       await inferOperation({
         original,
         target: assessment.targetDescription,
+        hasDuplicateEvidence:
+          candidates.filter(
+            (candidate) =>
+              candidate.observedContent && candidate.observedContent === focus.observedContent
+          ).length > 1,
         config,
         signal: requestSignal,
         rawJudgements
@@ -940,9 +947,10 @@ async function generateAnalysis(
   })
   const selectedFocus =
     assessment.focusIndex === null ? undefined : candidates[assessment.focusIndex - 1]
+  const lead = buildLead(assessment, selectedFocus)
   const writingQuestion = selectedFocus
-    ? `请按“重点位置、分析依据”两个标题组织正文，重点对象为“${assessment.targetDescription || selectedFocus.observedContent || selectedFocus.location}”。分析依据分2至3条短项目，将模型结论与支持程度、疑似篡改位置和可能方式结合解释，不新增事实，不重复综合判断。`
-    : '请按“重点位置、分析依据”两个标题组织正文，结合实际模型结论、支持程度与手法分析解释，未确定重点位置时如实说明，不新增事实。'
+    ? `首段已经写好为：“${lead}”。不要重复它，直接使用“补充依据”“手法判断”两个标题继续说明；依据分2至3条短项目，不新增事实。`
+    : `首段已经写好为：“${lead}”。不要重复它，直接使用“补充依据”“手法判断”两个标题继续说明，不新增事实。`
 
   notify?.({
     phase: 'synthesizing',
@@ -1066,9 +1074,24 @@ async function generateAnalysis(
         ]
       : [],
     methodExtractionFailed,
+    lead,
     narrationFacts: facts,
     assessment
   }
+}
+
+function buildLead(assessment: EvidenceAssessment, focus: NarrationCandidate | undefined): string {
+  const target =
+    assessment.targetDescription || focus?.context || focus?.observedContent || '图中被定位的位置'
+  const method =
+    assessment.operation === 'unknown'
+      ? '具体手法暂不能区分'
+      : `可能是${OPERATION_NAMES[assessment.operation]}`
+  if (assessment.decision === 'no_anomaly_detected')
+    return `目前没有发现明确的异常线索，${target}暂不支持确认发生了篡改。`
+  if (assessment.decision === 'inconclusive')
+    return `${target}被定位为需要重点核查的位置，${method}，但现有检查结果存在分歧，暂不能确认已经发生了篡改。`
+  return `${target}存在值得重点核查的局部异常线索，${method}；这是模型结合当前证据提出的判断，仍需要把它作为疑似篡改处理。`
 }
 
 function regionPosition(region: Region, width: number, height: number): string {

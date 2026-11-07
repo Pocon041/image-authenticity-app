@@ -270,6 +270,7 @@
   opacity: 0.9;
   overflow-wrap: anywhere;
 }
+.conclusion-lead { font-size: 13px; line-height: 1.75; font-weight: 500; }
 .conversation-conclusion.no_anomaly_detected {
   background: #1c302b;
   color: #a9d3bf;

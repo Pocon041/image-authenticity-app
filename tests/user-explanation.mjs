@@ -354,7 +354,7 @@ globalThis.fetch = async (_url, options) => {
   if (r.format?.properties?.subject)
     return jsonResponse({ subject: '一只水鸟。', visibleText: null })
   if (r.format?.properties?.operation)
-    return jsonResponse({ operation: 'copy_move', reason: '模型提出的复制移动假设。' })
+    return jsonResponse({ operation: 'unknown', reason: '无法区分', evidenceType: 'none' })
   if (r.format?.properties?.suspectedOperationQuote) {
     if (metadataFails) throw new Error('Synthetic method-only failure')
     return jsonResponse({
@@ -384,6 +384,7 @@ try {
   assert.equal(result.result.regionAnalyses[0].operationSource, 'vlm_hypothesis')
   assert.deepEqual(validateExplanationReport(result, [manipulation]), [])
   assert.equal(result.result.analysis, finalText)
+  assert.equal(typeof result.result.lead, 'string')
   assert.equal(requests.length, 6)
   const guidance = requests.find(
     (r) => r.format?.properties?.focusIndex && !r.format.properties.decision
@@ -449,8 +450,9 @@ try {
     assert.deepEqual(Buffer.from(sent[0], 'base64'), png)
     if (limit > 1) {
       const sceneRequest = requests[before + 1]
-      assert.equal(user(sceneRequest).images.length, 1)
+      assert.equal(user(sceneRequest).images.length, 2)
       assert.deepEqual(Buffer.from(user(sceneRequest).images[0], 'base64'), png)
+      assert.deepEqual(Buffer.from(user(sceneRequest).images[1], 'base64'), png)
     }
   }
   checks.push(
@@ -494,7 +496,7 @@ try {
   assert.equal(retained.result.finalDecision, 'suspicious')
   assert.equal(retained.result.decisionSource, 'vlm')
   assert.equal(retained.result.primaryRegionId, 'region-real')
-  assert.equal(retained.result.regionAnalyses[0].suspectedOperation, '复制移动')
+  assert.equal(retained.result.regionAnalyses[0].suspectedOperation, '暂不能区分')
   metadataFails = false
   verdict = '未发现明显异常'
   narrationText = '本次没有明确异常线索。'
