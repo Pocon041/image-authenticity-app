@@ -22,11 +22,15 @@ run.cmd run vlm:evaluate -- --cases work/vlm-cases.local.json
 
 可选`--model <本地标签>`、`--host <地址>`。默认host是本地Ollama，不使用在线图片检索。命令复制任务快照、保留原始检测结果，真实调用解释服务，输出至`work/vlm-evaluations/<runId>/`：
 
-- `results.json`：结果、耗时、请求数和人工参考信息。
+- `results.json`：结果、耗时、请求数、结论来源和人工参考信息。
 - `*-explanation.json`：实际解释报告及原始模型返回。
 - `*-requests.json`：实际请求，含图片base64，仅本地保存。
 
 原证据包不修改。已有explanation报告与清单reference不进入新一轮输入。模型失败/模板回退会明确记录，并使命令返回非零退出码；不把回退算作解释成功。
+
+明确且签名/文件绑定检查通过的AI来源声明走来源事实汇总路径，`decisionSource=evidence_fusion`、`aiGenerationSource=credentials`；可能有零次模型请求，这代表直接引用检测与来源记录，不计作VLM推理成功或提示词改进。该路径与普通VLM路径分别评价。
+
+筛查与定位相互支持的输入可走`linked-evidence-summary`路径：VLM只识别位置内容和推测手法，检测事实由记录汇总。它与自由正文生成分别统计；`evidenceLinks`可用于检查是否误把不同任务当分歧。既有掩码真值仅用于事后定位评价，不能进入模型或决定某个样例走哪条路径。
 
 ## 对照时固定什么
 

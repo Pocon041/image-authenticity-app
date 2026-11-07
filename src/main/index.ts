@@ -3,9 +3,10 @@ import { join } from 'node:path'
 import { registerDesktopIPC } from './ipc'
 import { RoutedAnalysisService } from './services/rita'
 import { AnalysisSession } from './services/analysis-session'
+import { releaseConfiguredLocalModel } from './services/explanation'
 
 let mainWindow: BrowserWindow | null = null
-const session = new AnalysisSession(new RoutedAnalysisService())
+const session = new AnalysisSession(new RoutedAnalysisService(), releaseConfiguredLocalModel)
 const smokeMode = process.argv.includes('--smoke-test')
 
 function createWindow(): void {
@@ -45,14 +46,23 @@ function createWindow(): void {
   }
 }
 
-app.whenReady().then(() => {
-  app.setAppUserModelId('cn.srdp.desktop')
-  registerDesktopIPC(() => mainWindow, session)
-  createWindow()
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
-  })
+const primaryInstance = smokeMode || app.requestSingleInstanceLock()
+if (!primaryInstance) app.quit()
+app.on('second-instance', () => {
+  if (mainWindow?.isMinimized()) mainWindow.restore()
+  mainWindow?.show()
+  mainWindow?.focus()
 })
+
+if (primaryInstance)
+  app.whenReady().then(() => {
+    app.setAppUserModelId('cn.srdp.desktop')
+    registerDesktopIPC(() => mainWindow, session)
+    createWindow()
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    })
+  })
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })

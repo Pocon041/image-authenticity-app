@@ -36,7 +36,7 @@ export function App() {
       <div className="page-heading">
         <div>
           <h1>从一张图片开始</h1>
-          <p>选择图片，查看可疑区域与检测报告。</p>
+          <p>保留原图，从定位与证据中看清值得关注的细节。</p>
         </div>
         {!workflow && (
           <div className="mode-badge">

@@ -1,5 +1,6 @@
 import type { DetectorResult } from '../../shared/contracts'
-import { sicaClassSupport, fsdClassSupport } from '../../shared/decision-confidence'
+import { sicaClassSupport, fsdClassSupport, sicaDecisionConfidence, fsdDecisionConfidence } from '../../shared/decision-confidence'
+import { buildEvidenceLinks } from './evidence-links'
 
 // A concise reader/VLM view. The complete v1.0 bundle remains the audit record.
 export function manipulationSummary(bundle: Record<string, any>, detectors: DetectorResult[]) {
@@ -61,6 +62,8 @@ export function manipulationSummary(bundle: Record<string, any>, detectors: Dete
     },
     status: report.extensions.executionStatus,
     decision: 'inconclusive',
+    evidenceLinks: buildEvidenceLinks(report, bundle.reports.find((r: any) => r.moduleId === 'aigc'), bundle.reports.find((r: any) => r.moduleId === 'provenance')),
+    confidencePolicy: { reliability: 'not_calibrated', comparableAcrossModels: false },
     contentType: report.result?.contentType ?? null,
     routing: report.result?.routing
       ? {
@@ -90,6 +93,7 @@ export function manipulationSummary(bundle: Record<string, any>, detectors: Dete
             score: screening.classification.score,
             threshold: screening.classification.threshold,
             confidence: sicaClassSupport(screening.classification.score, screening.classification.decision),
+            decisionConfidence: sicaDecisionConfidence(screening.classification.score, screening.classification.threshold),
             calibrated: false
           }
         : {}),
@@ -104,6 +108,7 @@ export function manipulationSummary(bundle: Record<string, any>, detectors: Dete
         zScore: aigc.aigc.zScore,
         threshold: aigc.aigc.threshold,
         confidence: fsdClassSupport(aigc.aigc.zScore, aigc.aigc.threshold, aigc.aigc.decision),
+        decisionConfidence: fsdDecisionConfidence(aigc.aigc.zScore, aigc.aigc.threshold),
         attributedSource: aigc.aigc.attributedSource,
         attributionScore: aigc.aigc.attributionScore
       } : {}),

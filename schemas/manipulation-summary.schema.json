@@ -47,6 +47,26 @@
     },
     "status": { "enum": ["completed", "partial", "failed"] },
     "decision": { "const": "inconclusive" },
+    "confidencePolicy": {
+      "type": "object", "additionalProperties": false,
+      "required": ["reliability", "comparableAcrossModels"],
+      "properties": { "reliability": { "const": "not_calibrated" }, "comparableAcrossModels": { "const": false } }
+    },
+    "evidenceLinks": {
+      "type": "array", "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["relation", "question", "models", "evidenceIds", "regionIds", "description"],
+        "properties": {
+          "relation": { "enum": ["corroborates", "different_tasks", "different_findings"] },
+          "question": { "enum": ["local_editing", "ai_generation", "image_anomaly"] },
+          "strength": { "enum": ["strong", "supporting"] },
+          "models": { "type": "array", "items": { "type": "string" }, "minItems": 2, "uniqueItems": true },
+          "evidenceIds": { "type": "array", "items": { "type": "string" }, "minItems": 1, "uniqueItems": true },
+          "regionIds": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+          "description": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
     "contentType": { "type": ["string", "null"], "enum": ["photo", "document", "unsure", null] },
     "routing": {
       "type": ["object", "null"],

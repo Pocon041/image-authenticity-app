@@ -53,6 +53,7 @@ export function provenanceForVlm(report: ProvenanceReport | undefined): Obj {
       const software = obj(action.softwareAgent)
       return compact({
         action: text(action.action),
+        digitalSourceType: text(action.digitalSourceType)?.split('/').pop(),
         softwareAgent: text(action.softwareAgent) ?? text(software.name),
         version: text(software.version)
       })
@@ -69,6 +70,9 @@ export function provenanceForVlm(report: ProvenanceReport | undefined): Obj {
       modifiedAt: text(exif.DateTime) ?? text(fields['xmp:ModifyDate'])
     }),
     credentials:
+      report.status === 'completed' &&
+      obj(result.credentials).status === 'completed' &&
+      reader.status === 'completed' &&
       credentialDetails.outcome === 'manifest_container_found'
         ? compact({
             claimGenerator:
@@ -80,6 +84,11 @@ export function provenanceForVlm(report: ProvenanceReport | undefined): Obj {
                 ? reader.aiDeclaration
                 : null,
             actions,
+            validation: compact({
+              claimSignature: text(obj(reader.validationChecks).claimSignature),
+              contentBinding: text(obj(reader.validationChecks).contentBinding),
+              signerTrust: text(obj(reader.validationChecks).signerTrust)
+            }),
             verification: credentialValidationText(state, reader)
           })
         : null,

@@ -235,19 +235,19 @@ try {
   const prompt = assessmentRequest.messages.find((m) => m.role === 'user').content
   const context = JSON.parse(prompt)
   assert.equal(narrativeRequest.messages.find((m) => m.role === 'user').images, undefined)
+  assert.equal(context.models.find((i) => i.model === 'SICA').supportLevel, '未提供')
+  assert.equal(context.models.find((i) => i.model === 'FSD').supportLevel, '未提供')
+  assert.equal(context.models.find((i) => i.model === 'RITA').regions[0].supportLevel, '未提供')
   assert.equal(
-    context.models.find((i) => i.model === 'SICA').support.value,
-    Number(sicaSupport.value.toFixed(4))
+    context.models.find((i) => i.model === 'RiSE'),
+    undefined
   )
-  const sicaInput = context.models.find((i) => i.model === 'SICA')
-  assert.deepEqual(sicaInput.decisionConfidence, sica(sicaInput.score, sicaInput.threshold))
-  assert.equal(
-    context.models.find((i) => i.model === 'FSD').support.value,
-    Number(fsdSupport.value.toFixed(4))
+  assert.ok(
+    !Object.hasOwn(
+      context.models.find((i) => i.model === 'SICA'),
+      'score'
+    )
   )
-  assert.equal(context.models.find((i) => i.model === 'RITA').regions[0].support.value, 0.88)
-  assert.equal(context.models.find((i) => i.model === 'RiSE').support, null)
-  assert.equal(context.models.find((i) => i.model === 'RiSE').finding, '本轮未运行或未完成')
   assert.ok(!prompt.includes('必须说明的限制'))
   assert.equal(report.result.finalDecision, 'suspicious')
   assert.equal(report.result.upstreamDecision, 'inconclusive')
@@ -261,7 +261,7 @@ try {
   globalThis.fetch = originalFetch
 }
 checks.push(
-  'original assessment receives native JSON confidence; narration receives only facts; detector thresholds and final numeric confidence remain unchanged'
+  'original assessment receives task-scoped qualitative support; raw detector scores stay in reports and detector thresholds and final numeric confidence remain unchanged'
 )
 console.log(
   JSON.stringify({ passed: true, checks, example: { sica: sicaSupport, fsd: fsdSupport } }, null, 2)

@@ -153,22 +153,11 @@ export function registerDesktopIPC(
         const window = requireWindow(event)
         validateId(taskId)
 
-        // 从当前会话获取历史分析报告
-        const report = session.reportForTask(taskId as string)
-        if (!report || !report.workflow?.bundle) {
-          throw new AppError('INVALID_REQUEST', '未找到该任务的证据包，请先完成联合分析。')
-        }
-
-        // 提取并断言为 EvidenceBundle
-        const bundle = report.workflow.bundle as unknown as EvidenceBundle
-
-        // 调用解释生成服务（内部已包含 Ollama 调用与模板兜底）
-        const explanation = await generateExplanation(
-          bundle,
-          taskId as string,
-          undefined,
-          undefined,
-          {
+        const explanation = await session.explain(taskId, async (report, signal) => {
+          const bundle = report.workflow!.bundle as unknown as EvidenceBundle
+          const result = await generateExplanation(bundle, taskId, undefined, undefined, {
+            signal,
+            releaseModel: true,
             onProgress(progress) {
               if (!window.isDestroyed())
                 window.webContents.send(IPC.explanationProgress, {
@@ -177,19 +166,13 @@ export function registerDesktopIPC(
                   imageId: report.imageId
                 })
             }
-          }
-        )
-        const directory = resolve(
-          app.getAppPath(),
-          'work/analysis-runs',
-          taskId as string,
-          'reports'
-        )
-        await mkdir(directory, { recursive: true })
-        await writeFile(
-          resolve(directory, 'explanation.json'),
-          JSON.stringify(explanation, null, 2)
-        )
+          })
+          signal.throwIfAborted()
+          const directory = resolve(app.getAppPath(), 'work/analysis-runs', taskId, 'reports')
+          await mkdir(directory, { recursive: true })
+          await writeFile(resolve(directory, 'explanation.json'), JSON.stringify(result, null, 2))
+          return result
+        })
 
         return { ok: true, data: explanation }
       } catch (error) {

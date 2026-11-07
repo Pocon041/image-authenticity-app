@@ -396,7 +396,7 @@ try {
   const narration = requests.find((r) => !r.format && r.messages.some((m) => m.role === 'system'))
   const observation = requests.find(
     (r) =>
-      !r.format &&
+      (!r.format || r.format?.properties?.subject) &&
       !r.messages.some((m) => m.role === 'system') &&
       !r.messages[0].content.includes('局部内容读到')
   )
@@ -410,13 +410,13 @@ try {
   )
   assert.deepEqual(
     Buffer.from(user(observation).images.at(-1), 'base64'),
-    png,
+    await sharp(png).extract({ left: 1, top: 1, width: 8, height: 8 }).png().toBuffer(),
     'The raw context crop has no artificial contour'
   )
   const context = JSON.parse(user(assessment).content)
   assert.equal(context.annotation, undefined)
   assert.equal(context.images, undefined)
-  assert.equal(context.candidates[0].support.value, 0.88)
+  assert.equal(context.candidates[0].supportLevel, '较强')
   assert.equal(context.models.find((model) => model.model === 'SICA').scope, 'whole_image')
   assert.equal(context.models.find((model) => model.model === 'RITA').scope, 'localized_regions')
   assert.ok(context.candidates[0].content.includes('一只水鸟。'))

@@ -22,7 +22,12 @@ const report = {
           signature: { issuer: 'Example Issuer' },
           aiDeclaration: 'declared_ai_generated_or_composited',
           actions: [
-            { action: 'c2pa.created', softwareAgent: { name: 'Example App', version: '1.0' } }
+            {
+              action: 'c2pa.created',
+              digitalSourceType:
+                'http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia',
+              softwareAgent: { name: 'Example App', version: '1.0' }
+            }
           ],
           validationState: 'Invalid',
           validationStatus: [{ code: 'signingCredential.untrusted' }],
@@ -65,6 +70,12 @@ assert.equal(input.metadata.creatorTool, 'Example Editor')
 assert.equal(input.credentials.claimGenerator, 'Example Generator')
 assert.equal(input.credentials.aiDeclaration, 'declared_ai_generated_or_composited')
 assert.equal(input.credentials.actions[0].softwareAgent, 'Example App')
+assert.equal(input.credentials.actions[0].digitalSourceType, 'trainedAlgorithmicMedia')
+assert.deepEqual(input.credentials.validation, {
+  claimSignature: 'passed',
+  contentBinding: 'passed',
+  signerTrust: 'untrusted'
+})
 assert.equal(input.credentials.verification, '签名和文件绑定通过；本地证书检查未全部通过')
 assert.equal(input.watermark.visibleCandidates[0].text, 'Adobe Stock')
 assert.ok(input.unavailableChecks.includes('invisible_watermark'))
@@ -97,6 +108,15 @@ assert.deepEqual(
   {}
 )
 assert.deepEqual(provenanceNarrationFacts(provenanceForVlm(undefined)), [])
+const invalidBinding = structuredClone(report)
+invalidBinding.result.credentials.details.reader.validationState = 'Invalid'
+invalidBinding.result.credentials.details.reader.validationChecks.contentBinding = 'failed'
+assert.equal(provenanceForVlm(invalidBinding).credentials.validation.contentBinding, 'failed')
+assert.equal(provenanceForVlm(invalidBinding).credentials.verification, '文件内容绑定未通过')
+const readerFailed = structuredClone(report)
+readerFailed.result.credentials.details.reader.status = 'failed'
+assert.equal(provenanceForVlm(readerFailed).credentials, undefined)
+assert.ok(provenanceForVlm(readerFailed).unavailableChecks.includes('credentials'))
 console.log(
   'Provenance VLM input: source declarations, basic validation, watermark details and unavailable states passed.'
 )

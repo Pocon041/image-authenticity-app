@@ -73,6 +73,8 @@ for (const [index, item] of cases.entries()) {
       calls: requests.length,
       mode: report.mode,
       decision: report.result.finalDecision,
+      decisionSource: report.result.decisionSource,
+      aiGenerationSource: report.result.aiGenerationSource,
       lead: report.result.lead,
       analysis: report.result.analysis,
       reference: item.reference ?? null

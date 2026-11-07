@@ -16,6 +16,12 @@ export const OPERATION_NAMES = {
 } as const
 export interface EvidenceAssessment {
   decision: FinalDecision
+  aiGeneration?: 'supported' | 'not_detected' | 'uncertain'
+  aiReason?: string
+  localManipulation?: 'supported' | 'not_detected' | 'uncertain'
+  decisionSource?: 'vlm' | 'evidence_fusion'
+  visualDecision?: FinalDecision
+  visualReason?: string
   decisionReason?: string
   focusIndex: number | null
   targetDescription: string
@@ -105,7 +111,7 @@ export async function assessOriginal(args: {
       {
         role: 'system',
         content:
-          '结合未标记原图、各检测器结果和来源线索作综合判断，返回存在可疑线索、未发现明显异常或暂不能确定，并选择重点位置编号，无重点位置填null。reason用一两句话指出本次判断采用的已有证据，保留检测器或来源记录名称。SICA和FSD的scope=whole_image只评价整张图片；RITA和RiSE的scope=localized_regions只表示局部定位，不能把整图分类结果当作某个区域的结论，也不能把局部响应当作整图概率。支持度表示各模型对自身结果的支持程度。来源凭证的生成工具、AI声明和编辑记录参与判断，verification说明实际校验情况；输入只列已有来源线索，不代表完整编辑历史。'
+          '结合未标记原图、实际检测和evidenceLinks作判断，返回存在可疑线索、未发现明显异常或暂不能确定，并选择重点局部编号，无重点填null。reason简述已有依据，不改写检测器实际结果。SICA是覆盖AI生成与局部编辑等类型的通用伪造筛查；FSD专门检查AI生成，non_ai不否定传统编辑。RITA/RiSE提供位置证据，局部异常可以支持图像含有局部编辑线索，不要求整张图片每处异常。支持度是各模型自身响应或阈值距离，不是正确率，不跨模型按大小排序。来源声明与图像检测结合查看，局部手法不明不等于没有篡改。'
       },
       {
         role: 'user',
@@ -144,6 +150,69 @@ export async function assessOriginal(args: {
     operation: 'unknown',
     operationReason: '',
     operationEvidence: 'none'
+  }
+}
+
+export async function describeLinkedEvidence(args: {
+  original?: Buffer
+  target: string
+  evidence: unknown
+  config: ExplanationConfig
+  signal: AbortSignal
+  rawJudgements: unknown[]
+}) {
+  try {
+    const response = await request(
+      args.config,
+      [
+        {
+          role: 'system',
+          content:
+            '检测器关系已经确定图像存在需要说明的异常线索。你只负责看原图，为已定位位置给出通俗短名称，并推测可能的局部编辑方式。不要改变或否定检测器的结论，不把AI生成线索改写成局部编辑。subject只写对象或场景名称，不要写图1、图2、坐标或分析过程。没有清楚手法证据就用unknown。'
+        },
+        {
+          role: 'user',
+          content: JSON.stringify({
+            target: args.target,
+            evidence: args.evidence,
+            task: '只返回位置名称和手法假设'
+          }),
+          ...(args.original ? { images: [args.original.toString('base64')] } : {})
+        }
+      ],
+      {
+        type: 'object',
+        properties: {
+          subject: { type: 'string', maxLength: 60 },
+          operation: { enum: ['unknown', 'copy_move', 'splicing', 'removal_inpainting'] },
+          reason: { type: 'string', maxLength: 120 }
+        },
+        required: ['subject', 'operation', 'reason']
+      },
+      args.signal
+    )
+    args.rawJudgements.push({ stage: 'linked_evidence_description', ...response })
+    const value = JSON.parse(response.message?.content ?? '')
+    if (
+      response.done_reason === 'length' ||
+      typeof value.subject !== 'string' ||
+      !value.subject.trim() ||
+      !Object.hasOwn(OPERATION_NAMES, value.operation) ||
+      typeof value.reason !== 'string'
+    )
+      throw new Error('联动证据说明结构无效')
+    const rawReason = value.reason.trim()
+    const contaminated =
+      rawReason.length > 120 ||
+      /检测器关系已确定|你只负责|不要改变|不要否定|只返回位置名称/u.test(rawReason)
+    return {
+      subject: value.subject.trim().replace(/[。！!？?，,；;]+$/u, ''),
+      operation: value.operation as keyof typeof OPERATION_NAMES,
+      operationReason: contaminated ? '当前证据不足以区分具体编辑手法' : rawReason
+    }
+  } catch (error) {
+    args.rawJudgements.push({ stage: 'linked_evidence_description', error: String(error) })
+    return null
   }
 }
 

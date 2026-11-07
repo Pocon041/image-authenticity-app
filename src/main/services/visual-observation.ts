@@ -11,6 +11,8 @@ export interface RegionObservation {
   finishReason?: string
   error?: string
   contextBBoxXYWH?: [number, number, number, number]
+  observationBBoxXYWH?: [number, number, number, number]
+  observationStrategy?: 'predicted_region_crop' | 'context_crop'
   inputImageCount?: number
   requestImageCounts?: number[]
   presentation?: 'unmarked_context_crop'
@@ -48,7 +50,7 @@ export async function regionContext(full: Buffer, mask: Buffer, region: Region) 
   const [x, y, w, h] = region.bboxXYWH
   if (x < 0 || y < 0 || w < 1 || h < 1 || x + w > info.width || y + h > info.height)
     throw new Error('区域超出图片范围')
-  const padding = Math.max(16, Math.round(Math.max(w, h) * 0.2))
+  const padding = region.detector === 'rita' ? 0 : Math.max(16, Math.round(Math.max(w, h) * 0.2))
   const left = Math.max(0, x - padding),
     top = Math.max(0, y - padding)
   const width = Math.min(info.width, x + w + padding) - left,
@@ -87,6 +89,7 @@ export async function observeRegions(args: {
       if (!mask) throw new Error('区域缺少预测掩码')
       const maskBytes = await readFile(join(args.directory, mask.uri))
       const context = await regionContext(args.full, maskBytes, region)
+      const observationImages = [context.bytes]
       // Record/field correspondence is meaningful for document localization only.
       // Photo localization uses the unmarked crop; the original full image is used later for assessment.
       const withScene = region.detector === 'rise' && (args.maxImages ?? 2) >= 2
@@ -98,11 +101,24 @@ export async function observeRegions(args: {
           messages: [
             {
               role: 'user',
-              content: '这张局部图片主要是什么？用简短的通俗称呼回答；有文字时读出能看清的原文。',
-              images: [context.bytes.toString('base64')]
+              content:
+                region.detector === 'rita'
+                  ? '图中是什么？只写对象或景物的简短名称。'
+                  : '这张局部图片主要是什么？用简短的通俗称呼回答；有文字时读出能看清的原文。',
+              images: observationImages.map((bytes) => bytes.toString('base64'))
             }
           ],
           stream: false,
+          ...(region.detector === 'rita'
+            ? {
+                format: {
+                  type: 'object',
+                  properties: { subject: { type: 'string' } },
+                  required: ['subject'],
+                  additionalProperties: false
+                }
+              }
+            : {}),
 
           options: { temperature: 0, num_ctx: args.numCtx, num_predict: 140 }
         }),
@@ -118,10 +134,13 @@ export async function observeRegions(args: {
         !data.message.content.trim()
       )
         throw new Error('区域观察返回为空')
+      const subject =
+        region.detector === 'rita' ? JSON.parse(data.message.content).subject : data.message.content
+      if (typeof subject !== 'string' || !subject.trim()) throw new Error('区域名称返回无效')
       const content = {
         context: null as string | null,
-        subject: data.message.content as string,
-        visibleText: quotedReading(data.message.content),
+        subject,
+        visibleText: quotedReading(subject),
         record: null as string | null,
         field: null as string | null
       }
@@ -267,9 +286,11 @@ export async function observeRegions(args: {
         nearbyText: nearbyText.length ? nearbyText : undefined,
         finishReason: data.done_reason,
         contextBBoxXYWH: context.bbox,
+        observationBBoxXYWH: context.bbox,
+        observationStrategy: region.detector === 'rita' ? 'predicted_region_crop' : 'context_crop',
         presentation: 'unmarked_context_crop',
-        inputImageCount: withScene ? 2 : 1,
-        requestImageCounts: withScene ? [1, 2] : [1],
+        inputImageCount: Math.max(observationImages.length, withScene ? 2 : 1),
+        requestImageCounts: withScene ? [observationImages.length, 2] : [observationImages.length],
         rawResponse: data,
         contextResponse
       })

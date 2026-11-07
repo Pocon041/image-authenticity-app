@@ -15,7 +15,25 @@
 
 ## 当前实现：综合判断与用户解释
 
+先由`source-conclusion.ts`检查是否存在明确的AI生成/合成来源声明：报告和凭证读取均完成、为真实本地报告，且声明签名与当前文件内容绑定检查均为passed。满足时直接引用来源工具及生成声明，按实际FSD结果说明印证、不同反馈或尚无检测结果；不要求SICA报警，也不推断图中某个对象后来被编辑。本地证书信任状态独立保留，不把证书不受信任写成文件绑定失败，亦不声称证书全链验证通过。
+
+该路径不调用VLM、不进行局部语义观察，原检测报告和定位图仍保留；`producer.name=verified-source-summary`、`decisionSource=evidence_fusion`、`aiGeneration=supported`、`aiGenerationSource=credentials`记录结论来源。`localManipulation=uncertain`表示本段来源结论没有判定额外局部编辑。原三类finalDecision保留，AI来源支持映射为suspicious，界面显示具体来源结论。无明确声明、签名/绑定失败或未完成时继续下面的VLM路径，不将普通编辑软件元数据升级成生成证明。`run.cmd run test:source-conclusion`覆盖这些分支及无模型服务、取消、引用和输入不变检查。
+
 `generateExplanation(bundle, taskId, modelName?, host?)`保持原有本地/服务端入口；可选第五参数 `options.onProgress` 提供真实阶段进度及增量正文。当前把不同职责分开调用现有2B：
+
+`evidence-links.ts`先从已完成的真实报告建立关系：`corroborates`表示同一问题有相互支持的检测记录，`different_tasks`表示可以同时成立的不同任务结果，`different_findings`保留不同反馈。每条关系引用原`evidenceIds`和`regionIds`；不相加、平均或比较不同模型分数。完整关系进入解释报告与`analysis.json`，VLM只消费任务、模型和关系描述，避免长ID挤占上下文。
+
+关系问题分为`local_editing`、`ai_generation`和`image_anomaly`。存在AI生成阳性或明确AI来源时，筛查与定位的共现只关联到一般图像异常，避免将生成痕迹误当作另外发生过的局部编辑。
+
+`models`使用现有后端/模块标识：`sica`、`rita`、`rise`、`aigc`（FSD）及`provenance`（来源凭证）；实际数据关联以`evidenceIds`与`regionIds`为准，避免显示名称与模块ID混用。
+
+设计依据取自 FakeShield（ICLR 2025）的检测/解释与定位解耦思路、近期 detector–localizer–reasoner 的证据链设计，以及 ATAR/Code-in-the-Loop 取证工作流的工具事实优先原则。我们只采用流程：强检测关系由程序保留，2B VLM补充语义和手法，不引入这些工作的训练模型、额外取证模型或更大的语言模型。传统的证据融合工作也强调先保留证据可靠性与不确定性，再做决策融合；因此`strength=strong/supporting`是关系质量标记，不是跨模型概率或可校准置信度。
+
+SICA的fake与有效RITA/RiSE区域同时存在且有对应证据引用时，汇总“疑似局部篡改”的检测结论。VLM负责位置内容和手法推测，不重复判断已完成检测是否报警或自由改写检测事实。报告以`decisionSource=evidence_fusion`、`producer=linked-evidence-summary`、`extensions.pipeline=linked_evidence_with_visual_context`区分此路径，不伪造VLM返回。FSD也为AI阳性时只说明生成线索与局部异常共存，`localManipulation=uncertain`，不据此确认另做了局部编辑。只有定位响应、没有筛查支持等情况保留视觉综合，不因单个高响应强行判定篡改。
+
+照片内容观察改用定位bbox内未修改的原像素，不再按长边大幅扩充背景；用结构化`subject`接收对象/景物的短名称。文档仍使用原上下文裁剪与记录字段关联。裁剪位置和策略写入`visualObservations.observationBBoxXYWH/observationStrategy`。位置名称对横跨大部分画面的区域使用“图片下方”等范围表达，避免只由中心点误写成小片“中部”。这些是送图和显示调整，不改变检测掩码。
+
+`analysis.json.confidencePolicy`明确经验可靠度尚未校准，原`confidence`字段保留兼容；SICA类别响应、分类阈值距离、区域像素响应分开解释，不作为跨模型投票权重或正确率。独立数据上的经验校准仍未完成，不能从几个开发样例拟合一个看似准确的百分比。新增`test:evidence-links`检查任务联动、AI与局部编辑的边界、失败/模拟输入、裁剪像素、原始输出不变及关系引用。
 
 1. 位置对应：按原报告面积顺序，每个定位器选一处有证据引用的主要候选（最多3处），生成无填色的预测外轮廓图。轮廓按真实8连通组件与bbox/areaPixels匹配，内孔不描线；只用于对应候选位置，不用于得出编辑手法。其余候选保留在上游完整报告，选择策略与数量写入extensions.regionSelection，面积不代表可疑概率。
 2. 内容观察：先读取未加线的原始局部。RiSE区域若有来源OCR框与定位区域的几何关系，先保留实际邻近文字，再用一次整图+局部请求只解释字段作用；没有几何文字时才请求整图确认记录/字段。RITA不执行文档字段对应。原始观察、record/field、nearbyText、上下文返回和可见原文均保留，不把数字编号当完整记录名，不凭空生成数字。自身任一边小于8像素的区域标记skipped，不放大后猜对象。
