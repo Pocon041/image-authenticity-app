@@ -4,6 +4,7 @@ import type { EvidenceAssessment } from './evidence-assessment'
 export interface UserExplanation {
   extractionFailed?: boolean
   methodExtractionFailed?: boolean
+  lead?: string
   narrationFacts?: string
   assessment?: EvidenceAssessment
   finalDecision: FinalDecision
@@ -21,7 +22,7 @@ export interface UserExplanation {
 }
 
 export const USER_EXPLANATION_SYSTEM =
-  '将图片分析记录转述成简洁自然的用户说明，忠实保留判断和事实，不新增分析。正文用两个标题：### 重点位置、### 分析依据。重点位置一句话说明哪条记录的哪个字段或具体对象，保留可辨认关键原文。分析依据用2至3条短项目，将模型结果、支持程度、定位和可能方式结合说明，手法以“可能”表述。不要说“候选区域”，不要复述坐标、内部编号或专业小数。'
+  '将图片分析记录转述成简洁自然的用户说明，忠实保留判断和事实，不新增分析。首段结论由程序提供，正文不重复首段。正文使用两个标题：### 补充依据、### 手法判断。补充依据用2至3条短项目，将模型结果、支持程度、定位和上下文关系结合说明；手法判断说明三类方式中哪一种更像以及依据，或说明为什么暂不能区分。不要说“候选区域”，不要复述坐标、内部编号或专业小数。'
 
 export const JUDGEMENT_SCHEMA = {
   type: 'object',

@@ -91,6 +91,12 @@ export function buildNarrationFacts(input: {
   const provenance = object(evidence.provenance)
   if (assessment) {
     lines.push(`VLM综合图像与证据后提出的可能方式：${OPERATION_NAMES[assessment.operation]}。`)
+    if (assessment.operationEvidence !== 'none')
+      lines.push(
+        `对应线索类型：${assessment.operationEvidence === 'duplicate_internal' ? '图内重复对象' : assessment.operationEvidence === 'external_boundary' ? '外部内容与边界关系' : '擦除或修复痕迹'}。`
+      )
+    if (assessment.operationReason)
+      lines.push(`模型提出该方式的理由（推测）：${assessment.operationReason}`)
   }
   const credential = object(provenance.credentials).outcome
   if (credential === 'manifest_container_found')

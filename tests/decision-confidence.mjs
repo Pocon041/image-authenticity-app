@@ -189,7 +189,7 @@ globalThis.fetch = async (url, options) => {
       operationReason: '尚不能区分具体方式'
     })
   } else if (captured.format?.properties?.operation)
-    content = JSON.stringify({ operation: 'unknown', reason: '无法区分' })
+    content = JSON.stringify({ operation: 'unknown', reason: '无法区分', evidenceType: 'none' })
   else if (captured.format?.properties?.focusIndex) content = JSON.stringify({ focusIndex: 1 })
   else if (captured.format) content = JSON.stringify({ suspectedOperationQuote: null })
   else {

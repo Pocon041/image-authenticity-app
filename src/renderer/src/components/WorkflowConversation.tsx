@@ -189,6 +189,10 @@ export function WorkflowConversation({ workspace: w }: { workspace: AnalysisWork
   const result = explanation?.mode === 'local' ? explanation.result : undefined
   const verdict =
     result?.finalDecision ?? (explainState === 'running' ? stream?.decision : undefined)
+  const answerText = String(result?.analysis ?? stream?.text ?? '')
+  const lead = String(result?.lead ?? answerText.split(/\n\s*\n/).map((text) => text.trim()).find((text) => text && !text.startsWith('#')) ?? '')
+  const detailText =
+    lead && answerText.startsWith(lead) ? answerText.slice(lead.length).trim() : answerText
   useEffect(() => {
     if (follow.current && body.current) body.current.scrollTop = body.current.scrollHeight
   }, [
@@ -345,15 +349,7 @@ export function WorkflowConversation({ workspace: w }: { workspace: AnalysisWork
                       ? '未发现明显异常线索'
                       : '暂不能确定'}
                 </strong>
-                {result?.primaryRegionId && (
-                  <p className="conclusion-target">
-                    {
-                      result.regionAnalyses?.find(
-                        (region) => region.regionId === result.primaryRegionId
-                      )?.subject
-                    }
-                  </p>
-                )}
+                {lead && <p className="conclusion-target conclusion-lead">{lead}</p>}
               </div>
             )}
             <div className="conversation-answer-heading">
@@ -362,10 +358,7 @@ export function WorkflowConversation({ workspace: w }: { workspace: AnalysisWork
               </span>
               <h3>{explainState === 'running' ? '正在撰写分析' : '分析说明'}</h3>
             </div>
-            <ResponseText
-              text={result?.analysis ?? stream?.text ?? ''}
-              streaming={explainState === 'running'}
-            />
+            <ResponseText text={detailText} streaming={explainState === 'running'} />
             {result?.evidenceBalance && (
               <p className="conversation-balance">{result.evidenceBalance}</p>
             )}

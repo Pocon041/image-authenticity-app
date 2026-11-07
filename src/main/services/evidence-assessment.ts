@@ -20,6 +20,7 @@ export interface EvidenceAssessment {
   targetDescription: string
   operation: keyof typeof OPERATION_NAMES
   operationReason: string
+  operationEvidence: 'duplicate_internal' | 'external_boundary' | 'erased_filled' | 'none'
 }
 
 async function request(
@@ -138,17 +139,19 @@ export async function assessOriginal(args: {
     focusIndex: value.focusIndex,
     targetDescription: '',
     operation: 'unknown',
-    operationReason: ''
+    operationReason: '',
+    operationEvidence: 'none'
   }
 }
 
 export async function inferOperation(args: {
   original?: Buffer
   target: string
+  hasDuplicateEvidence?: boolean
   config: ExplanationConfig
   signal: AbortSignal
   rawJudgements: unknown[]
-}): Promise<Pick<EvidenceAssessment, 'operation' | 'operationReason'>> {
+}): Promise<Pick<EvidenceAssessment, 'operation' | 'operationReason' | 'operationEvidence'>> {
   try {
     const images = [args.original]
       .filter((b): b is Buffer => !!b)
@@ -160,7 +163,7 @@ export async function inferOperation(args: {
         {
           role: 'system',
           content:
-            '推测重点位置最可能的编辑方式：copy_move是同图对象复制移动，splicing是外部内容拼接替换，removal_inpainting是擦除移除或修复填补，unknown是无法区分。图像就是待分析原图，局部描述来自同一张图，不是参考图；不能用裁剪和整图相同来判断复制移动。reason只简述可见线索，分数高低不能区分手法，没有修改前图，不虚构修改前后差异。'
+            '推测重点位置最可能的编辑方式，并同时选择证据类型。copy_move只有发现同一图像中两个相同/重复对象及其对应关系时才考虑，证据类型duplicate_internal；不能因为局部裁剪内容也出现在整图就判定复制移动。splicing只有发现外部内容与周围边界/纹理/光照不协调时才考虑，证据类型external_boundary。removal_inpainting只有发现擦除、填补、修复或重绘痕迹时才考虑，证据类型erased_filled；没有清楚证据选unknown和none。图像就是待分析原图，没有修改前图，不虚构前后差异。reason只简述可见线索，分数高低不能区分手法。'
         },
         {
           role: 'user',
@@ -176,9 +179,12 @@ export async function inferOperation(args: {
         type: 'object',
         properties: {
           operation: { enum: ['unknown', 'copy_move', 'splicing', 'removal_inpainting'] },
-          reason: { type: 'string', maxLength: 90 }
+          reason: { type: 'string', maxLength: 90 },
+          evidenceType: {
+            enum: ['duplicate_internal', 'external_boundary', 'erased_filled', 'none']
+          }
         },
-        required: ['operation', 'reason']
+        required: ['operation', 'reason', 'evidenceType']
       },
       args.signal
     )
@@ -188,12 +194,30 @@ export async function inferOperation(args: {
       raw.done_reason === 'length' ||
       typeof value.operation !== 'string' ||
       !Object.hasOwn(OPERATION_NAMES, value.operation) ||
-      typeof value.reason !== 'string'
+      typeof value.reason !== 'string' ||
+      typeof value.evidenceType !== 'string' ||
+      !['duplicate_internal', 'external_boundary', 'erased_filled', 'none'].includes(
+        value.evidenceType
+      )
     )
       throw new Error('手法分析结构无效')
-    return { operation: value.operation, operationReason: value.reason }
+    const supported =
+      (value.operation === 'copy_move' &&
+        value.evidenceType === 'duplicate_internal' &&
+        args.hasDuplicateEvidence === true) ||
+      (value.operation === 'splicing' && value.evidenceType === 'external_boundary') ||
+      (value.operation === 'removal_inpainting' && value.evidenceType === 'erased_filled')
+    return {
+      operation: supported ? value.operation : 'unknown',
+      operationReason: supported ? value.reason : '现有图像线索不足以区分具体手法',
+      operationEvidence: supported ? value.evidenceType : 'none'
+    }
   } catch (error) {
     args.rawJudgements.push({ stage: 'operation_hypothesis', error: String(error) })
-    return { operation: 'unknown', operationReason: '本次未获得完整的手法分析结果' }
+    return {
+      operation: 'unknown',
+      operationReason: '本次未获得完整的手法分析结果',
+      operationEvidence: 'none'
+    }
   }
 }
