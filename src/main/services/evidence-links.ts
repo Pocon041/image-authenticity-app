@@ -73,8 +73,15 @@ export function buildEvidenceLinks(
     .filter((r) => hits.some((d) => d.backend === r.detector))
     .map((r) => r.regionId)
   const strongRegionIds = regions
-    .filter((r) => strongHits.some((d) => d.backend === r.detector))
-    .map((r) => r.regionId)
+    .filter((region) => {
+      if (!strongHits.some((detector) => detector.backend === region.detector)) return false
+      const sameDetector = regions.filter((item) => item.detector === region.detector)
+      const hasRegionalConfidence = sameDetector.some(
+        (item) => typeof item.confidence?.value === 'number' && Number.isFinite(item.confidence.value)
+      )
+      return !hasRegionalConfidence || (region.confidence?.value ?? 0) >= 0.8
+    })
+    .map((region) => region.regionId)
   const names = hits.map((d) => (d.backend === 'rita' ? 'RITA' : 'RiSE')).join('、')
   const strongNames = strongHits.map((d) => (d.backend === 'rita' ? 'RITA' : 'RiSE')).join('、')
   if (
@@ -89,7 +96,7 @@ export function buildEvidenceLinks(
       'strong',
       ['sica', ...strongHits.map((d) => d.backend)],
       strongRegionIds,
-      `SICA检出通用伪造线索，${strongNames}以较强区域响应标出了局部异常；整图筛查与位置证据相互支持。`
+      `SICA检出通用伪造线索，${strongNames}以较强区域响应标出了${strongRegionIds.length > 1 ? `${strongRegionIds.length}处` : '一处'}局部异常；整图筛查与位置证据相互支持。`
     )
   if (decision === 'real' && hits.length)
     add(

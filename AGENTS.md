@@ -55,6 +55,11 @@
 - 依据FakeShield（ICLR 2025）的检测/解释与定位解耦、detector-localizer-reasoner证据链、ATAR/Code-in-the-Loop的工具事实优先及传统证据融合方法，新增`strength=strong/supporting`关系等级。强关系由SICA fake+定位器区域响应≥0.8+独立证据引用触发，VLM再用一次结构化调用补充对象和手法；VLM不能推翻强关系。没有达到门槛时仍走普通VLM判断，不人为放大单个定位响应。
 - 真实APP水面回归da3c448d：FSD/SICA/RITA完成，RiSE按照片路由not_run；全链路81.148s、解释10.323s、3次Ollama chat、无渲染错误。最终首段为“这张图像存在明确的局部篡改迹象，重点是图片下方的海”，报告关系为SICA+RITA强相互印证、FSD non_ai为不同任务支持；2B结构化解释的系统提示复述被程序截断为通用手法说明，未进入用户正文。截图和报告在work/evidence-link-20261108/desktop-1794081405369。
 - 后续将原始分数/阈值从普通VLM判断输入中移除，只给任务范围、结论和定性支持程度；专业小数仍保留在bundle、analysis和检测详情。`describeLinkedEvidence`增加一次结构化2B调用识别对象/手法，污染性复述会被截断为通用理由。`test:evidence-links`、`test:explanation`、`test:confidence`、`test:protocol`、workflow、build和桌面对话回归通过。
+- 花朵样例`Tp_D_CRN_M_N_pla00035_pla00033_10997.jpg`回归发现RITA实际有8个高响应区域，而旧首段只说“图片左侧下方”。现改为明确“共定位到8处异常区域，重点查看左侧下方的花”；来源报告中的`Adobe Photoshop CS Windows`作为后期处理背景补充展示，AI生成仍由FSD单独判断。手法结构化输出要求证据类型一致，冲突或英文污染时回退“具体手法尚不能区分”。实际复用快照回归输出在work/flower-regression-20261108和vlm-evaluations。
+- `test:evidence-links`新增多区域首段、代表区域去重和Photoshop元数据背景断言，防止后续只保留一个主区域或遗漏来源编辑工具。
+- 同一测试也覆盖了将 RITA 替换为 RiSE 的文档定位关系，确认强关系摘要使用 RiSE 名称和文档区域，不只在照片路线生效。
+- 强多区域关系会把最多三个代表区域送入观察阶段；花朵真实回归实际观察到“花、鱼、向日葵”三个代表区域，同时首段保留全部8处数量，普通弱关系仍只观察一个区域。
+- 强关系现在还按逐区域响应筛选引用范围：定位器整体响应高但个别区域响应不足时，只把达到门槛的区域写入strong关系，避免把弱区域误说成同等可靠。
 - 右侧解释新增简洁证据关系卡片；只显示关系质量和自然语言说明。合成对话Smoke覆盖卡片存在、强关系标签、原有结论顺序和窄窗布局，没有把内部ID暴露给用户。
 - 普通VLM上下文改为任务范围、结论和定性支持程度，原始分数/阈值仍保存在专业报告；`test:confidence`同步验证不把原始数值送进普通判断输入。真实强关系路径继续使用一次结构化2B调用识别位置和手法。
 - 新增`docs/EVIDENCE_FUSION_V01.md`作为四人共享的证据关系协议，明确模块问题边界、strong/supporting门槛、FSD/SICA/RITA关系和VLM输入输出范围；未新增模型或校准概率。

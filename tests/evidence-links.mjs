@@ -3,7 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import sharp from 'sharp'
 import { buildEvidenceLinks } from '../src/main/services/evidence-links.ts'
-import { linkAssessment } from '../src/main/services/explanation-evidence.ts'
+import { linkAssessment, linkedExplanation } from '../src/main/services/explanation-evidence.ts'
 import { regionContext } from '../src/main/services/visual-observation.ts'
 import { generateExplanation } from '../src/main/services/explanation.ts'
 import { validateExplanationReport } from '../src/shared/protocol.ts'
@@ -95,6 +95,21 @@ const aigc = {
     score: { name: 'fsd_z_score', value: 0.29678, positiveClass: 'ai_generated', calibrated: false }
   }
 }
+const provenance = {
+  ...base,
+  moduleId: 'provenance',
+  reportId: 'source-record',
+  result: {
+    preprocessing: { originalPreserved: true, displayTransform: 'exif_auto_orient_no_resize' },
+    metadata: {
+      status: 'completed',
+      details: { exif: { Software: 'Adobe Photoshop CS Windows' } }
+    },
+    credentials: { status: 'completed', details: { outcome: 'no_manifest_container_found' } },
+    watermark: { status: 'completed', details: { outcome: 'no_known_markers_found' } }
+  },
+  evidence: [evidence('metadata-evidence', 'provenance', 'image_metadata_inventory')]
+}
 const links = buildEvidenceLinks(manipulation, aigc)
 assert.ok(
   links.some((link) => link.relation === 'corroborates' && link.question === 'local_editing')
@@ -114,6 +129,39 @@ const candidates = [
 ]
 assert.equal(linkAssessment(unknownVisual, links, candidates).decision, 'suspicious')
 assert.equal(linkAssessment(unknownVisual, links, candidates).visualDecision, 'inconclusive')
+const multiLinks = structuredClone(links)
+multiLinks[0].regionIds = ['region-1', 'region-2', 'region-3']
+const multiAssessment = linkAssessment(unknownVisual, multiLinks, [
+  { regionId: 'A', sourceRegionId: 'region-1', location: '图片左侧下方', observedContent: '花' }
+])
+const multiExplanation = linkedExplanation(
+  multiAssessment,
+  multiLinks,
+  [{ regionId: 'A', sourceRegionId: 'region-1', location: '图片左侧下方', observedContent: '花' }],
+  ['文件记录的编辑工具：Adobe Photoshop CS Windows。']
+)
+assert.match(multiExplanation.lead, /共定位到3处/)
+assert.match(multiExplanation.summary, /Adobe Photoshop CS Windows/)
+const documentManipulation = structuredClone(manipulation)
+documentManipulation.result.regions[0].detector = 'rise'
+documentManipulation.result.detectors[1].backend = 'rise'
+documentManipulation.result.detectors[1].result.confidence = { value: 0.91 }
+documentManipulation.evidence.find((entry) => entry.data.detector === 'rita').data.detector = 'rise'
+const documentLinks = buildEvidenceLinks(documentManipulation, aigc)
+assert.ok(
+  documentLinks.some(
+    (link) => link.strength === 'strong' && link.models.includes('rise') && link.question === 'local_editing'
+  )
+)
+const documentAssessment = linkAssessment(unknownVisual, documentLinks, [
+  { regionId: 'A', sourceRegionId: 'water-region', location: '图片中部', observedContent: '短信时间', detector: 'rise' }
+])
+const documentExplanation = linkedExplanation(
+  documentAssessment,
+  documentLinks,
+  [{ regionId: 'A', sourceRegionId: 'water-region', location: '图片中部', observedContent: '短信时间', detector: 'rise' }]
+)
+assert.match(documentExplanation.summary, /RiSE/)
 const negative = structuredClone(manipulation)
 negative.result.detectors[0].result.classification.predictedClass = 'real'
 negative.result.detectors[0].result.score.value = 0.01
@@ -138,6 +186,17 @@ const regionalConfidence = structuredClone(manipulation)
 delete regionalConfidence.result.detectors[1].result.confidence
 regionalConfidence.result.regions[0].confidence = { value: 0.91 }
 assert.ok(buildEvidenceLinks(regionalConfidence, aigc).some((link) => link.strength === 'strong'))
+const mixedRegions = structuredClone(manipulation)
+mixedRegions.result.regions[0].confidence = { value: 0.91 }
+mixedRegions.result.regions.push({
+  ...mixedRegions.result.regions[0],
+  regionId: 'weak-region',
+  bboxXYWH: [12, 2, 2, 2],
+  confidence: { value: 0.42 }
+})
+mixedRegions.result.detectors[1].result.confidence = { value: 0.95 }
+const mixedLink = buildEvidenceLinks(mixedRegions, aigc).find((link) => link.strength === 'strong')
+assert.deepEqual(mixedLink.regionIds, ['water-region'])
 
 const crop = await regionContext(full, mask, region)
 assert.deepEqual(crop.bbox, region.bboxXYWH)
@@ -148,7 +207,7 @@ assert.deepEqual(
 
 const bundle = {
   image: { imageId: base.imageId, displayArtifactId: 'display', width: 16, height: 12 },
-  reports: [manipulation, aigc],
+  reports: [manipulation, aigc, provenance],
   artifacts: [
     {
       artifactId: 'display',
@@ -167,10 +226,10 @@ globalThis.fetch = async (_url, options) => {
   requests.push(request)
   let content
   if (request.format?.properties?.subject && request.format?.properties?.operation)
-    content = { subject: '水面', operation: 'unknown', reason: '尚不能区分' }
+    content = { subject: '水面', operation: 'unknown', evidenceType: 'none', reason: '尚不能区分' }
   else if (request.format?.properties?.subject) content = { subject: '水面' }
   else if (request.format?.properties?.operation)
-    content = { operation: 'unknown', reason: '尚不能区分', evidenceType: 'none' }
+    content = { operation: 'unknown', evidenceType: 'none', reason: '尚不能区分' }
   else if (request.format?.properties?.focusIndex && !request.format?.properties?.decision)
     content = { focusIndex: 1 }
   else throw new Error('Linked facts must not be reclassified or rewritten by a free-form model')
@@ -188,6 +247,7 @@ try {
   assert.match(report.result.lead, /存在明确的局部篡改/)
   assert.match(report.result.analysis, /SICA.*发现/)
   assert.match(report.result.analysis, /FSD未检出AI生成/)
+  assert.match(report.result.analysis, /Adobe Photoshop CS Windows/)
   assert.ok(!report.result.analysis.includes('检测器关系已确定'))
   assert.equal(report.result.confidence.value, null)
   assert.equal(report.producer.name, 'linked-evidence-summary')
