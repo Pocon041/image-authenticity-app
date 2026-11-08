@@ -50,6 +50,8 @@ export function WorkflowReport({
   const sicaConfidence = classification ? sicaClassSupport(classification.score, classification.decision) : null
   const fsdConfidence = aigc?.aigc ? fsdClassSupport(aigc.aigc.zScore, aigc.aigc.threshold, aigc.aigc.decision) : null
   const canSupplement = workflow.detectors.some((item) => item.status !== 'completed')
+  const localizationReliability = (workflow.summary as Record<string, any> | undefined)
+    ?.localizationReliability
 
   // 第四人：触发解释生成
   const handleExplain = async () => {
@@ -201,6 +203,18 @@ export function WorkflowReport({
                 ? '着色区域为模型响应，可能包含误标。切换原图核对，或查看下方区域裁剪。'
                 : '该定位器本次未标记区域，不能据此确认图片真实。'}
             </p>
+            {localizationReliability && (
+              <p className="viewer-caption" data-testid="localization-reliability">
+                定位可靠性：
+                {localizationReliability.state === 'strong'
+                  ? '较强，整图筛查与定位相互支持'
+                  : localizationReliability.state === 'supporting'
+                    ? '局部支持，整图检测尚未支持整体篡改'
+                    : localizationReliability.state === 'unstable'
+                      ? '不稳定，可能受自然纹理或局部噪声影响'
+                      : '未形成有效定位'}
+              </p>
+            )}
             {!!active.regionPreviews?.length && (
               <details className="region-details">
                 <summary>查看区域裁剪（{active.regionPreviews.length}）</summary>

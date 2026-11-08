@@ -45,7 +45,7 @@ import { provenanceForVlm, provenanceNarrationFacts } from './provenance-input'
 import { releaseLocalModel } from './local-model'
 import { AppError } from '../errors'
 import { sourceConclusion } from './source-conclusion'
-import { buildEvidenceLinks } from './evidence-links'
+import { assessLocalizationReliability, buildEvidenceLinks } from './evidence-links'
 
 export interface ExplanationConfig {
   model: string
@@ -303,6 +303,7 @@ async function runExplanation(
     ...(answer.aiGenerationSource ? { aiGenerationSource: answer.aiGenerationSource } : {}),
     ...(answer.localManipulation ? { localManipulation: answer.localManipulation } : {}),
     evidenceLinks: buildEvidenceLinks(manipulationReport, aigcReport, provenanceReport),
+    localizationReliability: assessLocalizationReliability(manipulationReport),
     decisionSource: sourceAnswer
       ? 'evidence_fusion'
       : mode === 'local' && !answer.extractionFailed
@@ -977,6 +978,7 @@ function buildPrompt(
       '所有图片和局部观察来自同一张待分析输入，没有编辑前参考图；裁剪仅用于看清内容',
     models: models.filter((model) => model.finding !== '本轮未运行或未完成'),
     evidenceLinks: buildEvidenceLinks(manipulation, aigc, provenance),
+    localizationReliability: assessLocalizationReliability(manipulation),
     ...(unavailableModels.length ? { unavailableModels } : {}),
     provenance: provenanceForVlm(provenance),
     observationSource: '局部观察来自未加标记的原始局部像素，只描述内容，不代表异常已经证实。',

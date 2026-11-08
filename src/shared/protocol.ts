@@ -175,6 +175,7 @@ export interface ExplanationResult {
   localManipulation?: 'supported' | 'not_detected' | 'uncertain'
   aiGenerationSource?: 'credentials'
   evidenceLinks?: EvidenceLink[]
+  localizationReliability?: LocalizationReliability
   confidence: Confidence
   analysis: string // minLength 1
   claims: ExplanationClaim[]
@@ -205,6 +206,16 @@ export interface EvidenceLink {
   evidenceIds: Id[]
   regionIds: Id[]
   description: string
+}
+
+export type LocalizationReliabilityState = 'strong' | 'supporting' | 'unstable' | 'none'
+
+export interface LocalizationReliability {
+  state: LocalizationReliabilityState
+  detectors: string[]
+  regionCount: number
+  strongRegionCount: number
+  reason: string
 }
 
 // ===== 模块报告 =====

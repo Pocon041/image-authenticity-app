@@ -4,7 +4,64 @@ import type {
   ProvenanceReport,
   EvidenceLink
 } from '../../shared/protocol'
+import type { LocalizationReliability } from '../../shared/protocol'
 import { verifiedAiCredential } from './source-conclusion'
+
+export function assessLocalizationReliability(
+  manipulation?: ManipulationReport
+): LocalizationReliability {
+  const result = manipulation?.result
+  const detectors = Array.isArray(result?.detectors) ? (result.detectors as Record<string, any>[]) : []
+  const regions = result?.regions ?? []
+  const localized = detectors.filter(
+    (detector) => ['rita', 'rise'].includes(detector.backend) && detector.status === 'completed'
+  )
+  const active = localized.filter((detector) => detector.result?.regionCount > 0)
+  const regionList = regions.filter((region) => active.some((detector) => detector.backend === region.detector))
+  const responseFor = (detector: Record<string, any>) => {
+    const direct = detector.result?.confidence?.value ?? detector.result?.score?.value
+    if (typeof direct === 'number' && Number.isFinite(direct)) return direct
+    const values = regionList
+      .filter((region) => region.detector === detector.backend)
+      .map((region) => region.confidence?.value)
+      .filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
+    return values.length ? Math.max(...values) : null
+  }
+  const strongDetectors = active.filter((detector) => (responseFor(detector) ?? 0) >= 0.8)
+  const strongRegionCount = regionList.filter((region) => {
+    const detector = active.find((item) => item.backend === region.detector)
+    if (!detector || !strongDetectors.includes(detector)) return false
+    const sameDetector = regionList.filter((item) => item.detector === region.detector)
+    const hasRegional = sameDetector.some((item) => typeof item.confidence?.value === 'number')
+    return !hasRegional || (region.confidence?.value ?? 0) >= 0.8
+  }).length
+  if (!active.length)
+    return { state: 'none', detectors: [], regionCount: 0, strongRegionCount: 0, reason: '本轮没有已完成的局部定位区域。' }
+  const globalDecision = detectors.find((detector) => detector.backend === 'sica')?.result?.classification?.predictedClass
+  if (globalDecision === 'fake' && strongRegionCount > 0)
+    return {
+      state: 'strong',
+      detectors: strongDetectors.map((detector) => detector.backend),
+      regionCount: regionList.length,
+      strongRegionCount,
+      reason: '整图筛查与局部定位对同一篡改问题相互支持。'
+    }
+  if (strongRegionCount > 0)
+    return {
+      state: 'supporting',
+      detectors: strongDetectors.map((detector) => detector.backend),
+      regionCount: regionList.length,
+      strongRegionCount,
+      reason: '定位器标出了较强局部响应，但整图筛查未支持整体篡改判断。'
+    }
+  return {
+    state: 'unstable',
+    detectors: active.map((detector) => detector.backend),
+    regionCount: regionList.length,
+    strongRegionCount: 0,
+    reason: '存在局部响应，但尚未达到稳定的定位支持范围。'
+  }
+}
 
 /** Connect measured findings by their question; never combine their numeric scores. */
 export function buildEvidenceLinks(
