@@ -170,8 +170,17 @@ async function runExplanation(
   )
   const disagreements = getDisagreements(manipulationReport)
   const allRegions = manipulationReport?.result?.regions ?? []
+  const fusionLinks = buildEvidenceLinks(manipulationReport, aigcReport, provenanceReport)
+  const hasStrongMultiRegionLink = fusionLinks.some(
+    (link) =>
+      link.relation === 'corroborates' &&
+      link.strength === 'strong' &&
+      (link.question === 'local_editing' || link.question === 'image_anomaly') &&
+      link.regionIds.length > 1
+  )
   const selectedRegions = primaryExplanationRegions(
-    allRegions.filter((region) => regionEvidenceIds(region, manipulationReport).length > 0)
+    allRegions.filter((region) => regionEvidenceIds(region, manipulationReport).length > 0),
+    hasStrongMultiRegionLink ? { regionsPerLocalizer: 3 } : undefined
   )
   const aliases = selectedRegions.map((_, index) => String.fromCharCode(65 + index))
   const sourceAnswer = sourceConclusion(provenanceReport, aigcReport)
@@ -1018,7 +1027,7 @@ async function generateAnalysis(
     .replace(/[。！!？?，,；;]+$/u, '')
   assessment.targetDescription = focus
     ? [
-        subject ? `${focus.location}的${subject}` : focus.location,
+        joinTarget(focus.location, subject),
         focus.visibleText &&
         !(focus.context || focus.observedContent || '').includes(focus.visibleText)
           ? `“${focus.visibleText}”`
@@ -1038,7 +1047,7 @@ async function generateAnalysis(
       rawJudgements
     })
     if (linkedDescription) {
-      assessment.targetDescription = `${focus.location}的${linkedDescription.subject}`
+      assessment.targetDescription = joinTarget(focus.location, linkedDescription.subject)
       assessment.operation = linkedDescription.operation
       assessment.operationReason = linkedDescription.operationReason
     }
@@ -1078,7 +1087,12 @@ async function generateAnalysis(
     candidates,
     assessment
   })
-  const linked = linkedExplanation(assessment, links, candidates)
+  const linked = linkedExplanation(
+    assessment,
+    links,
+    candidates,
+    provenanceNarrationFacts(evidence.provenance)
+  )
   if (linked) {
     notify?.({
       phase: 'synthesizing',
@@ -1262,6 +1276,13 @@ function regionPosition(region: Region, width: number, height: number): string {
           ? '下方'
           : ''
   return `图片${horizontal || vertical ? horizontal + vertical : w >= (width * 2) / 3 && h >= (height * 2) / 3 ? '大部分区域' : '中部'}`
+}
+
+function joinTarget(location: string, subject: string | null | undefined): string {
+  const clean = (subject ?? '').trim().replace(/[。！!？?，,；;]+$/u, '')
+  if (!clean) return location
+  if (clean.includes(location)) return clean
+  return `${location}的${clean}`
 }
 
 // --- 低层工具 ---

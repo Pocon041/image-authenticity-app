@@ -316,6 +316,10 @@ assert.deepEqual(
   primaryExplanationRegions(sampleRegions).map((r) => r.regionId),
   ['large', 'document']
 )
+assert.deepEqual(
+  primaryExplanationRegions(sampleRegions, { regionsPerLocalizer: 2 }).map((r) => r.regionId),
+  ['large', 'document', 'small']
+)
 assert.equal(sampleRegions.length, 3)
 assert.equal(sampleRegions[0].regionId, 'small')
 checks.push(

@@ -185,9 +185,12 @@ export async function describeLinkedEvidence(args: {
         properties: {
           subject: { type: 'string', maxLength: 60 },
           operation: { enum: ['unknown', 'copy_move', 'splicing', 'removal_inpainting'] },
+          evidenceType: {
+            enum: ['duplicate_internal', 'external_boundary', 'erased_filled', 'none']
+          },
           reason: { type: 'string', maxLength: 120 }
         },
-        required: ['subject', 'operation', 'reason']
+        required: ['subject', 'operation', 'evidenceType', 'reason']
       },
       args.signal
     )
@@ -201,14 +204,21 @@ export async function describeLinkedEvidence(args: {
       typeof value.reason !== 'string'
     )
       throw new Error('联动证据说明结构无效')
+    const supportedEvidence =
+      (value.operation === 'copy_move' && value.evidenceType === 'duplicate_internal') ||
+      (value.operation === 'splicing' && value.evidenceType === 'external_boundary') ||
+      (value.operation === 'removal_inpainting' && value.evidenceType === 'erased_filled')
     const rawReason = value.reason.trim()
     const contaminated =
       rawReason.length > 120 ||
+      !/[\u4e00-\u9fff]/u.test(rawReason) ||
       /检测器关系已确定|你只负责|不要改变|不要否定|只返回位置名称/u.test(rawReason)
     return {
       subject: value.subject.trim().replace(/[。！!？?，,；;]+$/u, ''),
-      operation: value.operation as keyof typeof OPERATION_NAMES,
-      operationReason: contaminated ? '当前证据不足以区分具体编辑手法' : rawReason
+      operation: supportedEvidence ? (value.operation as keyof typeof OPERATION_NAMES) : 'unknown',
+      operationReason:
+        !supportedEvidence || contaminated ? '当前证据不足以区分具体编辑手法' : rawReason,
+      operationEvidence: supportedEvidence ? value.evidenceType : 'none'
     }
   } catch (error) {
     args.rawJudgements.push({ stage: 'linked_evidence_description', error: String(error) })

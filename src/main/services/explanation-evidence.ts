@@ -15,18 +15,23 @@ export const DECISION_TEXT: Record<FinalDecision, string> = {
 }
 
 /** An explanation focus, not a tamper-probability ranking. Preserve all detector regions upstream. */
-export function primaryExplanationRegions(regions: Region[]): Region[] {
+export function primaryExplanationRegions(
+  regions: Region[],
+  options: { regionsPerLocalizer?: number } = {}
+): Region[] {
+  const regionsPerLocalizer = Math.max(1, options.regionsPerLocalizer ?? 1)
   const ranked = [...regions].sort(
     (a, b) =>
       Number(b.areaPixels ?? b.bboxXYWH[2] * b.bboxXYWH[3]) -
       Number(a.areaPixels ?? a.bboxXYWH[2] * a.bboxXYWH[3])
   )
-  const seen = new Set<unknown>()
+  const counts = new Map<unknown, number>()
   return ranked
     .filter((region) => {
       const key = region.detector ?? region.maskArtifactId ?? region.regionId
-      if (seen.has(key)) return false
-      seen.add(key)
+      const count = counts.get(key) ?? 0
+      if (count >= regionsPerLocalizer) return false
+      counts.set(key, count + 1)
       return true
     })
     .slice(0, 3)
@@ -88,7 +93,8 @@ export function linkAssessment(
 export function linkedExplanation(
   assessment: EvidenceAssessment,
   links: EvidenceLink[],
-  candidates: NarrationCandidate[]
+  candidates: NarrationCandidate[],
+  provenanceFacts: string[] = []
 ): UserExplanation | null {
   if (assessment.decisionSource !== 'evidence_fusion' || assessment.focusIndex === null) return null
   const focus = candidates[assessment.focusIndex - 1]
@@ -100,13 +106,26 @@ export function linkedExplanation(
       link.models.includes('aigc') &&
       link.relation === 'different_tasks'
   )
+  const regionCount = Math.max(
+    1,
+    links.find(
+      (link) =>
+        link.relation === 'corroborates' &&
+        (link.question === 'local_editing' || link.question === 'image_anomaly')
+    )?.regionIds.length ?? 1
+  )
   const evidenceLines = [
     '- SICA的整图筛查发现了通用伪造线索。',
-    `- ${locatingModel}将局部异常定位在${target}，与整图筛查相互支持。`,
+    `- ${locatingModel}在${regionCount > 1 ? `图中共${regionCount}处` : target}标出了局部异常${regionCount > 1 ? `，重点查看${target}` : ''}，与整图筛查相互支持。`,
     ...links
       .filter((item) => item.relation === 'different_tasks')
       .map((item) => `- ${item.description}`)
   ]
+  const photoshop = provenanceFacts.find((fact) => /文件记录的编辑工具/u.test(fact))
+  if (photoshop)
+    evidenceLines.push(
+      `- ${photoshop.replace(/[。；]+$/u, '')}；这说明文件有后期处理背景，但本身不等于AI生成。`
+    )
   const method = aiClue
     ? '本轮同时发现AI生成线索，尚不能区分整图生成、AI局部编辑或其他后期处理。'
     : assessment.operation === 'unknown'
@@ -121,7 +140,7 @@ export function linkedExplanation(
     ...(aiClue ? { aiGeneration: 'supported' as const } : {}),
     lead: aiClue
       ? `这张图像存在伪造及AI生成线索，${target}是定位模型标出的异常位置。`
-      : `这张图像存在明确的局部篡改迹象，重点是${target}。整图筛查与局部定位相互支持。`,
+      : `这张图像存在明确的局部篡改迹象，${regionCount > 1 ? `共定位到${regionCount}处异常区域，重点是${target}` : `重点是${target}`}。整图筛查与局部定位相互支持。`,
     summary,
     evidenceBalance: '',
     primaryRegionId: focus.regionId,
