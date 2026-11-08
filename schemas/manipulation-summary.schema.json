@@ -67,6 +67,17 @@
         }
       }
     },
+    "localizationReliability": {
+      "type": "object", "additionalProperties": false,
+      "required": ["state", "detectors", "regionCount", "strongRegionCount", "reason"],
+      "properties": {
+        "state": { "enum": ["strong", "supporting", "unstable", "none"] },
+        "detectors": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "regionCount": { "type": "integer", "minimum": 0 },
+        "strongRegionCount": { "type": "integer", "minimum": 0 },
+        "reason": { "type": "string", "minLength": 1 }
+      }
+    },
     "contentType": { "type": ["string", "null"], "enum": ["photo", "document", "unsure", null] },
     "routing": {
       "type": ["object", "null"],

@@ -276,6 +276,7 @@ export function evidenceForAssessment(prompt: string, candidates: NarrationCandi
           description: link.description
         }))
       : [],
+    localizationReliability: parsed.localizationReliability,
     imageRelationship: parsed.imageRelationship,
     disagreements: parsed.disagreements,
     candidates: candidates.map((c, index) => ({

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import sharp from 'sharp'
-import { buildEvidenceLinks } from '../src/main/services/evidence-links.ts'
+import { assessLocalizationReliability, buildEvidenceLinks } from '../src/main/services/evidence-links.ts'
 import { linkAssessment, linkedExplanation } from '../src/main/services/explanation-evidence.ts'
 import { regionContext } from '../src/main/services/visual-observation.ts'
 import { generateExplanation } from '../src/main/services/explanation.ts'
@@ -111,6 +111,7 @@ const provenance = {
   evidence: [evidence('metadata-evidence', 'provenance', 'image_metadata_inventory')]
 }
 const links = buildEvidenceLinks(manipulation, aigc)
+assert.equal(assessLocalizationReliability(manipulation).state, 'strong')
 assert.ok(
   links.some((link) => link.relation === 'corroborates' && link.question === 'local_editing')
 )
@@ -171,9 +172,11 @@ assert.equal(
   linkAssessment(unknownVisual, buildEvidenceLinks(negative, aigc), candidates).decision,
   'inconclusive'
 )
+assert.equal(assessLocalizationReliability(negative).state, 'supporting')
 const failed = structuredClone(manipulation)
 failed.result.detectors[1].status = 'failed'
 assert.ok(!buildEvidenceLinks(failed, aigc).some((link) => link.relation === 'corroborates'))
+assert.equal(assessLocalizationReliability(failed).state, 'none')
 assert.deepEqual(buildEvidenceLinks({ ...manipulation, mode: 'mock' }, undefined), [])
 const missingEvidence = structuredClone(manipulation)
 missingEvidence.evidence = missingEvidence.evidence.filter(
@@ -186,6 +189,9 @@ const regionalConfidence = structuredClone(manipulation)
 delete regionalConfidence.result.detectors[1].result.confidence
 regionalConfidence.result.regions[0].confidence = { value: 0.91 }
 assert.ok(buildEvidenceLinks(regionalConfidence, aigc).some((link) => link.strength === 'strong'))
+const unstable = structuredClone(manipulation)
+unstable.result.detectors[1].result.confidence = { value: 0.42 }
+assert.equal(assessLocalizationReliability(unstable).state, 'unstable')
 const mixedRegions = structuredClone(manipulation)
 mixedRegions.result.regions[0].confidence = { value: 0.91 }
 mixedRegions.result.regions.push({

@@ -1,6 +1,6 @@
 import type { DetectorResult } from '../../shared/contracts'
 import { sicaClassSupport, fsdClassSupport, sicaDecisionConfidence, fsdDecisionConfidence } from '../../shared/decision-confidence'
-import { buildEvidenceLinks } from './evidence-links'
+import { assessLocalizationReliability, buildEvidenceLinks } from './evidence-links'
 
 // A concise reader/VLM view. The complete v1.0 bundle remains the audit record.
 export function manipulationSummary(bundle: Record<string, any>, detectors: DetectorResult[]) {
@@ -63,6 +63,7 @@ export function manipulationSummary(bundle: Record<string, any>, detectors: Dete
     status: report.extensions.executionStatus,
     decision: 'inconclusive',
     evidenceLinks: buildEvidenceLinks(report, bundle.reports.find((r: any) => r.moduleId === 'aigc'), bundle.reports.find((r: any) => r.moduleId === 'provenance')),
+    localizationReliability: assessLocalizationReliability(report),
     confidencePolicy: { reliability: 'not_calibrated', comparableAcrossModels: false },
     contentType: report.result?.contentType ?? null,
     routing: report.result?.routing
