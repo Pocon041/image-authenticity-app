@@ -1,73 +1,86 @@
-# Windows 安装与配置
+# Windows 安装说明
 
-## 下载
+当前版本为 **v0.3.0**，适用于 Windows 10/11 x64。下载入口位于 [GitHub Releases](https://github.com/Pocon041/image-authenticity-app/releases/tag/v0.3.0)。
 
-当前版本为 v0.2.2。安装器与校验文件位于 [GitHub Releases](https://github.com/Pocon041/image-authenticity-app/releases/tag/v0.2.2)。
+## 完整版
 
-安装器 `SRDP-Setup-0.2.2-x64.exe` 约 125 MB，包含桌面应用、Electron 和本项目 Python 后端脚本。运行真实模型还需要 Python 环境、模型源码、权重以及本地解释模型。
+完整版包含桌面应用、三个独立 Python 环境、SICA、RITA、RiSE、FSD 的默认检测资源、来源检查依赖，以及 Ollama 和 Qwen3-VL-2B 本地解释模型。
 
-## 安装与首次配置
-
-1. 运行安装器，选择应用安装位置。
-2. 启动应用，展开“本地运行环境”。
-3. 选择模型与报告目录，例如 `D:\SRDP-Data`。数据目录应位于应用安装目录以外。
-4. 准备好模型环境后导入图片，点击“开始分析”。
-
-已有源码环境的用户可以直接选择其项目根目录。应用复用其中的 `config/*.local.json`，相对路径以这个目录为基准。
-
-### 使用配套运行资源
-
-如果取得的安装包带有 `runtime-bundle` 文件夹，解压后保持以下结构。
+在发布页下载下列文件，并放在同一个文件夹。
 
 ```text
-安装包/
-├─ SRDP-Setup-0.2.2-x64.exe
-├─ SHA256SUMS.txt
-└─ runtime-bundle/
-   ├─ manifest.json
-   └─ *.zip
+SRDP-Full-Setup-0.3.0-x64.exe
+SRDP-Full-Data-0.3.0-01.bin
+SRDP-Full-Data-0.3.0-02.bin
+SRDP-Full-Data-0.3.0-03.bin
+SRDP-Full-Data-0.3.0-04.bin
+SRDP-Full-Data-0.3.0-05.bin
+SRDP-Full-Data-0.3.0-06.bin
 ```
 
-从这个位置运行安装器。首次启动后选择“选择数据目录并自动配置”，应用自动校验资源、展开三个 Python 环境、生成配置并启动本地 VLM 服务。用户无需逐项安装这些组件。资源未自动识别时，点击“选择完整资源包”并指定 `runtime-bundle`。
+1. 双击 `SRDP-Full-Setup-0.3.0-x64.exe`，选择保存离线安装资源的空目录。
+2. 安装器自动校验数据分卷、准备资源，并启动应用安装向导。
+3. 完成应用安装。首次打开时，在“设置 → 运行环境”中选择一个新的模型与报告目录，例如 `D:\Forensics-Data`。
+4. 等待自动配置完成，然后导入图片开始分析。
 
-自动配置可取消和重试。已有完整展开的组件会复用，已有本机配置会保留。完成后可移除安装资源的解压副本，保留原安装包供重装使用。
+用户无需手动解压，也无需另外安装 Python、Node.js、Git 或 Ollama。数据分卷是安装包的一部分，总计约10.4GB。GitHub 单附件须小于2GiB，因此使用六个分卷，安装器自动读取。
 
-GitHub 当前 Release 附件提供安装器和校验文件。配套运行资源包含第三方权重，获取和分发时需要遵守相应许可。自行准备环境的步骤见[开发配置](DEVELOPMENT.md)。
+自动配置会验证哈希、展开环境、生成模型路径并启动本地解释服务，支持取消和重试。已有本机配置会保留。资源校验失败时，请根据提示重新下载对应分卷。
 
-## 硬件与空间
+## 开发者版
 
-- Windows 10/11 x64，多核 x64 处理器。
-- 推荐 16 GB 以上内存，32 GB 更适合完整检测与本地 VLM。
-- 推荐 NVIDIA GPU，8 GB 或更多显存，以及兼容 PyTorch CUDA 12.6 的驱动。
-- 无 CUDA 时可以配置 CPU 路线，端到端 CPU 性能尚未系统评测。
-- 建议使用 SSD，运行目录预留至少 25 GB。
-- 配套资源压缩约 10.23 GB，展开约 16.41 GB。安装包 ZIP、解压副本和运行目录放在同一磁盘时，建议预留 50 GB。
+下载并运行 `SRDP-Developer-Setup-0.3.0-x64.exe`。
 
-应用按序运行检测器。显存和耗时也受到图片尺寸、图块数量及其他程序占用影响。
+该安装器包含 Electron、桌面工作台、本项目后端适配脚本、示例配置与报告协议。真实检测所需的 Python 环境、上游模型源码、权重和解释服务由开发者自行配置。
 
-## 解释服务
+- 体验框架时，打开“设置 → 开发与单模型调试”，选择“模拟流程”。
+- 接入真实模型时，按[开发与模型配置](DEVELOPMENT.md)准备环境，再在“设置 → 运行环境”中选择对应目录。
+- 已有源码环境的用户可直接选择项目根目录，复用 `config/*.local.json` 和已有权重。
 
-自行准备 Ollama 时，默认使用 `http://127.0.0.1:11434`。模型名与地址在 `config/explanation.local.json` 中配置。
+开发者版启动界面无需安装 Node.js。修改源码、构建应用时需要 Node.js 和 Git。
 
-随包服务由应用启动，使用 `http://127.0.0.1:11435`，其模型和临时文件保存在数据目录。应用重启时恢复服务，退出时关闭自身启动的服务。
+## 系统与存储要求
 
-## 升级和卸载
+- Windows 10/11 x64，建议使用已更新的系统。
+- 建议16GB以上内存，推荐32GB。
+- 推荐 NVIDIA GPU，8GB或更多显存，以及兼容 PyTorch CUDA12.6 的驱动。已在 RTX4060 Laptop 8GB 上完成工程联调。
+- 无可用 CUDA 时可使用 CPU，CPU端到端速度与其他显卡组合尚未系统评测。
+- 建议使用SSD。运行数据目录预留至少25GB；下载、离线资源与运行数据放在同一磁盘时，建议预留50GB。
 
-新版本安装器可以覆盖升级应用。配置、模型和报告位于独立数据目录，升级和卸载会保留这些文件。分析结果保存在 `work/analysis-runs/<taskId>/`，可以从应用中打开。
+完整环境展开约16.4GB。默认检测和解释流程在资源准备完成后可离线运行。GPU驱动由操作系统环境提供。
 
-## 构建含运行资源的安装包
+## 数据与升级
 
-在已配置完整推理环境的 Windows 构建机上执行。
+应用程序、离线安装资源、模型与报告可以分别保存。模型与报告目录须位于应用安装目录之外。
+
+分析记录保存在所选运行目录下的 `work/analysis-runs/<taskId>/`，包含 `analysis.json`、`bundle.json`、模型报告、掩码、响应图、区域裁剪和解释记录。升级与卸载应用会保留独立的数据目录。
+
+完整运行环境准备好后，可按需清理安装器与分卷的下载副本。建议保留一份安装资源用于重装。请勿将当前模型与报告目录当作安装缓存删除。
+
+## 本地解释服务
+
+完整版由应用管理 Ollama，使用 `http://127.0.0.1:11435`。模型和缓存位于所选数据目录，应用重启时恢复服务，退出时关闭自身启动的服务。
+
+开发者自行配置的 Ollama 默认使用 `http://127.0.0.1:11434`，可在 `config/explanation.local.json` 中设置模型名和地址。
+
+## 校验与许可
+
+发布页提供 `SHA256SUMS.txt`。Windows PowerShell 中可使用 `Get-FileHash -Algorithm SHA256 <文件路径>` 核对下载文件；完整版安装器也会自动验证各数据分卷。
+
+当前安装器未配置代码签名证书，Windows可能显示未知发布者。第三方模型与依赖适用各自条款，详见[组件与模型说明](THIRD_PARTY_COMPONENTS.md)。
+
+## 构建两种安装包
+
+在已配置开发环境的 Windows 构建机上执行。
 
 ```powershell
-.\run.cmd run package:research
+# 构建开发者安装器
+.\run.cmd run package:win
 
-# 本机环境或权重更新后重新收集资源
-.\run.cmd run package:research -- --rebuild-runtime
+# 同时整理开发者版、完整版安装器及离线分卷
+.\run.cmd run package:distributions
 ```
 
-现有构建命令沿用 `package:research` 名称。构建器从 `config/sica.local.json` 指定的 Python 环境、来源与 FSD 环境、模型权重和本机 Ollama 中收集运行资源，并生成资源清单与 SHA-256 校验值。产物为 `dist/SRDP-Research-0.2.2-win-x64.zip`。
+完整版构建需要已有的 `dist/research-runtime-v1/runtime-bundle`。环境或权重变化时，先使用 `scripts/build-research-bundle.py` 重新收集并验证资源。两种发布产物和校验清单位于 `dist/v0.3.0/release/`。
 
-发布前确认所有资源的分发许可。权重和运行环境不提交 Git，打包脚本也不会自动将它们上传 GitHub。
-
-当前安装器未使用代码签名证书，Windows 可能显示未知发布者。请核对与安装器配套的 SHA-256 文件。
+安装器会直接跨分卷读取数据，无需先合并为另一个大型文件。旧的 `package:research` 构建入口继续保留供兼容使用。

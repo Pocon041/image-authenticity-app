@@ -1,89 +1,133 @@
-import { Check, FlaskConical, Info, X } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { ClipboardPaste, FolderOpen, ImagePlus, Info, Settings2, X } from 'lucide-react'
 import { AnalysisPanel } from './components/AnalysisPanel'
 import { ImagePanel } from './components/ImagePanel'
+import { SettingsDialog } from './components/SettingsDialog'
+import { SplitWorkspace } from './components/SplitWorkspace'
 import { WorkspaceLayout } from './components/WorkspaceLayout'
-import { RuntimeSettings } from './components/RuntimeSettings'
 import { useAnalysisWorkspace } from './hooks/useAnalysisWorkspace'
+
+const modeLabels = {
+  workflow: '',
+  mock: '模拟模式 · 使用演示结果',
+  sica: 'SICA · 整图分类',
+  rise: 'RiSE · 文档定位',
+  rita: 'RITA · 照片定位',
+  aigc: 'FSD · AI 生成检测'
+}
 
 export function App() {
   const workspace = useAnalysisWorkspace()
-  const local = workspace.backend !== 'mock'
-  const sica = workspace.backend === 'sica'
-  const rise = workspace.backend === 'rise'
-  const aigc = workspace.backend === 'aigc'
+  const settingsDialog = useRef<HTMLDialogElement>(null)
   const workflow = workspace.backend === 'workflow'
-  const steps = [
-    { number: '01', label: '导入图片', complete: !!workspace.image },
-    {
-      number: '02',
-      label: workflow
-        ? '整图筛查与定位'
-        : sica
-          ? 'SICA 分类'
-          : rise
-            ? 'RiSE 定位'
-            : aigc
-              ? 'FSD AI 生成检测'
-            : local
-              ? 'RITA 定位'
-              : '模拟分析',
-      complete: !!workspace.report
-    },
-    { number: '03', label: workflow ? '查看证据' : '查看描述', complete: !!workspace.report }
-  ]
+  const [dragging, setDragging] = useState(false)
+  const dragDepth = useRef(0)
+
+  useEffect(() => {
+    const isFileDrag = (event: DragEvent) =>
+      Array.from(event.dataTransfer?.types ?? []).includes('Files')
+    function enter(event: DragEvent) {
+      if (!isFileDrag(event)) return
+      event.preventDefault()
+      dragDepth.current++
+      if (!workspace.busy && !document.querySelector('dialog[open]')) setDragging(true)
+    }
+    function leave(event: DragEvent) {
+      if (!isFileDrag(event)) return
+      dragDepth.current = Math.max(0, dragDepth.current - 1)
+      if (!dragDepth.current) setDragging(false)
+    }
+    function over(event: DragEvent) {
+      event.preventDefault()
+      if (event.dataTransfer)
+        event.dataTransfer.dropEffect =
+          workspace.busy || document.querySelector('dialog[open]') ? 'none' : 'copy'
+    }
+    function drop(event: DragEvent) {
+      event.preventDefault()
+      dragDepth.current = 0
+      setDragging(false)
+      if (workspace.busy || document.querySelector('dialog[open]')) return
+      const files = Array.from(event.dataTransfer?.files ?? [])
+      if (files.length) void workspace.importDroppedImage(files)
+    }
+    const reset = () => {
+      dragDepth.current = 0
+      setDragging(false)
+    }
+    window.addEventListener('dragenter', enter)
+    window.addEventListener('dragleave', leave)
+    window.addEventListener('dragover', over)
+    window.addEventListener('drop', drop)
+    window.addEventListener('blur', reset)
+    return () => {
+      window.removeEventListener('dragenter', enter)
+      window.removeEventListener('dragleave', leave)
+      window.removeEventListener('dragover', over)
+      window.removeEventListener('drop', drop)
+      window.removeEventListener('blur', reset)
+    }
+  }, [workspace.busy, workspace.importDroppedImage])
+
+  useEffect(() => {
+    function handleShortcut(event: KeyboardEvent) {
+      if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return
+      if (document.querySelector('dialog[open]')) return
+      if ((event.target as HTMLElement)?.closest('input, textarea, [contenteditable="true"]'))
+        return
+      if (event.key === ',') {
+        event.preventDefault()
+        settingsDialog.current?.showModal()
+      } else if (event.key.toLowerCase() === 'o') {
+        event.preventDefault()
+        void workspace.chooseImage()
+      } else if (event.key.toLowerCase() === 'v') {
+        event.preventDefault()
+        void workspace.pasteImage()
+      }
+    }
+    window.addEventListener('keydown', handleShortcut)
+    return () => window.removeEventListener('keydown', handleShortcut)
+  }, [workspace.chooseImage, workspace.pasteImage])
 
   return (
-    <WorkspaceLayout>
-      <div className="page-heading">
-        <div>
-          <h1>从一张图片开始</h1>
-          <p>保留原图，从定位与证据中看清值得关注的细节。</p>
-        </div>
-        {!workflow && (
-          <div className="mode-badge">
-            <FlaskConical size={15} />
-            {workflow
-              ? '本地联合分析'
-              : aigc
-                ? 'FSD AI 生成检测'
-                : sica
-                ? 'SICA 图像二分类'
-                : rise
-                  ? 'RiSE 文档定位'
-                  : local
-                    ? 'RITA 本地定位'
-                    : '模拟分析模式'}
-          </div>
-        )}
-      </div>
+    <WorkspaceLayout
+      actions={
+        <>
+          <button
+            className="toolbar-button open-image-command"
+            disabled={workspace.busy}
+            onClick={workspace.chooseImage}
+            title="打开图片 (Ctrl+O)"
+          >
+            <FolderOpen size={16} />
+            打开图片
+          </button>
+          <button
+            className="toolbar-button"
+            disabled={workspace.busy}
+            onClick={workspace.pasteImage}
+            title="粘贴图片 (Ctrl+V)"
+          >
+            <ClipboardPaste size={16} />
+            粘贴图片
+          </button>
+          <button
+            className="toolbar-button"
+            aria-label="设置"
+            title="设置 (Ctrl+,)"
+            onClick={() => settingsDialog.current?.showModal()}
+          >
+            <Settings2 size={16} />
+            设置
+          </button>
+        </>
+      }
+    >
       {!workflow && (
         <div className="demo-notice">
-          <Info size={17} />
-          <span>
-            {sica
-              ? 'SICA 只给出整图真假分类，不识别伪造类型或定位区域。分数未经本项目校准，full 权重的效果记录不作独立泛化证明。'
-              : rise
-                ? 'RiSE 对文档执行全图分块视觉定位，显示模型标记的可疑区域；未检出不代表真实，当前不提供整图真实性结论。'
-                : aigc
-                  ? 'FSD 在本地判断图片的 AI 生成倾向，展示模型分数与阈值；分数不是概率，不定位具体生成区域。来源归因默认关闭，结果尚未在本项目目标图片上完成效果验证。'
-                : local
-                  ? 'RITA 模式使用本机官方权重，未配置时会提示错误；此模式不执行 AI 检测或 VLM，整图阈值仍需验证。'
-                  : '当前为 Smoke 测试版本。所有分析描述均为模拟内容，未接入检测模型或语言模型。'}
-          </span>
-        </div>
-      )}
-
-      {!workflow && (
-        <div className="steps" aria-label="分析流程">
-          {steps.map((step, index) => (
-            <div key={step.number} className={`step ${step.complete ? 'complete' : ''}`}>
-              <span className="step-number">
-                {step.complete ? <Check size={14} /> : step.number}
-              </span>
-              <span>{step.label}</span>
-              {index < 2 && <div className="step-line" />}
-            </div>
-          ))}
+          <Info size={16} />
+          {modeLabels[workspace.backend]}
         </div>
       )}
       {workspace.error && (
@@ -101,54 +145,18 @@ export function App() {
           {workspace.notice}
         </div>
       )}
-      <RuntimeSettings busy={workspace.busy} onDirectoryChanged={workspace.clearImage} />
-      <div className={`analysis-grid ${workflow ? 'workflow-grid' : ''}`}>
-        <ImagePanel workspace={workspace} />
-        <AnalysisPanel workspace={workspace} />
-      </div>
-      <details className="developer-tools">
-        <summary>开发与单模型调试</summary>
-        <p>用于排查单个模型。日常分析请选择联合流程。</p>
-        <div className="backend-picker" role="group" aria-label="分析服务">
-          <button
-            aria-pressed={workflow}
-            disabled={workspace.busy}
-            onClick={() => workspace.selectBackend('workflow')}
-          >
-            联合分析
-          </button>
-          <button
-            aria-pressed={!local}
-            disabled={workspace.busy}
-            onClick={() => workspace.selectBackend('mock')}
-          >
-            模拟流程
-          </button>
-          <button
-            aria-pressed={workspace.backend === 'rita'}
-            disabled={workspace.busy}
-            onClick={() => workspace.selectBackend('rita')}
-          >
-            RITA 本地定位
-          </button>
-          <button
-            aria-pressed={sica}
-            disabled={workspace.busy}
-            onClick={() => workspace.selectBackend('sica')}
-          >
-            SICA 图像二分类
-          </button>
-          <button
-            aria-pressed={rise}
-            disabled={workspace.busy}
-            onClick={() => workspace.selectBackend('rise')}
-          >
-            RiSE 文档定位
-          </button>
-          {/* [第三人任务] FSD 独立 AIGC 检测入口。 */}
-          <button aria-pressed={workspace.backend === 'aigc'} disabled={workspace.busy} onClick={() => workspace.selectBackend('aigc')}>FSD AI 生成检测</button>
+      <SplitWorkspace
+        image={<ImagePanel workspace={workspace} />}
+        report={<AnalysisPanel workspace={workspace} />}
+        workflow={workflow}
+      />
+      {dragging && (
+        <div className="app-drop-overlay" role="status">
+          <ImagePlus size={32} />
+          <strong>松开以导入图片</strong>
         </div>
-      </details>
+      )}
+      <SettingsDialog dialogRef={settingsDialog} workspace={workspace} />
     </WorkspaceLayout>
   )
 }

@@ -32,7 +32,7 @@ async function launch(extraEnv = {}, profile = 'clean-profile') {
 let desktop = await launch()
 try {
   let page = await desktop.firstWindow()
-  await page.getByRole('heading', { name: '从一张图片开始' }).waitFor()
+  await page.getByRole('heading', { name: '通用鉴伪系统' }).waitFor()
   const initial = await page.evaluate(() => window.desktop.runtimeEnvironment())
   assert.equal(initial.ok, true)
   assert.equal(initial.data.packaged, true)
@@ -69,7 +69,7 @@ try {
 
   desktop = await launch()
   page = await desktop.firstWindow()
-  await page.getByRole('heading', { name: '从一张图片开始' }).waitFor()
+  await page.getByRole('heading', { name: '通用鉴伪系统' }).waitFor()
   const restored = await page.evaluate(() => window.desktop.runtimeEnvironment())
   assert.equal(restored.data.directory, chosenDirectory)
   checks.push('Runtime directory survives application restart')
@@ -78,7 +78,7 @@ try {
   if (process.argv.includes('--real-sica')) {
     desktop = await launch({ SRDP_RUNTIME_ROOT: root }, 'model-profile')
     page = await desktop.firstWindow()
-    await page.getByRole('heading', { name: '从一张图片开始' }).waitFor()
+    await page.getByRole('heading', { name: '通用鉴伪系统' }).waitFor()
     const taskId = `installer-sica-${randomUUID()}`
     const imagePath = join(root, 'examples/image/duck.jpg')
     await desktop.evaluate(({ dialog }, path) => {

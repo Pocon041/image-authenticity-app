@@ -1,3 +1,4 @@
+import { selectAnalysisMode } from './ui-settings.mjs'
 import assert from 'node:assert/strict'
 import { createHash, randomUUID } from 'node:crypto'
 import { access, mkdir, readFile, writeFile } from 'node:fs/promises'
@@ -41,14 +42,13 @@ try {
   page.on('request', (request) => {
     if (/^https?:/.test(request.url())) remoteRequests.push(request.url())
   })
-  await page.getByRole('heading', { name: '从一张图片开始' }).waitFor()
-  await page.getByText('开发与单模型调试', { exact: true }).click()
+  await page.getByRole('heading', { name: '通用鉴伪系统' }).waitFor()
   await desktop.evaluate(({ dialog }, path) => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [path] })
   }, image)
   await page.getByRole('button', { name: '选择图片', exact: true }).click()
   await page.getByTestId('image-name').waitFor()
-  await page.getByRole('button', { name: 'RITA 本地定位', exact: true }).click()
+  await selectAnalysisMode(page, 'RITA 本地定位')
   await page.evaluate(() => {
     window.__ritaProgress = []
     window.__stopRitaProgress = window.desktop.onAnalysisProgress((progress) =>

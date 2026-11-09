@@ -1,5 +1,14 @@
-import { app, dialog, ipcMain, shell, type BrowserWindow, type IpcMainInvokeEvent } from 'electron'
-import { dirname, resolve } from 'node:path'
+import {
+  app,
+  clipboard,
+  dialog,
+  ipcMain,
+  shell,
+  type BrowserWindow,
+  type IpcMainInvokeEvent
+} from 'electron'
+import { createHash } from 'node:crypto'
+import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { IPC, type Response, type ImageAsset, type WorkflowOptions } from '../shared/contracts'
 import { AppError, failure } from './errors'
@@ -8,7 +17,11 @@ import type { AnalysisSession } from './services/analysis-session'
 import { generateExplanation } from './services/explanation'
 import type { EvidenceBundle, ExplanationReport } from '../shared/protocol'
 import { getRuntimeRoot } from './runtime-paths'
-import { requireRuntimeEnvironment, runtimeEnvironment, selectRuntimeDirectory } from './runtime-environment'
+import {
+  requireRuntimeEnvironment,
+  runtimeEnvironment,
+  selectRuntimeDirectory
+} from './runtime-environment'
 import { cancelRuntimeSetup, prepareRuntime, selectRuntimeBundle } from './runtime-bootstrap'
 
 export function registerDesktopIPC(
@@ -35,7 +48,7 @@ export function registerDesktopIPC(
     }
   }
 
-  ipcMain.handle(IPC.runtimeEnvironment, async event => {
+  ipcMain.handle(IPC.runtimeEnvironment, async (event) => {
     try {
       requireWindow(event)
       return { ok: true, data: await runtimeEnvironment() }
@@ -44,7 +57,7 @@ export function registerDesktopIPC(
     }
   })
 
-  ipcMain.handle(IPC.chooseRuntimeDirectory, async event => {
+  ipcMain.handle(IPC.chooseRuntimeDirectory, async (event) => {
     try {
       const window = requireWindow(event)
       if (session.busy || picking) throw new AppError('BUSY', '请等待当前操作结束。')
@@ -65,7 +78,7 @@ export function registerDesktopIPC(
     }
   })
 
-  ipcMain.handle(IPC.openRuntimeDirectory, async event => {
+  ipcMain.handle(IPC.openRuntimeDirectory, async (event) => {
     try {
       requireWindow(event)
       const info = await runtimeEnvironment()
@@ -78,7 +91,7 @@ export function registerDesktopIPC(
     }
   })
 
-  ipcMain.handle(IPC.chooseRuntimeBundle, async event => {
+  ipcMain.handle(IPC.chooseRuntimeBundle, async (event) => {
     try {
       const window = requireWindow(event)
       if (session.busy || picking) throw new AppError('BUSY', '请等待当前操作结束。')
@@ -91,11 +104,15 @@ export function registerDesktopIPC(
         if (selected.canceled || !selected.filePaths[0]) return { ok: true, data: null }
         await selectRuntimeBundle(selected.filePaths[0])
         return { ok: true, data: await runtimeEnvironment() }
-      } finally { picking = false }
-    } catch (error) { return failure(error) }
+      } finally {
+        picking = false
+      }
+    } catch (error) {
+      return failure(error)
+    }
   })
 
-  ipcMain.handle(IPC.prepareRuntime, async event => {
+  ipcMain.handle(IPC.prepareRuntime, async (event) => {
     try {
       const window = requireWindow(event)
       if (session.busy || picking) throw new AppError('BUSY', '请等待当前操作结束。')
@@ -104,7 +121,7 @@ export function registerDesktopIPC(
       picking = true
       session.clearImage()
       try {
-        await prepareRuntime(info.directory, progress => {
+        await prepareRuntime(info.directory, (progress) => {
           if (!window.isDestroyed()) window.webContents.send(IPC.runtimeSetupProgress, progress)
         })
         return { ok: true, data: await runtimeEnvironment() }
@@ -116,7 +133,7 @@ export function registerDesktopIPC(
     }
   })
 
-  ipcMain.handle(IPC.cancelRuntimeSetup, event => {
+  ipcMain.handle(IPC.cancelRuntimeSetup, (event) => {
     try {
       requireWindow(event)
       return { ok: true, data: cancelRuntimeSetup() }
@@ -156,6 +173,72 @@ export function registerDesktopIPC(
       return { ok: true, data: null }
     } catch (error) {
       return failure(error)
+    }
+  })
+
+  ipcMain.handle(
+    IPC.importDroppedImage,
+    async (event, filePath: unknown): Promise<Response<ImageAsset | null>> => {
+      try {
+        requireWindow(event)
+        if (session.busy || picking) throw new AppError('BUSY', '请等待当前操作结束。')
+        if (
+          typeof filePath !== 'string' ||
+          !isAbsolute(filePath) ||
+          filePath.length > 32767 ||
+          filePath.includes('\0')
+        ) {
+          throw new AppError('INVALID_REQUEST', '拖入的文件路径无效。')
+        }
+        picking = true
+        try {
+          const image = await importImage(filePath)
+          session.selectImage(image)
+          return { ok: true, data: image.asset }
+        } finally {
+          picking = false
+        }
+      } catch (error) {
+        return failure(error, 'INVALID_IMAGE')
+      }
+    }
+  )
+
+  ipcMain.handle(IPC.pasteImage, async (event): Promise<Response<ImageAsset | null>> => {
+    try {
+      requireWindow(event)
+      if (session.busy || picking) throw new AppError('BUSY', '请等待当前操作结束。')
+      picking = true
+      try {
+        const supported = ['image/png', 'image/jpeg', 'image/webp'] as const
+        const entries = await clipboard.read()
+        const pasted = entries.find((item) => supported.some((type) => item.types.includes(type)))
+        const type = pasted && supported.find((type) => pasted.types.includes(type))
+        if (!pasted || !type)
+          throw new AppError('INVALID_IMAGE', '剪贴板中没有图片。请复制图片或截图后重试。')
+        const blob = await pasted.getType(type)
+        if (blob.size > 20 * 1024 * 1024) throw new AppError('INVALID_IMAGE', '图片超过 20 MB。')
+        const bytes = Buffer.from(await blob.arrayBuffer())
+        const digest = createHash('sha256').update(bytes).digest('hex')
+        const directory = join(app.getPath('userData'), 'imported-images')
+        await mkdir(directory, { recursive: true })
+        const path = join(directory, `粘贴图像-${digest}.${type.split('/')[1]}`)
+        try {
+          await writeFile(path, bytes, { flag: 'wx' })
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+        }
+        const image = await importImage(path)
+        if (image.asset.sha256 !== digest)
+          throw new AppError('INVALID_IMAGE', '图片缓存校验失败，请重新导入。')
+        image.asset.name = `粘贴图像-${digest.slice(0, 8)}.${type.split('/')[1]}`
+        session.selectImage(image)
+        return { ok: true, data: image.asset }
+      } finally {
+        picking = false
+      }
+    } catch (error) {
+      return failure(error, 'INVALID_IMAGE')
     }
   })
 
@@ -230,7 +313,10 @@ export function registerDesktopIPC(
         validateId(taskId)
         const report = session.reportForTask(taskId)
         const directory = dirname(report.workflow!.bundlePath)
-        if (resolve(directory) !== resolve(getRuntimeRoot(app.getAppPath()), 'work/analysis-runs', taskId))
+        if (
+          resolve(directory) !==
+          resolve(getRuntimeRoot(app.getAppPath()), 'work/analysis-runs', taskId)
+        )
           throw new AppError('INVALID_REQUEST', '报告目录无效。')
         const error = await shell.openPath(directory)
         if (error) throw new AppError('INTERNAL', '无法打开报告文件夹，请查看报告保存路径。')
@@ -263,7 +349,12 @@ export function registerDesktopIPC(
             }
           })
           signal.throwIfAborted()
-          const directory = resolve(getRuntimeRoot(app.getAppPath()), 'work/analysis-runs', taskId, 'reports')
+          const directory = resolve(
+            getRuntimeRoot(app.getAppPath()),
+            'work/analysis-runs',
+            taskId,
+            'reports'
+          )
           await mkdir(directory, { recursive: true })
           await writeFile(resolve(directory, 'explanation.json'), JSON.stringify(result, null, 2))
           return result

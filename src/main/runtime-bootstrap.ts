@@ -219,7 +219,7 @@ export async function prepareRuntime(
   try {
     const bundle = await bundleDirectory()
     if (!bundle)
-      throw new Error('请使用团队完整分发包安装，或选择完整资源包中的 runtime-bundle 文件夹。')
+      throw new Error('请使用完整版安装器，或在设置中选择离线资源的 runtime-bundle 文件夹。')
     const manifest = await manifestAt(bundle)
     const base = join(root, '.runtime')
     const finalDirectory = childPath(base, manifest.id)

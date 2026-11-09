@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import {
   IPC,
   type AnalysisProgress,
@@ -15,12 +15,27 @@ const desktop: DesktopAPI = {
   prepareRuntime: () => ipcRenderer.invoke(IPC.prepareRuntime),
   cancelRuntimeSetup: () => ipcRenderer.invoke(IPC.cancelRuntimeSetup),
   onRuntimeSetupProgress(listener) {
-    const handler = (_event: Electron.IpcRendererEvent, progress: RuntimeSetupProgress) => listener(progress)
+    const handler = (_event: Electron.IpcRendererEvent, progress: RuntimeSetupProgress) =>
+      listener(progress)
     ipcRenderer.on(IPC.runtimeSetupProgress, handler)
     return () => ipcRenderer.removeListener(IPC.runtimeSetupProgress, handler)
   },
   openReportDirectory: (taskId) => ipcRenderer.invoke(IPC.openReportDirectory, taskId),
   chooseImage: () => ipcRenderer.invoke(IPC.chooseImage),
+  async importDroppedImage(files) {
+    try {
+      if (!Array.isArray(files) || files.length !== 1) {
+        return { ok: false, code: 'INVALID_IMAGE', error: '请每次拖入一张图片。' }
+      }
+      const path = webUtils.getPathForFile(files[0])
+      if (!path)
+        return { ok: false, code: 'INVALID_IMAGE', error: '请从文件夹拖入图片，或使用粘贴导入。' }
+      return ipcRenderer.invoke(IPC.importDroppedImage, path)
+    } catch {
+      return { ok: false, code: 'INVALID_IMAGE', error: '无法读取拖入的文件，请重新选择图片。' }
+    }
+  },
+  pasteImage: () => ipcRenderer.invoke(IPC.pasteImage),
   clearImage: () => ipcRenderer.invoke(IPC.clearImage),
   analyze: (imageId, taskId, backend, options) =>
     ipcRenderer.invoke(IPC.analyze, imageId, taskId, backend, options),

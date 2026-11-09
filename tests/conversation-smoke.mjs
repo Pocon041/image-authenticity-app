@@ -162,7 +162,7 @@ try {
   const page = await desktop.firstWindow()
   page.setDefaultTimeout(20000)
   page.on('pageerror', (e) => errors.push(e.message))
-  await page.getByRole('heading', { name: '从一张图片开始' }).waitFor()
+  await page.getByRole('heading', { name: '通用鉴伪系统' }).waitFor()
   await desktop.evaluate(
     ({ dialog, ipcMain, BrowserWindow }, { source, report, explanation }) => {
       const state = (globalThis.__conversation = {
@@ -305,6 +305,14 @@ try {
   await page.getByTestId('analyze-button').click()
   await page.getByTestId('analysis-progress-label').waitFor()
   await page.locator('[data-step="prepare"][data-status="running"]').waitFor()
+  await page.getByTestId('image-scan').waitFor()
+  assert.equal(
+    await page
+      .getByTestId('image-scan')
+      .locator('span')
+      .evaluate((node) => getComputedStyle(node).animationName),
+    'image-scan'
+  )
   assert.match(await page.getByTestId('workflow-step-counter').textContent(), /第 1 步/)
   await emit({ workflowPhase: 'routing', label: '正在识别图片内容类型', steps: [] })
   await page.locator('[data-step="routing"][data-status="running"]').waitFor()
@@ -360,6 +368,16 @@ try {
   await page.locator('[data-step="explanation"][data-status="running"]').waitFor()
   const imageViews = page.getByTestId('image-result-views')
   await imageViews.waitFor()
+  assert.equal(await page.getByTestId('image-scan').count(), 0)
+  assert.equal(
+    await page
+      .getByTestId('image-preview')
+      .evaluate((node) => getComputedStyle(node).animationName),
+    'localization-arrive'
+  )
+  checks.push(
+    'active detection scans the original image and completed localization uses a separate reveal transition'
+  )
   assert.equal(
     await imageViews
       .getByRole('button', { name: 'RITA 定位', exact: true })
@@ -369,11 +387,25 @@ try {
   assert.equal(await page.getByTestId('image-preview').getAttribute('src'), overlayDataUrl)
   await imageViews.getByRole('button', { name: '原图', exact: true }).click()
   assert.equal(await page.getByTestId('image-preview').getAttribute('src'), dataUrl)
+  const selectionLine = await imageViews
+    .getByRole('button', { name: '原图', exact: true })
+    .evaluate((node) => ({
+      active: getComputedStyle(node).borderBottomColor,
+      inactive: getComputedStyle(node.nextElementSibling).borderBottomColor
+    }))
+  assert.notEqual(selectionLine.active, 'rgba(0, 0, 0, 0)')
+  assert.equal(selectionLine.inactive, 'rgba(0, 0, 0, 0)')
   await imageViews.getByRole('button', { name: 'RITA 定位', exact: true }).click()
   await page.getByRole('button', { name: '放大查看图像预览', exact: true }).click()
   const leftDialog = page.getByRole('dialog', { name: '图像预览：fixture.png', exact: true })
   assert.equal(await leftDialog.locator('img').getAttribute('src'), overlayDataUrl)
   await page.keyboard.press('Escape')
+  assert.equal(
+    await page
+      .getByRole('button', { name: '放大查看图像预览', exact: true })
+      .evaluate((node) => node === document.activeElement),
+    true
+  )
   checks.push(
     'completed localization replaces the left image by default; original comparison and enlarged preview follow the selected view'
   )
@@ -409,6 +441,26 @@ try {
   await page.getByRole('heading', { name: '分析说明', exact: true }).waitFor()
   assert.equal(await page.locator('.conversation-body').evaluate((node) => node.scrollTop), 0)
   assert.match(await page.getByTestId('explanation-conclusion').innerText(), /发现可疑线索/)
+  const verdictAppearance = await page.getByTestId('explanation-conclusion').evaluate((node) => ({
+    radius: getComputedStyle(node).borderRadius,
+    background: getComputedStyle(node).backgroundColor,
+    paper: getComputedStyle(node.closest('.conversation-body')).backgroundColor
+  }))
+  assert.equal(verdictAppearance.radius, '0px')
+  assert.equal(verdictAppearance.background, verdictAppearance.paper)
+  await page.getByRole('button', { name: '查看原图', exact: true }).click()
+  assert.equal(await page.getByTestId('image-preview').getAttribute('src'), dataUrl)
+  assert.equal(
+    await imageViews
+      .getByRole('button', { name: '原图', exact: true })
+      .getAttribute('aria-pressed'),
+    'true'
+  )
+  await page.getByRole('button', { name: '查看定位', exact: true }).click()
+  assert.equal(await page.getByTestId('image-preview').getAttribute('src'), overlayDataUrl)
+  checks.push(
+    'explanation actions switch the main canvas between original and localization with synchronized view controls'
+  )
   assert.equal(
     await page.getByTestId('explanation-summary').getByRole('heading', { level: 4 }).count(),
     2

@@ -8,7 +8,7 @@ const run = JSON.parse(await readFile(join(project, 'work/workflow-smoke/result.
 const bundlePath = run.documentBundle,
   directory = dirname(bundlePath)
 const bundle = JSON.parse(await readFile(bundlePath, 'utf8'))
-const source = bundle.reports[0],
+const source = bundle.reports.find((report) => report.moduleId === 'manipulation'),
   summary = JSON.parse(await readFile(join(directory, 'analysis.json'), 'utf8'))
 const detectors = []
 for (const item of source.result.detectors) {
@@ -35,7 +35,16 @@ for (const item of source.result.detectors) {
         bundle: nativeBundle
       }
     })
-  else {
+  else if (item.backend === 'aigc') {
+    detectors.push({
+      ...common,
+      aigc: {
+        ...item.result.aigc,
+        bundlePath: join(sourceDirectory, 'bundle.json'),
+        bundle: nativeBundle
+      }
+    })
+  } else {
     const overlay = await readFile(join(sourceDirectory, 'artifacts/overlay.png'))
     const previews = []
     for (const region of source.result.regions.filter((r) => r.detector === item.backend)) {
@@ -93,7 +102,7 @@ const output = join(project, 'work/workflow-layout')
 await mkdir(output, { recursive: true })
 try {
   const page = await desktop.firstWindow()
-  await page.getByRole('heading', { name: '从一张图片开始' }).waitFor()
+  await page.getByRole('heading', { name: '通用鉴伪系统' }).waitFor()
   await page.screenshot({ path: join(output, 'empty.png'), fullPage: true })
   await desktop.evaluate(
     ({ dialog, ipcMain }, { image, report }) => {
@@ -106,7 +115,9 @@ try {
   await page.getByRole('button', { name: '选择图片', exact: true }).click()
   await page.getByRole('combobox', { name: '图片类型' }).selectOption('document')
   await page.getByTestId('analyze-button').click()
-  await page.getByTestId('workflow-technical-details').evaluate(element => { element.open = true })
+  await page.getByTestId('workflow-technical-details').evaluate((element) => {
+    element.open = true
+  })
   await page.getByTestId('workflow-overlay').waitFor()
   const checks = []
   for (const width of [1400, 1060]) {

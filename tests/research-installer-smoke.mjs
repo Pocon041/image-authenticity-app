@@ -40,7 +40,7 @@ const checks = []
 try {
   let page = await desktop.firstWindow()
   page.setDefaultTimeout(600000)
-  await page.getByRole('heading', { name: '从一张图片开始' }).waitFor()
+  await page.getByRole('heading', { name: '通用鉴伪系统' }).waitFor()
   await desktop.evaluate(({ dialog }, path) => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [path] })
   }, dataDirectory)
@@ -141,7 +141,7 @@ try {
   await desktop.close()
   desktop = await electron.launch({ executablePath, args, cwd: output, env, timeout: 30000 })
   page = await desktop.firstWindow()
-  await page.getByRole('heading', { name: '从一张图片开始' }).waitFor()
+  await page.getByRole('heading', { name: '通用鉴伪系统' }).waitFor()
   const restored = await page.evaluate(() => window.desktop.runtimeEnvironment())
   assert.equal(restored.data.setup.ready, true)
   const tags = await (await fetch('http://127.0.0.1:11435/api/tags')).json()

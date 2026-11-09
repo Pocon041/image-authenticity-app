@@ -1,3 +1,4 @@
+import { selectAnalysisMode } from './ui-settings.mjs'
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import { access, mkdir, readFile, writeFile } from 'node:fs/promises'
@@ -49,14 +50,13 @@ try {
   page.on('request', (request) => {
     if (/^https?:/.test(request.url())) http.push(request.url())
   })
-  await page.getByRole('heading', { name: '从一张图片开始' }).waitFor()
-  await page.getByText('开发与单模型调试', { exact: true }).click()
+  await page.getByRole('heading', { name: '通用鉴伪系统' }).waitFor()
   await desktop.evaluate(({ dialog }, path) => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [path] })
   }, image)
   await page.getByRole('button', { name: '选择图片', exact: true }).click()
   await page.getByTestId('image-name').waitFor()
-  await page.getByRole('button', { name: 'RiSE 文档定位', exact: true }).click()
+  await selectAnalysisMode(page, 'RiSE 文档定位')
   await page.getByTestId('analyze-button').click()
   await page.getByRole('alert').filter({ hasText: '缺少 RiSE 定位权重' }).waitFor()
   assert.equal(await page.getByTestId('analysis-report').count(), 0)

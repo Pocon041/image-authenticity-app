@@ -1,28 +1,26 @@
-import type { PropsWithChildren } from 'react'
-import { LockKeyhole, ShieldCheck } from 'lucide-react'
+import type { PropsWithChildren, ReactNode } from 'react'
+import { ScanLine } from 'lucide-react'
 import { version } from '../../../../package.json'
 
-export function WorkspaceLayout({ children }: PropsWithChildren) {
+export function WorkspaceLayout({ children, actions }: PropsWithChildren<{ actions?: ReactNode }>) {
   return (
     <div className="app-shell">
       <main>
         <header className="topbar">
-          <strong>图像真实性分析</strong>
-          <span className="local-badge">
-            <LockKeyhole size={13} />
-            本地处理 · v{version}
-          </span>
-        </header>
-        <div className="workspace">
-          {children}
-          <footer className="workspace-footer">
-            <span>
-              <ShieldCheck size={14} />
-              图片仅在本机处理
+          <div className="brand-lockup">
+            <span className="brand-mark" aria-hidden="true">
+              <ScanLine size={18} strokeWidth={1.7} />
             </span>
-            <span>视觉证据报告</span>
-          </footer>
-        </div>
+            <div className="brand-copy">
+              <h1>通用鉴伪系统</h1>
+            </div>
+          </div>
+          <div className="toolbar-actions">
+            <span className="local-badge">v{version}</span>
+            {actions}
+          </div>
+        </header>
+        <div className="workspace">{children}</div>
       </main>
     </div>
   )

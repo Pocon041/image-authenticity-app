@@ -1,153 +1,129 @@
-# image-authenticity-app
+# 通用鉴伪系统
 
-基于本地推理的图像真实性分析桌面应用。集成图像来源检查、AI 生成检测、照片与文档篡改定位，以及视觉语言模型解释，支持查看定位结果和导出结构化证据报告。
+基于本地推理的 Windows 图像鉴伪桌面应用。系统连接来源检查、视觉检测、局部定位和自然语言说明，支持从结论回到原图核查证据。
 
-**当前版本 v0.2.2 · Windows x64 · Electron + React + TypeScript + Python**
+**v0.3.0 · Windows x64 · Electron / React / TypeScript / Python**
 
-[下载安装器](https://github.com/Pocon041/image-authenticity-app/releases/download/v0.2.2/SRDP-Setup-0.2.2-x64.exe) · [版本发布](https://github.com/Pocon041/image-authenticity-app/releases/tag/v0.2.2) · [安装说明](docs/INSTALLATION.md) · [开发配置](docs/DEVELOPMENT.md) · [报告协议](docs/REPORT_PROTOCOL_V1.md)
+[下载最新版](https://github.com/Pocon041/image-authenticity-app/releases/latest) · [安装说明](docs/INSTALLATION.md) · [开发配置](docs/DEVELOPMENT.md) · [报告协议](docs/REPORT_PROTOCOL_V1.md)
 
-## 功能
+![通用鉴伪系统桌面工作区](docs/images/workspace.png)
 
-- **来源分析** — 读取 EXIF、XMP、IPTC、C2PA 来源凭证，检查可见文字水印和已支持的隐形水印载荷。
-- **真实性筛查** — SICA 提供通用整图真假分类，FSD 提供 AI 生成检测。
-- **篡改定位** — RITA 处理普通照片，RiSE 处理文档、票据和截图，输出像素掩码、响应图和区域信息。
-- **自动路由** — 根据内容选择定位器，支持手动指定和补充检查。
-- **可解释输出** — 结合来源记录、检测结果、区域观察与证据关系，生成重点位置和自然语言说明。
-- **结果回看** — 支持原图与定位结果切换、区域裁剪、真实进度、取消和部分失败处理。
-- **报告导出** — 同时保留简明 JSON、完整证据包、模型原始结果和解释记录。
+## 下载安装
 
-分析流程为 **导入图片 → 来源检查与规范化 → 内容路由 → FSD → SICA → RITA / RiSE → 证据汇总与解释**。SICA 未报警时仍继续定位，各定位器的结果独立保留。
+项目提供两种安装方式。
 
-## 安装
+### 完整版
 
-### 下载
+适合直接使用检测、定位和本地解释功能的用户。安装资源包含三个 Python 环境、SICA、RITA、RiSE、FSD 的默认检测资源、来源检查依赖，以及 Ollama 和 Qwen3-VL-2B 解释模型。
 
-下载 [Windows x64 安装器](https://github.com/Pocon041/image-authenticity-app/releases/download/v0.2.2/SRDP-Setup-0.2.2-x64.exe)，运行安装向导后，从桌面或开始菜单打开应用。校验文件位于 [v0.2.2 发布页](https://github.com/Pocon041/image-authenticity-app/releases/tag/v0.2.2)。
+下载完整安装器与全部六个数据分卷，放在同一文件夹，然后运行安装器。程序会自动校验并准备离线资源、启动应用安装向导。首次打开后选择模型与报告目录，等待自动配置完成即可使用。
 
-GitHub 提供的安装器约 125 MB，包含桌面应用、Electron 和本项目后端脚本。真实检测还需要 Python 推理环境、模型源码、权重及本地 VLM。已有环境可以直接接入，开发者也可以按[开发配置](docs/DEVELOPMENT.md)自行准备。
+[完整安装器](https://github.com/Pocon041/image-authenticity-app/releases/download/v0.3.0/SRDP-Full-Setup-0.3.0-x64.exe) · [数据01](https://github.com/Pocon041/image-authenticity-app/releases/download/v0.3.0/SRDP-Full-Data-0.3.0-01.bin) · [数据02](https://github.com/Pocon041/image-authenticity-app/releases/download/v0.3.0/SRDP-Full-Data-0.3.0-02.bin) · [数据03](https://github.com/Pocon041/image-authenticity-app/releases/download/v0.3.0/SRDP-Full-Data-0.3.0-03.bin) · [数据04](https://github.com/Pocon041/image-authenticity-app/releases/download/v0.3.0/SRDP-Full-Data-0.3.0-04.bin) · [数据05](https://github.com/Pocon041/image-authenticity-app/releases/download/v0.3.0/SRDP-Full-Data-0.3.0-05.bin) · [数据06](https://github.com/Pocon041/image-authenticity-app/releases/download/v0.3.0/SRDP-Full-Data-0.3.0-06.bin)
 
-### 首次启动
+完整下载约10.4GB。数据分卷由安装器自动读取，用户无需手动解压，也无需另外下载 Python、模型权重或 Ollama。分卷用于满足 GitHub 单附件小于2GiB的限制。安装器与资源文件的目录结构见[安装说明](docs/INSTALLATION.md#完整版)。
 
-1. 打开“本地运行环境”，选择模型与报告目录，例如 `D:\SRDP-Data`。
-2. 如果安装包附带 `runtime-bundle`，保持它与安装器相邻。首次选择新数据目录后，应用会自动校验和展开资源、生成配置，并启动本地解释服务。
-3. 如果已配置源码环境，直接选择项目根目录，复用已有配置与权重。
-4. 选择图片，点击“开始分析”。
+### 开发者版
 
-自动配置支持取消和重试。使用随包运行资源时，用户无需额外安装 Python、Node.js、Git 或 Ollama。资源压缩后约 10.23 GB，展开后约 16.41 GB，当前 GitHub Release 附件提供的是安装器，模型运行资源需另行取得或自行构建。
+适合自行配置模型、调整工作流或扩展适配器的开发者。约130MB，提供桌面框架、交互工作台、模拟流程、报告协议和本项目后端适配脚本。
+
+运行安装器后，可在“设置 → 开发与单模型调试”中选择“模拟流程”体验框架。接入真实模型时，按开发文档自行准备 Python 环境、上游模型源码、权重和解释服务，再选择对应的运行目录。
+
+[开发者版安装器](https://github.com/Pocon041/image-authenticity-app/releases/download/v0.3.0/SRDP-Developer-Setup-0.3.0-x64.exe) · [模型配置与接入](docs/DEVELOPMENT.md)
+
+发布页同时提供 [SHA-256 校验清单](https://github.com/Pocon041/image-authenticity-app/releases/download/v0.3.0/SHA256SUMS.txt)。当前安装器未配置代码签名证书，Windows可能显示未知发布者。
+
+## 可以做什么
+
+- **来源与处理记录**。读取 EXIF、XMP、IPTC 和 C2PA，检查支持的可见文字水印与隐形水印载荷。
+- **视觉取证**。FSD 检查 AI 生成线索，SICA 提供通用整图筛查，RITA 与 RiSE 分别负责照片和文档的局部定位。
+- **证据解释**。组织来源、整图反馈、局部区域及证据关系，结合原图与裁剪生成自然语言说明。
+- **图像核查**。支持拖拽、粘贴、原图与定位切换、滚轮缩放、拖动平移、放大预览，以及可调节的图像／报告分栏。
+- **结果留存**。显示实际分析进度，支持取消、重试和部分失败处理，保存简明报告、完整证据包及模型原始输出。
+
+## 使用流程
+
+1. 选择、拖入或粘贴一张图片。
+2. 使用“自动识别”，或手动选择普通照片、文档等类型，点击“开始分析”。
+3. 查看来源检查、检测和定位进度，阅读综合判断与分析说明。
+4. 在说明区切换原图和定位图，缩放查看细节；展开“检测详情与报告”核查原始记录。
+
+当前支持 PNG、JPG、JPEG 和 WebP，每次处理一张图片，最大20MB、6000万像素。RiSE 默认最多处理128个图块。默认检测路径按序使用GPU，单项失败会保留已完成结果。SICA未报警时仍继续定位，FSD阴性与传统编辑线索分别记录。
 
 ## 系统要求
 
-以下为完整检测与本地解释流程的建议配置。
+- **系统**。Windows 10/11 x64，建议使用已更新的系统。
+- **内存**。建议16GB以上，完整检测与本地解释推荐32GB。
+- **显卡**。推荐 NVIDIA GPU，8GB或更多显存，驱动需兼容随包 PyTorch CUDA12.6。已在 RTX4060 Laptop 8GB 上完成工程联调。
+- **存储**。建议SSD。运行目录预留至少25GB；完整安装资源和运行数据放在同一磁盘时，建议预留50GB。
+- **离线使用**。完整版资源准备完成后，默认检测与本地解释流程可离线运行。GPU驱动由系统环境提供。
 
-- **操作系统** — Windows 10/11 x64，建议使用已更新的系统版本。
-- **处理器** — Intel 或 AMD x64 多核处理器。
-- **内存** — 建议 16 GB 以上，推荐 32 GB。
-- **显卡** — 推荐 NVIDIA GPU，8 GB 或更多显存。已在 RTX 4060 Laptop 8 GB 上完成检测、定位和本地 2B VLM 联调。
-- **驱动** — GPU 路线需要兼容随包 PyTorch CUDA 12.6 的 NVIDIA 驱动。CUDA 运行库随 PyTorch 提供。
-- **存储** — 建议使用 SSD。实际运行目录预留至少 25 GB。安装包、资源解压副本与运行目录放在同一磁盘时，首次安装建议预留 50 GB。
-- **网络** — 下载软件、依赖和权重时需要网络。完整运行资源准备好后，默认本地流程可离线使用。
-- **显示** — 应用最小窗口尺寸为 1060 × 740，建议使用 1920 × 1080 或更高分辨率。
+无可用CUDA时可使用CPU，CPU端到端速度与其他硬件组合尚未系统评测。安装位置、离线资源与运行数据可分开管理，升级和卸载应用会保留独立的数据目录。
 
-无可用 CUDA 设备时，自动配置会为检测器选择 CPU 路线。CPU 端到端性能和其他显卡组合尚未系统评测。以上内存、显存为建议配置，图片尺寸和后台程序会影响实际占用。
+## 从源码开发
 
-## 使用
-
-1. 导入 PNG、JPG、JPEG 或 WebP 图片。
-2. 选择“自动识别”，或手动指定普通照片、文档、混合内容。
-3. 查看来源检查、模型检测和解释生成进度。
-4. 完成后在左侧切换原图与各定位器结果，在右侧查看结论、重点位置和解释。
-5. 展开“检测详情与报告”查看模型分数，或打开报告文件夹。
-
-当前每次处理一张图片，支持最大 20 MB、6000 万像素的输入。RiSE 默认最多处理 128 个图块，超限会提示错误。
-
-本地解释使用 Qwen3-VL-2B-Instruct。自行配置的 Ollama 默认连接 `127.0.0.1:11434`，由应用管理的随包服务使用 `127.0.0.1:11435`。云端兼容接口可通过解释配置指定。
-
-## 报告
-
-每次联合分析写入所选运行目录下的 `work/analysis-runs/<taskId>/`。
-
-```text
-<taskId>/
-├─ analysis.json              简明检测报告
-├─ bundle.json                完整证据包与附件索引
-├─ report.json                篡改检测汇总
-├─ reports/
-│  ├─ provenance.json         元数据、来源凭证与水印
-│  └─ explanation.json        最终解释和模型调用记录
-├─ images/                    原文件副本与规范显示图
-└─ detectors/                 各模型报告、掩码、响应图与裁剪
-```
-
-原文件按字节保留，公共 `imageId` 由原文件 SHA-256 生成。全部区域坐标映射到 EXIF 方向校正、sRGB、未缩放的规范显示图。报告字段与引用约定见[报告协议](docs/REPORT_PROTOCOL_V1.md)。
-
-## 开发
-
-需要 Git 和 Node.js 22.12+，推荐 Node.js 24 LTS。
+需要 Git 和 Node.js 22.12+，推荐使用 Node.js 24 LTS。
 
 ```powershell
-git clone https://github.com/Pocon041/image-authenticity-app.git
+git clone --branch main https://github.com/Pocon041/image-authenticity-app.git
 cd image-authenticity-app
 .\run.cmd ci
 .\start.cmd
 ```
 
-先在“开发与单模型调试”中选择模拟流程，可检查选图、IPC 和结果展示。接入真实模型的 Python 环境、权重下载及配置步骤见[开发配置](docs/DEVELOPMENT.md)。
+准备真实模型环境和本机配置的步骤见[开发文档](docs/DEVELOPMENT.md)。权重、运行环境、测试图片、报告和 `*.local.json` 保存在本地。
 
-主要检查命令如下。
+常用验证入口如下。
 
 ```powershell
-.\run.cmd run typecheck
 .\run.cmd run build
 .\run.cmd run test:workflow
 .\run.cmd run test:protocol
-.\run.cmd run test:confidence
-.\run.cmd run test:explanation
-.\run.cmd run test:evidence-links
+.\run.cmd run test:workbench
 .\run.cmd run smoke
 ```
 
-`test:*` 和模拟 Smoke 主要检查工程行为。真实推理检查需要已就绪的模型环境，入口见[开发配置](docs/DEVELOPMENT.md#验证真实推理)。
-
-### 构建安装包
+构建安装器和两种发布产物。
 
 ```powershell
-# 生成 Windows x64 安装器
 .\run.cmd run package:win
-
-# 生成可直接运行的应用目录
-.\run.cmd run package:dir
+.\run.cmd run package:distributions
 ```
 
-产物位于 `dist/v<版本>/`，安装器旁附带 `SHA256SUMS.txt`。需要构建含运行资源的安装包时，按[安装说明](docs/INSTALLATION.md#构建含运行资源的安装包)准备构建机并收集资源。
+发布产物位于 `dist/v<版本>/release/`。完整版构建需使用已准备、通过校验的运行资源，详见[构建说明](docs/INSTALLATION.md#构建两种安装包)。
 
-### 项目结构
+## 报告与接口
+
+每次联合分析保存到运行目录的 `work/analysis-runs/<taskId>/`。
 
 ```text
-src/main/       Electron 主进程、任务编排、模型适配与证据汇总
-src/preload/    受控的桌面 IPC 桥接
-src/renderer/   React 界面和交互状态
-src/shared/     共享类型、协议与支持度计算
-backend/        Python 推理与来源检查
-config/         示例配置与本机配置入口
-schemas/        JSON Schema
-docs/           安装、开发和协议文档
-scripts/        依赖准备、校验与打包
-tests/          单元、协议和桌面 Smoke 检查
+analysis.json             简明检测报告
+bundle.json               完整证据包与附件索引
+reports/provenance.json   来源记录与水印检查
+reports/explanation.json  自然语言说明与调用记录
+detectors/                模型报告、掩码、响应图与区域裁剪
+images/                   原始文件副本与规范显示图
 ```
 
-`main` 维护共享版本。协作前阅读 `AGENT.md`。权重、数据、生成结果和 `*.local.json` 保存在本地，提交前请检查文件范围。
+原始文件按字节保留，公共 `imageId` 由原文件 SHA-256 生成。定位坐标以 EXIF 方向校正、sRGB、未缩放的显示图为基准。公共字段、状态和证据引用见[报告协议](docs/REPORT_PROTOCOL_V1.md)。
 
-## 常见问题
+## 项目结构
 
-- **首次启动没有自动配置按钮** — 检查是否取得了配套运行资源，在“本地运行环境”中选择 `runtime-bundle` 文件夹。
-- **模型未就绪** — 确认运行目录正确，并检查对应 `config/*.local.json` 的 Python、模型源码和权重路径。
-- **本地解释服务不可用** — 随包服务可重新执行环境检查。自行配置时检查 Ollama 是否运行、模型标签和 `host` 是否正确。
-- **检测较慢或显存不足** — 关闭其他 GPU 密集程序，确认驱动可用，并检查是否正在使用 CPU。高分辨率文档的图块数量也会影响耗时。
-- **源码启动出现 `Electron uninstall`** — 执行 `.\run.cmd run runtime:ensure -- --repair`。
-- **Windows 显示未知发布者** — 当前安装器未签名，可使用发布页的 SHA-256 校验文件核对下载内容。
+```text
+src/main/       桌面主进程、任务编排、模型适配与证据汇总
+src/preload/    受控的类型化IPC桥接
+src/renderer/   桌面工作台、图像交互与结果展示
+src/shared/     共享类型与报告协议
+backend/        Python检测、定位与来源检查
+config/         示例配置与本机配置入口
+schemas/        JSON Schema
+scripts/        环境准备、校验与安装包构建
+tests/          协议、工作流与桌面回归检查
+```
+
+`main` 维护共享版本。协作约定见 [AGENT.md](AGENT.md)，产品和界面原则分别记录在 [PRODUCT.md](PRODUCT.md) 与 [DESIGN.md](DESIGN.md)。
 
 ## 模型与许可
 
-项目代码采用 [MIT License](LICENSE)。模型来源包括 [SICA](https://github.com/venus-guangjian/SICA_OpenMMSec)、[RITA](https://github.com/scu-zjz/RITA)、[RiSE](https://github.com/KahimWong/RiSE)、[FSD](https://github.com/ductai199x/Forensic-Self-Descriptions-CVPR25) 和 [Qwen3-VL](https://huggingface.co/Qwen/Qwen3-VL-2B-Instruct-GGUF)。第三方代码、权重和依赖按各自许可使用，其中 FSD 使用 CC BY-NC-SA 4.0，含非商业使用限制。
+本项目代码采用 [MIT License](LICENSE)。第三方模型、代码和运行组件适用各自条款，完整版面向非商业研究使用，来源与许可说明见[第三方组件与模型](docs/THIRD_PARTY_COMPONENTS.md)。
 
-检测结果与解释用于辅助分析。当前分数尚未统一校准为正确率，定位可能误报，VLM 也可能误认目标或推测错误手法。样例联调通过与模型准确率评估分别记录。
+项目侧重现有模型的工程集成与证据协同。检测可能出现漏报、误报，解释需结合原图核查，当前分数未经统一校准。工程回归记录和模型效果评测分别维护。

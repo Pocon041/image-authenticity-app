@@ -14,13 +14,16 @@ const smokeMode = process.argv.includes('--smoke-test')
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
-    title: 'SRDP · 图像真实性分析',
+    title: '通用鉴伪系统',
+    icon: app.isPackaged
+      ? join(process.resourcesPath, 'icon.ico')
+      : join(app.getAppPath(), 'build/icon.ico'),
     width: 1400,
     height: 920,
     minWidth: 1060,
     minHeight: 740,
     show: false,
-    backgroundColor: '#10141b',
+    backgroundColor: '#f3f3f0',
     autoHideMenuBar: true,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
