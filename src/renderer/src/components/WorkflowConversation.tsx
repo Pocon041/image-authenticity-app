@@ -1,5 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
-import { Check, ChevronRight, CircleAlert, LoaderCircle, MessageSquareText } from 'lucide-react'
+import {
+  Check,
+  ChevronRight,
+  CircleAlert,
+  FileText,
+  Image as ImageIcon,
+  LoaderCircle,
+  MessageSquareText,
+  ScanLine
+} from 'lucide-react'
 import type { ExplanationProgress, Response, WorkflowStep } from '../../../shared/contracts'
 import type { ExplanationReport } from '../../../shared/protocol'
 import type { AnalysisWorkspace } from '../hooks/useAnalysisWorkspace'
@@ -211,6 +220,16 @@ export function WorkflowConversation({ workspace: w }: { workspace: AnalysisWork
   const pendingAssessment = !result && explainState === 'running' && !!stream?.decision
   const answerText = String(result?.analysis ?? stream?.text ?? '')
   const lead = String(result?.lead ?? '')
+  const localizers =
+    workflow?.detectors.filter(
+      (detector) => detector.status === 'completed' && detector.localization?.overlayDataUrl
+    ) ?? []
+  const primaryLocalizer =
+    localizers.find((detector) => detector.backend === workflow?.primary) ?? localizers[0]
+  const imageView =
+    w.imageView && w.imageView.taskId === report?.id
+      ? w.imageView.view
+      : (primaryLocalizer?.backend ?? 'original')
   const detailText =
     lead && answerText.startsWith(lead) ? answerText.slice(lead.length).trim() : answerText
   useEffect(() => {
@@ -252,12 +271,8 @@ export function WorkflowConversation({ workspace: w }: { workspace: AnalysisWork
               <MessageSquareText size={17} />
             </span>
             <div>
-              <h3>{w.image ? '图片已就绪' : '等待一张图片'}</h3>
-              <p>
-                {w.image
-                  ? '点击左侧“开始分析”，查看结论与区域说明。'
-                  : '导入图片后，结论、定位与分析依据会显示在这里。'}
-              </p>
+              <h3>{w.image ? '图片已就绪' : '暂无分析结果'}</h3>
+              {w.image && <p>点击“开始分析”</p>}
             </div>
           </div>
         )}
@@ -274,7 +289,7 @@ export function WorkflowConversation({ workspace: w }: { workspace: AnalysisWork
                   {current >= 0
                     ? `第 ${current + 1} 步${detectorSteps.length ? ` / 共 ${items.length} 步` : ''} · ${items[current].title}`
                     : explainState === 'done'
-                      ? '本轮分析已结束 · 查看分析过程'
+                      ? '查看分析过程'
                       : w.running
                         ? '本步已完成，正在继续分析'
                         : stopped
@@ -348,10 +363,13 @@ export function WorkflowConversation({ workspace: w }: { workspace: AnalysisWork
           <article className="conversation-answer" data-testid="analysis-report">
             {verdict ? (
               <div
-                className={`conversation-conclusion ${verdict}`}
+                className={`conversation-conclusion report-verdict ${verdict}`}
                 data-testid="explanation-conclusion"
               >
-                <span>综合判断</span>
+                <div className="verdict-label">
+                  <FileText size={15} />
+                  <span>综合判断</span>
+                </div>
                 <strong>
                   {verdict === 'suspicious'
                     ? result?.aiGenerationSource === 'credentials'
@@ -371,8 +389,14 @@ export function WorkflowConversation({ workspace: w }: { workspace: AnalysisWork
                 {lead && <p className="conclusion-target conclusion-lead">{lead}</p>}
               </div>
             ) : pendingAssessment ? (
-              <div className="conversation-conclusion pending" data-testid="explanation-conclusion">
-                <span>综合判断</span>
+              <div
+                className="conversation-conclusion report-verdict pending"
+                data-testid="explanation-conclusion"
+              >
+                <div className="verdict-label">
+                  <LoaderCircle size={15} className="spin" />
+                  <span>综合判断</span>
+                </div>
                 <strong>正在综合判断</strong>
                 <p className="conclusion-target conclusion-lead">
                   正在结合完整图片、局部区域和检测证据。
@@ -385,6 +409,26 @@ export function WorkflowConversation({ workspace: w }: { workspace: AnalysisWork
               </span>
               <h3>{explainState === 'running' ? '正在撰写分析' : '分析说明'}</h3>
             </div>
+            {primaryLocalizer && (
+              <div className="evidence-actions" role="group" aria-label="图像核查">
+                <button
+                  type="button"
+                  aria-pressed={imageView === 'original'}
+                  onClick={() => w.selectImageView('original')}
+                >
+                  <ImageIcon size={14} />
+                  查看原图
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={imageView !== 'original'}
+                  onClick={() => w.selectImageView(primaryLocalizer.backend)}
+                >
+                  <ScanLine size={14} />
+                  查看定位
+                </button>
+              </div>
+            )}
             <ResponseText text={detailText} streaming={explainState === 'running'} />
             {!!result?.evidenceLinks?.length && (
               <section

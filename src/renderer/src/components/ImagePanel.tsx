@@ -1,6 +1,7 @@
-import { ArrowRight, FileImage, ImagePlus, LoaderCircle, Sparkles, X } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { FileImage, ImagePlus, LoaderCircle, Maximize2, ScanLine, X } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 import type { AnalysisWorkspace } from '../hooks/useAnalysisWorkspace'
+import { ImageViewport } from './ImageViewport'
 import '../image-results.css'
 
 function formatSize(bytes: number): string {
@@ -11,7 +12,8 @@ function formatSize(bytes: number): string {
 
 export function ImagePanel({ workspace: w }: { workspace: AnalysisWorkspace }) {
   const [previewOpen, setPreviewOpen] = useState(false)
-  const [selection, setSelection] = useState<{ taskId: string; view: string } | null>(null)
+  const previewDialog = useRef<HTMLDialogElement>(null)
+  const selection = w.imageView
   const report = !w.running && w.report?.imageId === w.image?.id ? w.report : null
   const localizations =
     report?.workflow?.detectors
@@ -41,12 +43,7 @@ export function ImagePanel({ workspace: w }: { workspace: AnalysisWorkspace }) {
     setPreviewOpen(false)
   }, [w.image?.id])
   useEffect(() => {
-    if (!previewOpen) return
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setPreviewOpen(false)
-    }
-    window.addEventListener('keydown', closeOnEscape)
-    return () => window.removeEventListener('keydown', closeOnEscape)
+    if (previewOpen) previewDialog.current?.showModal()
   }, [previewOpen])
   const labels = {
     workflow: ['开始分析', '重新分析', '分析中…'],
@@ -57,13 +54,15 @@ export function ImagePanel({ workspace: w }: { workspace: AnalysisWorkspace }) {
     aigc: ['开始 FSD 检测', '重新运行 FSD', 'FSD 检测中…']
   }[w.backend]
   return (
-    <section className="panel image-panel" aria-label="图片工作区">
+    <section className="panel image-panel" aria-label="图片工作区" aria-busy={w.running}>
       <div className="panel-heading">
         <div>
           <FileImage size={18} />
           <h2>图像工作区</h2>
         </div>
-        <span>{w.image ? '1 张图片' : '等待导入'}</span>
+        <span aria-live="polite">
+          {w.status === 'picking' ? '导入中…' : w.image ? '1 张图片' : '等待导入'}
+        </span>
       </div>
       {report && localizations.length > 0 && (
         <div
@@ -75,7 +74,7 @@ export function ImagePanel({ workspace: w }: { workspace: AnalysisWorkspace }) {
           <button
             type="button"
             aria-pressed={!displayed}
-            onClick={() => setSelection({ taskId: report.id, view: 'original' })}
+            onClick={() => w.selectImageView('original')}
           >
             原图
           </button>
@@ -84,7 +83,7 @@ export function ImagePanel({ workspace: w }: { workspace: AnalysisWorkspace }) {
               type="button"
               key={item.key}
               aria-pressed={view === item.key}
-              onClick={() => setSelection({ taskId: report.id, view: item.key })}
+              onClick={() => w.selectImageView(item.key)}
             >
               {item.label} 定位
             </button>
@@ -93,10 +92,12 @@ export function ImagePanel({ workspace: w }: { workspace: AnalysisWorkspace }) {
       )}
       <div className={`preview-area ${w.image ? 'has-image' : ''}`}>
         {w.image ? (
-          <img
-            data-testid="image-preview"
-            className="image-preview"
+          <ImageViewport
+            key={w.image.id}
             src={previewSrc}
+            originalSrc={w.image.dataUrl}
+            scanning={w.running}
+            localized={!!displayed}
             alt={
               displayed ? `${displayed.label} 定位结果：${w.image.name}` : `已导入：${w.image.name}`
             }
@@ -106,8 +107,6 @@ export function ImagePanel({ workspace: w }: { workspace: AnalysisWorkspace }) {
             <div className="upload-symbol">
               <ImagePlus size={35} strokeWidth={1.4} />
             </div>
-            <h3>选择一张待分析的图片</h3>
-            <p>保留原图，使用副本进行分析</p>
             <button
               className="primary-button import-button"
               onClick={w.chooseImage}
@@ -116,7 +115,8 @@ export function ImagePanel({ workspace: w }: { workspace: AnalysisWorkspace }) {
               <ImagePlus size={17} />
               选择图片
             </button>
-            <small>PNG / JPG / WebP · 最大 20 MB</small>
+            <small>拖入图片，或使用 Ctrl+V 粘贴</small>
+            <small>PNG / JPG / WebP，最大 20 MB</small>
           </div>
         )}
         {w.image && (
@@ -126,36 +126,42 @@ export function ImagePanel({ workspace: w }: { workspace: AnalysisWorkspace }) {
             onClick={() => setPreviewOpen(true)}
             aria-label="放大查看图像预览"
           >
-            {displayed ? `${displayed.label} 定位结果` : '图像预览'}
+            <Maximize2 size={13} />
+            放大查看
           </button>
         )}
       </div>
       {w.image && previewOpen && (
-        <div
+        <dialog
+          ref={previewDialog}
           className="image-preview-modal"
-          role="presentation"
+          aria-label={`图像预览：${w.image.name}`}
+          onClose={() => setPreviewOpen(false)}
           onMouseDown={(event) => {
-            if (event.target === event.currentTarget) setPreviewOpen(false)
+            if (event.target === event.currentTarget) previewDialog.current?.close()
           }}
         >
-          <section
-            className="image-preview-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-label={`图像预览：${w.image.name}`}
-          >
+          <section className="image-preview-dialog">
             <header>
               <strong title={w.image.name}>{w.image.name}</strong>
-              <button type="button" aria-label="关闭图像预览" onClick={() => setPreviewOpen(false)}>
+              <button
+                type="button"
+                aria-label="关闭图像预览"
+                onClick={() => previewDialog.current?.close()}
+              >
                 <X size={20} />
               </button>
             </header>
-            <img
-              src={previewSrc}
-              alt={`放大预览：${displayed?.label ?? '原图'} · ${w.image.name}`}
-            />
+            <div className="expanded-image-canvas">
+              <ImageViewport
+                src={previewSrc}
+                alt={`放大预览：${displayed?.label ?? '原图'} · ${w.image.name}`}
+                scanning={w.running}
+                testId="expanded-image-preview"
+              />
+            </div>
           </section>
-        </div>
+        </dialog>
       )}
       {w.image ? (
         <div className="image-details">
@@ -186,49 +192,41 @@ export function ImagePanel({ workspace: w }: { workspace: AnalysisWorkspace }) {
           </div>
         </div>
       ) : null}
-      {w.backend === 'workflow' && (
-        <div className="simple-content-type">
-          <label htmlFor="content-type">图片类型</label>
-          <select
-            id="content-type"
-            value={w.contentType}
-            disabled={w.busy}
-            onChange={(event) =>
-              w.selectContentType(event.target.value as 'auto' | 'photo' | 'document' | 'unsure')
-            }
-          >
-            <option value="auto">自动识别（推荐）</option>
-            <option value="photo">普通照片</option>
-            <option value="document">文档 / 票据 / 截图</option>
-            <option value="unsure">不确定 / 混合内容</option>
-          </select>
-          <small data-testid="route-plan">
-            {w.contentType === 'auto'
-              ? '自动选择适合这张图片的检查方式。'
-              : w.contentType === 'document'
-                ? '包括拍摄的小票和文字截图。'
-                : w.contentType === 'photo'
-                  ? '适用于人物、物品和自然场景。'
-                  : '进行全面检查，耗时略长。'}
-          </small>
-        </div>
-      )}
-      <div className="image-actions">
-        {w.image && (
-          <button className="secondary-button" onClick={w.chooseImage} disabled={w.busy}>
-            更换图片
-          </button>
+      <div className="image-controls">
+        {w.backend === 'workflow' && (
+          <div className="simple-content-type">
+            <label htmlFor="content-type">图片类型</label>
+            <select
+              id="content-type"
+              value={w.contentType}
+              disabled={w.busy}
+              onChange={(event) =>
+                w.selectContentType(event.target.value as 'auto' | 'photo' | 'document' | 'unsure')
+              }
+            >
+              <option value="auto">自动识别</option>
+              <option value="photo">普通照片</option>
+              <option value="document">文档 / 票据 / 截图</option>
+              <option value="unsure">不确定 / 混合内容</option>
+            </select>
+          </div>
         )}
-        <button
-          data-testid="analyze-button"
-          className="primary-button"
-          onClick={w.analyze}
-          disabled={!w.image || w.busy}
-        >
-          {w.running ? <LoaderCircle size={17} className="spin" /> : <Sparkles size={17} />}
-          {w.running ? labels[2] : w.report ? labels[1] : labels[0]}
-          {!w.running && <ArrowRight size={16} />}
-        </button>
+        <div className="image-actions">
+          {w.image && (
+            <button className="secondary-button" onClick={w.chooseImage} disabled={w.busy}>
+              更换图片
+            </button>
+          )}
+          <button
+            data-testid="analyze-button"
+            className="primary-button"
+            onClick={w.analyze}
+            disabled={!w.image || w.busy}
+          >
+            {w.running ? <LoaderCircle size={17} className="spin" /> : <ScanLine size={17} />}
+            {w.running ? labels[2] : w.report ? labels[1] : labels[0]}
+          </button>
+        </div>
       </div>
     </section>
   )

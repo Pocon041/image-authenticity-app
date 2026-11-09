@@ -52,7 +52,7 @@ try {
   page.on('request', (r) => {
     if (/^https?:/.test(r.url())) requests.push(r.url())
   })
-  await page.getByRole('heading', { name: '从一张图片开始' }).waitFor()
+  await page.getByRole('heading', { name: '通用鉴伪系统' }).waitFor()
   assert.equal(await page.getByRole('combobox', { name: '图片类型' }).inputValue(), 'auto')
   assert.equal(
     await page.getByRole('button', { name: 'HiFi-Net 本地定位', exact: true }).isVisible(),
@@ -329,7 +329,7 @@ try {
   try {
     const failPage = await failDesktop.firstWindow()
     failPage.setDefaultTimeout(30000)
-    await failPage.getByRole('heading', { name: '从一张图片开始' }).waitFor()
+    await failPage.getByRole('heading', { name: '通用鉴伪系统' }).waitFor()
     const smallImage = join(output, 'router-fallback-fixture.png')
     await sharp({ create: { width: 64, height: 64, channels: 3, background: '#c0c0c0' } })
       .png()

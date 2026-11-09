@@ -59,7 +59,7 @@ try {
   browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`, { timeout: 10_000 })
   const context = browser.contexts()[0]
   const page = context.pages()[0] ?? (await context.waitForEvent('page', { timeout: 15_000 }))
-  await page.getByRole('heading', { name: '从一张图片开始' }).waitFor({ timeout: 15_000 })
+  await page.getByRole('heading', { name: '通用鉴伪系统' }).waitFor({ timeout: 15_000 })
   assert.equal(await page.getByTestId('analyze-button').isDisabled(), true)
   assert.equal(await page.evaluate(() => typeof window.desktop.chooseImage), 'function')
   assert.ok(logs.includes(`Electron ${electronVersion} is ready`))

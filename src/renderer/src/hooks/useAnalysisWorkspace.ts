@@ -4,7 +4,8 @@ import type {
   AnalysisProgress,
   AnalysisReport,
   ContentType,
-  ImageAsset
+  ImageAsset,
+  Response
 } from '../../../shared/contracts'
 
 export function useAnalysisWorkspace() {
@@ -12,6 +13,7 @@ export function useAnalysisWorkspace() {
   const [backend, setBackend] = useState<AnalysisBackend>('workflow')
   const [contentType, setContentType] = useState<ContentType | 'auto'>('auto')
   const [report, setReport] = useState<AnalysisReport | null>(null)
+  const [imageView, setImageView] = useState<{ taskId: string; view: string } | null>(null)
   const [progress, setProgress] = useState<AnalysisProgress | null>(null)
   const [lastProgress, setLastProgress] = useState<AnalysisProgress | null>(null)
   const [status, setStatus] = useState<'idle' | 'picking' | 'running' | 'cancelling'>('idle')
@@ -45,29 +47,35 @@ export function useAnalysisWorkspace() {
     []
   )
 
-  async function chooseImage() {
+  async function acquireImage(read: () => Promise<Response<ImageAsset | null>>) {
     if (locked.current) return
     locked.current = true
     setError('')
     setNotice('')
     setStatus('picking')
     try {
-      const result = await window.desktop.chooseImage()
+      const result = await read()
       if (!result.ok) setError(result.error)
       else if (result.data) {
         setImage(result.data)
         setReport(null)
+        setImageView(null)
         setProgress(null)
         setLastProgress(null)
         progressTrace.current = null
       }
     } catch {
-      setError('无法打开图片，请重新尝试。')
+      setError('无法导入图片，请重新尝试。')
     } finally {
       locked.current = false
       setStatus('idle')
     }
   }
+
+  const chooseImage = () => acquireImage(() => window.desktop.chooseImage())
+  const importDroppedImage = (files: File[]) =>
+    acquireImage(() => window.desktop.importDroppedImage(files))
+  const pasteImage = () => acquireImage(() => window.desktop.pasteImage())
 
   async function analyze(supplement = false) {
     if (!image || locked.current) return
@@ -76,7 +84,10 @@ export function useAnalysisWorkspace() {
     currentTask.current = taskId
     setError('')
     setNotice('')
-    if (!supplement) setReport(null)
+    if (!supplement) {
+      setReport(null)
+      setImageView(null)
+    }
     setProgress(null)
     setLastProgress(null)
     progressTrace.current = null
@@ -139,6 +150,7 @@ export function useAnalysisWorkspace() {
       else {
         setImage(null)
         setReport(null)
+        setImageView(null)
         setProgress(null)
         setLastProgress(null)
         progressTrace.current = null
@@ -159,6 +171,7 @@ export function useAnalysisWorkspace() {
       if (locked.current) return
       setContentType(next)
       setReport(null)
+      setImageView(null)
       setProgress(null)
       setLastProgress(null)
       progressTrace.current = null
@@ -169,6 +182,7 @@ export function useAnalysisWorkspace() {
       if (locked.current) return
       setBackend(next)
       setReport(null)
+      setImageView(null)
       setError('')
       setNotice('')
       setProgress(null)
@@ -177,6 +191,11 @@ export function useAnalysisWorkspace() {
     },
     image,
     report,
+    imageView,
+    selectImageView(view: string) {
+      if (!report || report.imageId !== image?.id || status !== 'idle') return
+      setImageView({ taskId: report.id, view })
+    },
     progress,
     lastProgress,
     status,
@@ -185,6 +204,8 @@ export function useAnalysisWorkspace() {
     busy: status !== 'idle',
     running: status === 'running' || status === 'cancelling',
     chooseImage,
+    importDroppedImage,
+    pasteImage,
     analyze: () => analyze(false),
     supplement: () => analyze(true),
     cancel,

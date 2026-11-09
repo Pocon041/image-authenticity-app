@@ -9,6 +9,7 @@
 - 远程仓库：`https://github.com/Pocon041/image-authenticity-app`；主分支：`main`。
 - 公共可运行版本维护在 `main`，各模块在自己的分支开发。
 - 用户于 2026-10-29 授权将已验证的 `czh` 功能更新发布到 `main`；整合时保留其他成员更新，排除第二人专用 `AGENTS.md`，遇到冲突先告知用户并等待确认。
+- 2026-11-10 用户再次明确授权同步 `czh` 与 `main`，发布完整版和开发者版到 GitHub Release；完整版按用户要求收录现有权重，第三方来源与许可状态随包说明。
 - 提交云端或发布前按用户要求先询问/确认；不擅自改写他人关键逻辑。
 - 历史授权、已失效状态和模块详细验证记录统一折叠到“历史沿革”或模块文档，不继续堆入“当前状态”。
 
@@ -16,7 +17,7 @@
 
 开发基于本地推理的图像真实性分析桌面 APP。本项目侧重工程集成，不开发视觉取证算法。
 
-当前功能基线为 v0.2.0，v0.2.1 提供 Windows 安装版，v0.2.2 增加内部完整资源自动配置：
+当前版本为 v0.3.0，提供含离线资源的完整安装器与开发者框架安装器：
 
 - 选择本地图片 → 内容类型路由 → FSD AIGC 初步判断 → SICA 整图筛查与 RITA/RiSE 定位 → 简明 JSON 和完整证据包。
 - 默认入口为联合分析；详细模型诊断折叠或留内部文件；HiFi-Net 不进入联合路由，运行入口已移除。
@@ -98,8 +99,8 @@ Windows 启动入口为 `start.cmd`；`run.cmd` 负责优先使用 `.tools/` 下
 - `run.cmd run runtime:ensure -- --repair`：重新校验下载包并修复运行时，优先复用缓存。
 - `run.cmd run package:dir`：生成 Windows 可直接运行的应用目录。
 - `run.cmd run package:win`：生成 Windows x64 NSIS 安装包和 SHA-256 校验文件，输出到 `dist/v<版本>/`；安装版在“本地运行环境”选择外部模型与报告目录，后端脚本随包提供。
-- 内部完整包由 `scripts/build-research-bundle.py` 构建，运行资源及权重保留在Git忽略的dist中。安装版可离线自动配置，随包解释服务使用11435端口，数据与缓存保存到用户选择的目录。
-- `run.cmd run package:research`：在已配置完整研究环境的构建机上生成内部完整分发ZIP。完整包与权重不上传公共GitHub仓库。
+- 完整安装器由 `scripts/package-distributions.py` 和 `build/full-installer.nsi` 整理，自动校验和读取小于2GiB的离线数据分卷，运行资源及权重保留在Git忽略的dist中。随包解释服务使用11435端口。
+- `run.cmd run package:distributions` 整理两种发布包与校验清单；旧 `package:research` 入口保留兼容。2026-11-10的新授权允许将完整安装数据作为Release附件发布，源代码仓库继续排除权重和私有配置。
 - `run.cmd run smoke:packaged`：打包并对 `dist/win-unpacked/SRDP.exe` 执行相同的 Smoke 验证。
 - `run.cmd run format` / `format:check`：统一源码与文档格式。
 - `run.cmd run examples:prepare`：按类型选择清单准备材料，默认输出 `examples/stage1-materials/`。
@@ -145,6 +146,8 @@ Electron 45 延迟下载导致首次启动出现 `Electron uninstall` 的修复�
 ## 8. 当前状态摘要
 
 ### 已实现
+
+- 本地桌面 UI 的可见名称为“通用鉴伪系统”，采用统一框架与可调整分栏。支持拖拽/剪贴板导入、滚轮缩放/拖动平移、检测扫描与定位揭示、正式报告式结论及原图/定位联动。16项桌面Smoke、15组解释展示、11项画布及8项进阶交互检查通过；本轮仅本地开发。
 
 - v0.2.0 统一入口、照片/文档/不确定三种内容路由、串行模型调度、补充定位复用与部分失败处理。
 - 默认主报告为简明 `analysis.json`，完整 v1.0 证据包保留；公共任务目录为 `work/analysis-runs/<taskId>`。

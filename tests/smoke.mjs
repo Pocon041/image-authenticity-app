@@ -1,3 +1,4 @@
+import { selectAnalysisMode } from './ui-settings.mjs'
 import assert from 'node:assert/strict'
 import { mkdir, readFile, writeFile, open } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
@@ -25,7 +26,9 @@ if (process.argv.includes('--dev')) {
 const packaged = process.argv.includes('--packaged')
 const { version } = JSON.parse(await readFile(join(project, 'package.json'), 'utf8'))
 const desktop = await electron.launch({
-  ...(packaged ? { executablePath: join(project, 'dist', `v${version}`, 'win-unpacked', 'SRDP.exe') } : {}),
+  ...(packaged
+    ? { executablePath: join(project, 'dist', `v${version}`, 'win-unpacked', 'SRDP.exe') }
+    : {}),
   args: [
     ...(packaged ? ['--smoke-test'] : [project, '--smoke-test']),
     ...(process.argv.includes('--software-rendering') ? ['--disable-gpu'] : [])
@@ -43,9 +46,32 @@ try {
   page.on('request', (request) => {
     if (/^https?:/.test(request.url())) remoteRequests.push(request.url())
   })
-  await page.getByRole('heading', { name: '从一张图片开始' }).waitFor()
-  await page.getByText('开发与单模型调试', { exact: true }).click()
-  await page.getByRole('button', { name: '模拟流程', exact: true }).click()
+  await page.getByRole('heading', { name: '通用鉴伪系统' }).waitFor()
+  assert.equal(await page.getByRole('dialog', { name: '设置', exact: true }).isVisible(), false)
+  assert.equal(await page.getByRole('button', { name: '模拟流程', exact: true }).isVisible(), false)
+  assert.equal(await page.getByRole('heading', { name: '从一张图片开始' }).count(), 0)
+  await page.screenshot({ path: join(artifacts, '00-workspace.png'), fullPage: true })
+  await page.getByRole('button', { name: '设置', exact: true }).focus()
+  await page.keyboard.press('Control+,')
+  await page.getByRole('dialog', { name: '设置', exact: true }).waitFor()
+  await page.getByRole('tab', { name: '运行环境', exact: true }).focus()
+  await page.keyboard.press('ArrowDown')
+  assert.equal(
+    await page
+      .getByRole('tab', { name: '开发与单模型调试', exact: true })
+      .getAttribute('aria-selected'),
+    'true'
+  )
+  await page.screenshot({ path: join(artifacts, 'settings-advanced.png') })
+  await page.keyboard.press('Escape')
+  assert.equal(
+    await page
+      .getByRole('button', { name: '设置', exact: true })
+      .evaluate((node) => node === document.activeElement),
+    true
+  )
+  checks.push('默认工作区精简，设置独立收纳，快捷键、分类方向键与 Escape 焦点恢复有效')
+  await selectAnalysisMode(page, '模拟流程')
   assert.equal(await page.getByTestId('analyze-button').isDisabled(), true)
   assert.deepEqual(
     await page.evaluate(() => ({
@@ -63,11 +89,13 @@ try {
         'chooseRuntimeDirectory',
         'clearImage',
         'explain',
+        'importDroppedImage',
         'onAnalysisProgress',
         'onExplanationProgress',
         'onRuntimeSetupProgress',
         'openReportDirectory',
         'openRuntimeDirectory',
+        'pasteImage',
         'prepareRuntime',
         'runtimeEnvironment'
       ]

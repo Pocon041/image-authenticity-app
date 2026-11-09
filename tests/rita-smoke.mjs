@@ -1,3 +1,4 @@
+import { selectAnalysisMode } from './ui-settings.mjs'
 import assert from 'node:assert/strict'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
@@ -35,8 +36,7 @@ const desktop = await electron.launch({
 try {
   const page = await desktop.firstWindow()
   page.setDefaultTimeout(12000)
-  await page.getByRole('heading', { name: '从一张图片开始' }).waitFor()
-  await page.getByText('开发与单模型调试', { exact: true }).click()
+  await page.getByRole('heading', { name: '通用鉴伪系统' }).waitFor()
   const path = join(output, '输入测试.png')
   const png = await desktop.evaluate(({ nativeImage }) =>
     nativeImage
@@ -57,7 +57,7 @@ try {
   })
   assert.equal(repeated.first, repeated.second)
   assert.match(repeated.first, /^sha256:[a-f0-9]{64}$/)
-  await page.getByRole('button', { name: 'RITA 本地定位', exact: true }).click()
+  await selectAnalysisMode(page, 'RITA 本地定位')
   await page.getByTestId('analyze-button').click()
   await page.getByRole('alert').filter({ hasText: '缺少官方 RITA 权重' }).waitFor()
   assert.equal(await page.getByTestId('analysis-report').count(), 0)
@@ -73,7 +73,7 @@ try {
     repeated.first
   )
   assert.equal(invalid.code, 'INVALID_REQUEST')
-  await page.getByRole('button', { name: '模拟流程', exact: true }).click()
+  await selectAnalysisMode(page, '模拟流程')
   await page.getByTestId('analyze-button').click()
   await page.getByTestId('analysis-report').waitFor()
   assert.match(await page.getByTestId('analysis-report').innerText(), /模拟分析已完成/)

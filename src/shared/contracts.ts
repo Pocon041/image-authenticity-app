@@ -9,6 +9,8 @@ export const IPC = {
   cancelRuntimeSetup: 'srdp:runtime:cancel-setup',
   runtimeSetupProgress: 'srdp:runtime:setup-progress',
   chooseImage: 'srdp:image:choose',
+  importDroppedImage: 'srdp:image:drop',
+  pasteImage: 'srdp:image:paste',
   clearImage: 'srdp:image:clear',
   analyze: 'srdp:analysis:run',
   cancelAnalysis: 'srdp:analysis:cancel',
@@ -206,6 +208,8 @@ export interface DesktopAPI {
   onRuntimeSetupProgress(listener: (progress: RuntimeSetupProgress) => void): () => void
   openReportDirectory(taskId: string): Promise<Response<null>>
   chooseImage(): Promise<Response<ImageAsset | null>>
+  importDroppedImage(files: File[]): Promise<Response<ImageAsset | null>>
+  pasteImage(): Promise<Response<ImageAsset | null>>
   clearImage(): Promise<Response<null>>
   analyze(
     imageId: string,
