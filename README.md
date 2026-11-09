@@ -1,232 +1,153 @@
 # image-authenticity-app
 
-基于本地推理的图像真实性分析桌面应用。当前版本为 **v0.2.2**，整合 **SICA 整图筛查、RITA 图像定位、RiSE 文档定位，以及统一 JSON 报告**。
+基于本地推理的图像真实性分析桌面应用。集成图像来源检查、AI 生成检测、照片与文档篡改定位，以及视觉语言模型解释，支持查看定位结果和导出结构化证据报告。
 
-## Windows 安装版
+**当前版本 v0.2.2 · Windows x64 · Electron + React + TypeScript + Python**
 
-从 GitHub Releases 下载当前版本的 `SRDP-Setup-0.2.2-x64.exe`，运行安装向导后从桌面或开始菜单启动。应用界面、Electron 运行时和本项目后端脚本随安装包提供。
+[下载安装器](https://github.com/Pocon041/image-authenticity-app/releases/download/v0.2.2/SRDP-Setup-0.2.2-x64.exe) · [版本发布](https://github.com/Pocon041/image-authenticity-app/releases/tag/v0.2.2) · [安装说明](docs/INSTALLATION.md) · [开发配置](docs/DEVELOPMENT.md) · [报告协议](docs/REPORT_PROTOCOL_V1.md)
 
-首次启动展开“本地运行环境”，选择模型与报告目录。已有源码推理环境可以直接选择项目根目录。运行真实模型仍需准备 Python、模型源码、官方权重和本地 Ollama，具体步骤见下文。
+## 功能
 
-安装包的应用界面运行无需 Node.js。安装结果和报告写入所选目录，升级和卸载不会删除这个目录。Windows 可能显示未知发布者，因为当前版本没有代码签名证书。
+- **来源分析** — 读取 EXIF、XMP、IPTC、C2PA 来源凭证，检查可见文字水印和已支持的隐形水印载荷。
+- **真实性筛查** — SICA 提供通用整图真假分类，FSD 提供 AI 生成检测。
+- **篡改定位** — RITA 处理普通照片，RiSE 处理文档、票据和截图，输出像素掩码、响应图和区域信息。
+- **自动路由** — 根据内容选择定位器，支持手动指定和补充检查。
+- **可解释输出** — 结合来源记录、检测结果、区域观察与证据关系，生成重点位置和自然语言说明。
+- **结果回看** — 支持原图与定位结果切换、区域裁剪、真实进度、取消和部分失败处理。
+- **报告导出** — 同时保留简明 JSON、完整证据包、模型原始结果和解释记录。
 
-## 硬件要求
+分析流程为 **导入图片 → 来源检查与规范化 → 内容路由 → FSD → SICA → RITA / RiSE → 证据汇总与解释**。SICA 未报警时仍继续定位，各定位器的结果独立保留。
 
-- Windows 10 或 Windows 11，64 位。
-- 推荐 NVIDIA GPU，至少 8 GB 显存，并安装支持 CUDA 12.x 的驱动。我们在 RTX 4060 Laptop 8 GB 上完成过完整检测和本地解释链路。
-- 没有 NVIDIA GPU 时可以使用 CPU，速度会明显变慢。CPU 吞吐和大批量处理没有做正式验收。
-- 建议至少 16 GB 系统内存，多个检测模型和本地 VLM 同时使用时建议 32 GB。
-- 应用和 Python 环境建议预留至少 10 GB。下载权重、依赖和模型缓存后，建议预留 20 GB 以上。
-- 本地 Ollama 默认使用 `127.0.0.1:11434`。安装版自动管理的完整运行资源使用 `127.0.0.1:11435`。
+## 安装
 
-这些是工程运行要求，不代表所有 CPU、GPU 和驱动组合都有相同速度。应用会在模型启动阶段报告具体错误。
+### 下载
 
-开发者执行以下命令生成安装包。
+下载 [Windows x64 安装器](https://github.com/Pocon041/image-authenticity-app/releases/download/v0.2.2/SRDP-Setup-0.2.2-x64.exe)，运行安装向导后，从桌面或开始菜单打开应用。校验文件位于 [v0.2.2 发布页](https://github.com/Pocon041/image-authenticity-app/releases/tag/v0.2.2)。
 
-```powershell
-.\run.cmd run package:win
-```
+GitHub 提供的安装器约 125 MB，包含桌面应用、Electron 和本项目后端脚本。真实检测还需要 Python 推理环境、模型源码、权重及本地 VLM。已有环境可以直接接入，开发者也可以按[开发配置](docs/DEVELOPMENT.md)自行准备。
 
-生成文件位于 `dist/v<版本>/`，包含安装包、块映射和 `SHA256SUMS.txt`。`package:dir` 生成同目录下的 `win-unpacked`，便于本地核对。
+### 首次启动
 
-正常使用流程：**选择图片 → 开始分析 → 逐步查看检查进度 → 自动生成综合说明**。右侧按实际步骤显示关键过程与候选区域信息，完成后给出面向用户的判断、位置和简短原因；专业指标与JSON位于「检测详情与报告」。左侧图像输入保持原样。
+1. 打开“本地运行环境”，选择模型与报告目录，例如 `D:\SRDP-Data`。
+2. 如果安装包附带 `runtime-bundle`，保持它与安装器相邻。首次选择新数据目录后，应用会自动校验和展开资源、生成配置，并启动本地解释服务。
+3. 如果已配置源码环境，直接选择项目根目录，复用已有配置与权重。
+4. 选择图片，点击“开始分析”。
 
-- 普通照片：SICA + RITA。
-- 文档、票据和截图：SICA + RiSE，包括拍摄的小票。
-- 不确定或混合内容：依次运行 SICA、RITA、RiSE，保留各模型的独立结果。
+自动配置支持取消和重试。使用随包运行资源时，用户无需额外安装 Python、Node.js、Git 或 Ollama。资源压缩后约 10.23 GB，展开后约 16.41 GB，当前 GitHub Release 附件提供的是安装器，模型运行资源需另行取得或自行构建。
 
-SICA 判真也继续定位；某个模型失败时保留其他模型的结果。支持取消、补充检查、原图/叠加切换及区域裁剪。HiFi-Net 已退出当前应用代码，历史效果记录保留在 [HIFI_EVALUATION.md](docs/HIFI_EVALUATION.md)。
+## 系统要求
 
-当前已整合第一人的来源/预处理模块和第四人的本地 VLM 解释模块：记录元数据、扫描内嵌 C2PA 凭证、检查元数据水印标记，并在独立环境就绪时执行可见水印关键词 OCR 与 SDXL 固定载荷解码。解释默认通过本机 Ollama 调用从 `Qwen/Qwen3-VL-2B-Instruct-GGUF` 导入的本地模型，模型标记是待核查线索，不能直接视为已证实篡改，当前不输出未经验证的综合真假概率。
+以下为完整检测与本地解释流程的建议配置。
 
-## 已安装基础版：如何增量升级
+- **操作系统** — Windows 10/11 x64，建议使用已更新的系统版本。
+- **处理器** — Intel 或 AMD x64 多核处理器。
+- **内存** — 建议 16 GB 以上，推荐 32 GB。
+- **显卡** — 推荐 NVIDIA GPU，8 GB 或更多显存。已在 RTX 4060 Laptop 8 GB 上完成检测、定位和本地 2B VLM 联调。
+- **驱动** — GPU 路线需要兼容随包 PyTorch CUDA 12.6 的 NVIDIA 驱动。CUDA 运行库随 PyTorch 提供。
+- **存储** — 建议使用 SSD。实际运行目录预留至少 25 GB。安装包、资源解压副本与运行目录放在同一磁盘时，首次安装建议预留 50 GB。
+- **网络** — 下载软件、依赖和权重时需要网络。完整运行资源准备好后，默认本地流程可离线使用。
+- **显示** — 应用最小窗口尺寸为 1060 × 740，建议使用 1920 × 1080 或更高分辨率。
 
-以下步骤针对 **Windows 10/11 x64 源码版**。原来的 Node.js、Git 和 Electron 框架可以继续使用；从基础版升级主要增加模型源码、Python 环境、权重和本机配置。
+无可用 CUDA 设备时，自动配置会为检测器选择 CPU 路线。CPU 端到端性能和其他显卡组合尚未系统评测。以上内存、显存为建议配置，图片尺寸和后台程序会影响实际占用。
 
-### 1. 更新代码与前端依赖
+## 使用
 
-关闭旧 APP 及其开发终端，在原项目目录打开 PowerShell：
+1. 导入 PNG、JPG、JPEG 或 WebP 图片。
+2. 选择“自动识别”，或手动指定普通照片、文档、混合内容。
+3. 查看来源检查、模型检测和解释生成进度。
+4. 完成后在左侧切换原图与各定位器结果，在右侧查看结论、重点位置和解释。
+5. 展开“检测详情与报告”查看模型分数，或打开报告文件夹。
 
-```powershell
-cd D:\SRDP  # 改为你自己的项目目录
-git status --short
-git fetch origin
-git switch main
-git pull --ff-only origin main
-.\run.cmd ci
-```
+当前每次处理一张图片，支持最大 20 MB、6000 万像素的输入。RiSE 默认最多处理 128 个图块，超限会提示错误。
 
-当前可复现的新版本在 **`main` 分支**，已整合来源检查、篡改检测和共享报告协议。`czh` 保留第二人的开发记录。如果 `git status` 显示你修改过源码，先保存或提交自己的工作，再切换/更新分支；不要用 `git reset --hard` 或 `git clean` 强行覆盖。
+本地解释使用 Qwen3-VL-2B-Instruct。自行配置的 Ollama 默认连接 `127.0.0.1:11434`，由应用管理的随包服务使用 `127.0.0.1:11435`。云端兼容接口可通过解释配置指定。
 
-`run.cmd ci` 按锁文件更新 npm 依赖，不会删除 `weights/`、`config/*.local.json`、`.tools/` 或 `work/`。Electron 运行时若需补齐，会在启动前自动准备，并可复用本机缓存。
+## 报告
 
-如果原来使用的是 ZIP 或单独的 `SRDP.exe`，没有 `.git`，请将新版源码克隆到新目录，不要直接替换旧程序的 `app.asar`：
-
-```powershell
-git clone --branch main https://github.com/Pocon041/image-authenticity-app.git image-authenticity-app-v02
-cd image-authenticity-app-v02
-.\run.cmd ci
-```
-
-已有权重可以在配置中填写其原来的绝对路径，无须再下载或复制。已有 Python 环境也可以复用，已有本机配置继续保留。以下步骤用于准备源码版或安装版连接的推理环境。
-
-### 2. 准备 Python 推理环境
-
-如果已经配置过本项目三个模型，直接沿用现有环境，确认配置路径仍正确。新用户按以下步骤准备 Python、模型源码、权重和本地 VLM。
-
-```powershell
-py -3.13 -m venv .venv
-$modelPython = (Resolve-Path .venv\Scripts\python.exe).Path
-& $modelPython -m pip install --upgrade pip
-& $modelPython -m pip install torch==2.7.0 torchvision==0.22.0 --index-url https://download.pytorch.org/whl/cu126
-& $modelPython -m pip install -r backend/requirements-app.txt
-& $modelPython -m pip install --no-deps --target .tools/rise-deps-v5 -r backend/rise/requirements-isolated.txt
-```
-
-该组合面向 NVIDIA CUDA 显卡。请安装兼容的显卡驱动；PyTorch wheel 自带 CUDA 运行库，通常不必另外安装完整 CUDA Toolkit。实测为 RTX 4060 Laptop 8 GB，Python 3.13.2、torch 2.7.0+cu126、torchvision 0.22.0。CPU 性能与其他显卡尚未完成验收；这也不是作者论文环境的逐项复现。
-
-RiSE 使用的 Transformers 5.7.0 等专用包隔离在 `.tools/rise-deps-v5/`，不会替换其他模型环境中的 Transformers。这里的 `--no-deps` 依赖前一条命令已装好的公共包，两步都需要执行。若本机已有此隔离目录且工作正常，不需要重复安装。
-
-检查 PyTorch 能否使用显卡：
-
-```powershell
-& $modelPython -c "import torch; print(torch.__version__); print('CUDA:', torch.cuda.is_available())"
-```
-
-只有运行离线数据集评测时，才需要额外安装 `backend/requirements-evaluation.txt`。APP 单图分析不要求下载 CASIA、IMD2020 或任何训练数据集。
-
-### 3. 增量准备固定版本的模型源码
-
-```powershell
-.\run.cmd run rita:setup
-.\run.cmd run sica:setup
-.\run.cmd run rise:setup
-```
-
-这些命令只准备并校验固定版本源码；已有正确文件会复用，**不会自动下载任务权重或安装 Python 包**。首次执行需要访问 GitHub。运行推理时不需要调用云端模型服务。
-
-### 4. 放置权重
-
-从各模型官方入口下载，按下列位置放置；已下载过的文件直接复用：
+每次联合分析写入所选运行目录下的 `work/analysis-runs/<taskId>/`。
 
 ```text
-weights/
-├─ rita/rita_catnet.pth
-├─ sica/sica_weight_train.pth
-└─ RiSE/RiSE-9.pth
+<taskId>/
+├─ analysis.json              简明检测报告
+├─ bundle.json                完整证据包与附件索引
+├─ report.json                篡改检测汇总
+├─ reports/
+│  ├─ provenance.json         元数据、来源凭证与水印
+│  └─ explanation.json        最终解释和模型调用记录
+├─ images/                    原文件副本与规范显示图
+└─ detectors/                 各模型报告、掩码、响应图与裁剪
 ```
 
-- **RITA**：[官方仓库](https://github.com/scu-zjz/RITA)，[官方权重分享](https://pan.baidu.com/s/1W1HC4_mn044ub2NLJLSeQQ?pwd=43nn)，提取码 `43nn`，选择 `rita_catnet.pth`。
-- **SICA**：[官方仓库](https://github.com/venus-guangjian/SICA_OpenMMSec)，[权重目录](https://drive.google.com/drive/folders/1HQ2tj_1aeeoWP7meAf01fqVHmsAcEGPU)。配置模板默认 `sica_weight_train.pth`。若使用 `sica_weight_full.pth`，请同时设置配置里的 `checkpointPath` 和 `checkpointVariant="full"`。full 使用过完整训练/验证/测试数据，相关数据上的结果不作为独立泛化证据。
-- **RiSE**：[官方仓库](https://github.com/KahimWong/RiSE)，[官方任务权重](https://huggingface.co/Jason37437/RiSE/tree/main)，选择 **`RiSE-9.pth`，RGB 版**。不要换成 `RiSE-9-DCT.pth`；两者输入和配置不同。模板内已经固定作者公布的 RiSE-9 校验值。
+原文件按字节保留，公共 `imageId` 由原文件 SHA-256 生成。全部区域坐标映射到 EXIF 方向校正、sRGB、未缩放的规范显示图。报告字段与引用约定见[报告协议](docs/REPORT_PROTOCOL_V1.md)。
 
-本仓库不分发模型权重。第三方代码、权重和数据按各自的许可使用，本项目许可证不自动覆盖它们。
+## 开发
 
-### 5. 生成或调整本机配置
-
-如果采用上面的 `.venv`，可以运行以下命令，仅创建不存在的配置，保留现有成员的本机设置：
+需要 Git 和 Node.js 22.12+，推荐 Node.js 24 LTS。
 
 ```powershell
-foreach ($modelName in @('rita', 'sica', 'rise')) {
-    $localConfig = "config/$modelName.local.json"
-    if (-not (Test-Path -LiteralPath $localConfig)) {
-        $modelConfig = Get-Content "config/$modelName.example.json" -Raw | ConvertFrom-Json
-        $modelConfig.pythonPath = '.venv/Scripts/python.exe'
-        $modelConfig | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $localConfig -Encoding utf8
-    }
-}
-```
-
-如复用其他 Python 环境，将三个文件的 `pythonPath` 改为该环境的完整 `python.exe` 路径。这样双击启动也能找到它，无需先激活终端环境。权重也可以放在其他盘，在 `checkpointPath` 中填写实际路径。相对路径均相对于项目根目录。
-
-本机配置、Python 环境、权重与结果均被 Git 忽略；不要将个人盘符路径写入共享的 `*.example.json`。
-
-### 6. 准备本地 Qwen3-VL 解释模型
-
-当前解释模块默认使用本机 Ollama，不会在分析时自动下载模型。先将 `Qwen/Qwen3-VL-2B-Instruct-GGUF` 导入 Ollama，并用 `ollama list` 确认本地标签。若标签为 `srdp-qwen3-vl-2b`，在项目根目录执行：
-
-```powershell
-ollama serve
-.\run.cmd run explanation:setup -- --model srdp-qwen3-vl-2b
-```
-
-这条命令只生成 Git 忽略的 `config/explanation.local.json`。如果 Ollama 中的实际标签不同，将命令中的标签替换成实际值。没有本地模型时，解释请求会记录失败并使用规则模板，不会静默联网下载。
-
-原有云端解释接口仍保留；如需使用云端服务，直接在 `config/explanation.local.json` 中配置原来的 `host` 和 `model`，或通过代码显式传入对应参数即可。
-
-### 7. 启动并验证
-
-项目统一使用根目录 `.venv`。首次准备来源检查依赖时，在项目根目录执行：
-
-```powershell
-.\run.cmd run provenance:setup
-```
-
-来源依赖安装到项目统一的 `.venv`；缺少此环境时，APP仍生成基础图像信息及凭证容器扫描记录，并明确标记详细解析、水印像素检查未执行。实现与局限见 [PROVENANCE_V01.md](docs/PROVENANCE_V01.md)。
-
-```powershell
+git clone https://github.com/Pocon041/image-authenticity-app.git
+cd image-authenticity-app
+.\run.cmd ci
 .\start.cmd
 ```
 
-之后直接双击同一个 `start.cmd` 即可。选择图片与内容类型，点击开始分析。首次分析包含导入 Python 和加载权重的时间；模型依次运行，避免争抢显存。
+先在“开发与单模型调试”中选择模拟流程，可检查选图、IPC 和结果展示。接入真实模型的 Python 环境、权重下载及配置步骤见[开发配置](docs/DEVELOPMENT.md)。
 
-检测完成后，左侧图片位置默认显示本次RITA或RiSE定位结果，可点击上方「原图」「RITA 定位」「RiSE 定位」切换；放大预览跟随当前选择，多个定位器分别查看，不融合叠加。
-
-联合检测完成后自动调用解释服务：带青色预测外轮廓的原图用于对应候选位置，未加线的原图和检测JSON用于综合判断，最后单独生成用户说明。青色线仅为系统提示，不直接作为异常证据。Ollama不可用时保留检测过程与重试入口，基础模板不作为最终VLM回答展示。综合解释单独保存到 `reports/explanation.json`，原始检测包不被覆盖。
-
-局部内容识别使用未加线的原始裁剪，并在图片上限允许时同时看未标记整图，将局部内容关联到场景、具体记录和字段，例如第二条短信的存款时间“21:16”。每个定位器按原报告面积顺序选一处主要位置用于重点说明，其他区域保留在检测报告。VLM另行比较复制移动、拼接、移除/修复三类方式，允许无法区分；手法属于推测，不是检测器直接确认。正文采用「重点位置」「分析依据」，保留实际模型结论与支持程度，避免“候选区域”等用户难懂的术语。2B仍存在字段对应、文字辨认与手法误判，原始返回均保留，不能把这些工程接入等同为准确率验收。
-
-只想确认框架启动、暂时没有权重时，打开底部「开发与单模型调试」选择「模拟流程」。模拟输出始终明确标注，不会冒充真实检测；联合模式缺少模型时会报告失败或部分完成。
-
-## 报告在哪里
-
-联合任务保存在 `work/analysis-runs/<taskId>/`，APP 中可点击「打开报告文件夹」。
-
-- **`analysis.json`**：默认阅读及后续综合分析的简明报告，包含图片身份、模型来源、状态、分数、区域、掩码/裁剪路径、证据引用、分歧和限制。
-- **`bundle.json` / `report.json`**：兼容v1.0的完整证据包及独立篡改报告；完整包同时包含manipulation和provenance两个模块。
-- **`reports/provenance.json`**：第一人来源、预处理、C2PA和水印检查报告；保持各子检查的未执行/失败状态，不以缺少凭证证明真假。
-- **`images/`、`detectors/`**：原文件副本、规范显示图、掩码、裁剪、浮点响应及内部诊断。
-
-源码清单、逐块专家分数和运行日志不塞入简明报告。交给第四阶段时保留整个目录；JSON 中的图片路径需要实际加载才能成为 VLM 的视觉输入。
-
-更多字段与工作流说明：[WORKFLOW_V02.md](docs/WORKFLOW_V02.md)、[报告协议](docs/REPORT_PROTOCOL_V1.md)。
-
-## 从零安装
-
-先安装 [Git for Windows](https://git-scm.com/downloads/win) 和 [Node.js 24 LTS](https://nodejs.org/en/download)，确认 `git --version`、`node --version` 可用，然后按上文克隆 `main` 分支并完成 Python、源码、权重与配置步骤。Node 最低要求 22.12；新机器不依赖开发者私有的 `.tools/` 内容。
-
-首次 npm 安装和 Electron 准备需要网络；配置完成后的图片检测在本机进行。开发模式的 `127.0.0.1:5173` 仅是桌面界面的本机 Vite 服务，使用入口是 Electron 窗口。
-
-## 检查与排错
+主要检查命令如下。
 
 ```powershell
 .\run.cmd run typecheck
 .\run.cmd run build
-.\run.cmd run smoke:startup
 .\run.cmd run test:workflow
-.\run.cmd run smoke:workflow -- --image C:\path\to\image.png --software-rendering
-.\run.cmd run report:validate -- C:\path\to\task\analysis.json
+.\run.cmd run test:protocol
+.\run.cmd run test:confidence
+.\run.cmd run test:explanation
+.\run.cmd run test:evidence-links
+.\run.cmd run smoke
 ```
 
-`test:workflow` 使用合成适配器验证工程逻辑；`smoke:workflow` 需要真实权重和本机 Python。`--software-rendering` 只影响测试窗口的渲染，模型仍使用 CUDA，不关闭 sandbox。测试与样例不证明检测准确率或跨域泛化。
+`test:*` 和模拟 Smoke 主要检查工程行为。真实推理检查需要已就绪的模型环境，入口见[开发配置](docs/DEVELOPMENT.md#验证真实推理)。
 
-- **`Electron uninstall`**：运行 `.\run.cmd run runtime:ensure -- --repair` 后重新启动。
-- **`npm.ps1` 被执行策略拦截**：使用 `run.cmd` 或 `npm.cmd`，不必修改系统执行策略。
-- **模型未就绪/缺权重**：检查对应 `config/*.local.json` 的 Python、源码和权重路径；Git 更新不会替你下载权重。
-- **RiSE 依赖报错**：确认专用包安装到 `.tools/rise-deps-v5`，配置的 `dependencyPath` 指向同一目录。
-- **5173 端口占用**：用 Ctrl+C 关闭上一次开发终端，再启动。
+### 构建安装包
 
-图片保持原始字节，定位坐标采用 EXIF 校正、sRGB、未缩放的显示图。当前一次处理一张图片，最大 20 MB、6000 万像素；RiSE 默认最多128个图块，超限会明确报错。
+```powershell
+# 生成 Windows x64 安装器
+.\run.cmd run package:win
 
-## 工程结构与协作
+# 生成可直接运行的应用目录
+.\run.cmd run package:dir
+```
 
-- `src/main/`：文件读取、IPC、统一任务编排、Python 子进程与证据汇总。
-- `src/preload/`、`src/shared/`：最小桌面桥接、跨进程类型。
-- `src/renderer/`：React 工作台。
-- `backend/rita`、`sica`、`rise`：三个检测模型适配；`backend/provenance`为第一人来源检查，`backend/common`为共享评测工具。
-- `config/`、`schemas/`、`docs/`：配置模板、报告约束和模块说明。
-- `scripts/`、`tests/`：运行准备、验证与真实桌面测试。
+产物位于 `dist/v<版本>/`，安装器旁附带 `SHA256SUMS.txt`。需要构建含运行资源的安装包时，按[安装说明](docs/INSTALLATION.md#构建含运行资源的安装包)准备构建机并收集资源。
 
-阅读 `AGENT.md` 的四人共用规则和 `AGENTS.md` 的第二人模块说明；模块独有记录写AGENTS.md，共享协议与交接规则写AGENT.md。公共图片身份、坐标和证据语义不得由单模块自行改变。`weights/`、`work/`、`.tools/`、`.venv/`、`node_modules/`、`out/`、`dist/` 和本机配置不提交。发布包中的 Python/权重分发、CPU 路径及更大规模独立质量评测尚未验收。
+### 项目结构
 
-第四人解释模块已接入本地 Ollama/Qwen3-VL，结构化结论和证据引用由代码控制，VLM 负责分区短句生成；接口约定见 [EXPLANATION_HANDOFF.md](docs/EXPLANATION_HANDOFF.md)。\n
+```text
+src/main/       Electron 主进程、任务编排、模型适配与证据汇总
+src/preload/    受控的桌面 IPC 桥接
+src/renderer/   React 界面和交互状态
+src/shared/     共享类型、协议与支持度计算
+backend/        Python 推理与来源检查
+config/         示例配置与本机配置入口
+schemas/        JSON Schema
+docs/           安装、开发和协议文档
+scripts/        依赖准备、校验与打包
+tests/          单元、协议和桌面 Smoke 检查
+```
+
+`main` 维护共享版本。协作前阅读 `AGENT.md`。权重、数据、生成结果和 `*.local.json` 保存在本地，提交前请检查文件范围。
+
+## 常见问题
+
+- **首次启动没有自动配置按钮** — 检查是否取得了配套运行资源，在“本地运行环境”中选择 `runtime-bundle` 文件夹。
+- **模型未就绪** — 确认运行目录正确，并检查对应 `config/*.local.json` 的 Python、模型源码和权重路径。
+- **本地解释服务不可用** — 随包服务可重新执行环境检查。自行配置时检查 Ollama 是否运行、模型标签和 `host` 是否正确。
+- **检测较慢或显存不足** — 关闭其他 GPU 密集程序，确认驱动可用，并检查是否正在使用 CPU。高分辨率文档的图块数量也会影响耗时。
+- **源码启动出现 `Electron uninstall`** — 执行 `.\run.cmd run runtime:ensure -- --repair`。
+- **Windows 显示未知发布者** — 当前安装器未签名，可使用发布页的 SHA-256 校验文件核对下载内容。
+
+## 模型与许可
+
+项目代码采用 [MIT License](LICENSE)。模型来源包括 [SICA](https://github.com/venus-guangjian/SICA_OpenMMSec)、[RITA](https://github.com/scu-zjz/RITA)、[RiSE](https://github.com/KahimWong/RiSE)、[FSD](https://github.com/ductai199x/Forensic-Self-Descriptions-CVPR25) 和 [Qwen3-VL](https://huggingface.co/Qwen/Qwen3-VL-2B-Instruct-GGUF)。第三方代码、权重和依赖按各自许可使用，其中 FSD 使用 CC BY-NC-SA 4.0，含非商业使用限制。
+
+检测结果与解释用于辅助分析。当前分数尚未统一校准为正确率，定位可能误报，VLM 也可能误认目标或推测错误手法。样例联调通过与模型准确率评估分别记录。
