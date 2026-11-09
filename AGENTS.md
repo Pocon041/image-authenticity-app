@@ -45,6 +45,17 @@
 
 ## 历史记录
 
+### 支持度修复发布（2026-11-09）
+
+- 用户授权推送当前版本至czh并整合main。本次共享变更为VLM定性支持度传递修复、回归断言和一处共享说明增量，详细实验记录仅随czh保存。
+- 发布前test:confidence四组、test:explanation八组、test:evidence-links及生产构建（含typecheck）通过；本次发布核查复用既有真实结果，不重复运行模型评测。main基于最新origin/main独立整合，仅引入共享差异并保留其通用AGENTS.md。
+
+### VLM定性支持度传递修正（2026-11-08，本地未发布）
+
+- 修复`evidenceForAssessment`把裸数传给支持度对象读取器的问题；SICA/FSD及定位器模型、区域支持度不再错误显示“未提供”，保持SICA阈值距离优先和现有较弱/中等/较强分档。
+- 修正原先接受“未提供”的传输断言，补充RiSE、分档边界及缺失/越界值检查；test:confidence四组、test:explanation八组和typecheck通过。只验证证据传递，未调用真实VLM或重跑检测器，未改权重、阈值、关系规则或历史报告，未提交推送。
+- 随后为用户逐步讲解复用水面/水鸭/GPT既有检测快照，以修正后的当前代码真实调用2B：分别3/7/0次请求，解释耗时5.715s/6.870s/2ms（不含检测）；前两者分别走强关系汇总/普通VLM，GPT走来源汇总。水鸭误认“黑颈鹤”、判断仍inconclusive，copy_move假设因普通路径缺少重复对象观察条件未获采纳；水面手法与证据类型不匹配，保留unknown。原始输入输出在`work/vlm-evaluations/vlm-eval-1794145599434`，图片与逐步摘录在`work/three-case-walkthrough-20261108`；未改检测、提示或判定规则，不将本轮当作质量通过。
+
 ### 任务联动、支持度口径与定位上下文（2026-11-08，本地未发布）
 
 - 新增evidence-links.ts，以原结论和证据引用建立corroborates/different_tasks/different_findings关系；共用Schema与引用检查、精简analysis.json和解释报告均保留关系。不同模型的支持度不相加、不比较大小；类别响应、阈值距离和定位像素均值保留原值，confidencePolicy标记可靠度尚未校准。

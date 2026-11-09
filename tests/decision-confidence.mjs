@@ -31,7 +31,7 @@ await build({
   platform: 'node',
   output: { file: join(output, 'evidence.mjs'), format: 'esm' }
 })
-const { buildNarrationFacts } = await import(pathToFileURL(join(output, 'evidence.mjs')))
+const { buildNarrationFacts, evidenceForAssessment } = await import(pathToFileURL(join(output, 'evidence.mjs')))
 const checks = []
 assert.equal(sica(0.5, 0.5).value, 0)
 assert.equal(fsd(-2, -2).value, 0)
@@ -74,6 +74,29 @@ assert.equal(fsd(-Number.MAX_VALUE, Number.MAX_VALUE), null)
 checks.push(
   'both score directions are monotonic; exact/endpoint thresholds and unavailable inputs are handled'
 )
+
+const supportContext = evidenceForAssessment(
+  JSON.stringify({
+    models: [
+      { model: 'SICA', support: { value: 0.5006 }, decisionConfidence: sica(0.4994, 0.5) },
+      { model: 'FSD', support: fsdClassSupport(-4, -2, 'ai_generated') },
+      { model: 'RITA', support: { value: 0.9 }, regions: [{ support: { value: 0.8 } }] },
+      { model: 'RiSE', support: { value: 0.5 }, regions: [{ support: { value: 0.49 } }] },
+      { model: 'missing' },
+      { model: 'invalid', support: { value: 1.1 } }
+    ]
+  }),
+  []
+)
+assert.equal(supportContext.models[0].supportLevel, '较弱')
+assert.equal(supportContext.models[1].supportLevel, '中等')
+assert.equal(supportContext.models[2].supportLevel, '较强')
+assert.equal(supportContext.models[2].regions[0].supportLevel, '较强')
+assert.equal(supportContext.models[3].supportLevel, '中等')
+assert.equal(supportContext.models[3].regions[0].supportLevel, '较弱')
+assert.equal(supportContext.models[4].supportLevel, '未提供')
+assert.equal(supportContext.models[5].supportLevel, '未提供')
+checks.push('model and region support reaches assessment with threshold-distance priority and missing/invalid values preserved')
 
 const measuredSica = sica(0.324358731508255, 0.5)
 const measuredFsd = fsd(-0.016486665496319393, -2)
@@ -235,9 +258,9 @@ try {
   const prompt = assessmentRequest.messages.find((m) => m.role === 'user').content
   const context = JSON.parse(prompt)
   assert.equal(narrativeRequest.messages.find((m) => m.role === 'user').images, undefined)
-  assert.equal(context.models.find((i) => i.model === 'SICA').supportLevel, '未提供')
-  assert.equal(context.models.find((i) => i.model === 'FSD').supportLevel, '未提供')
-  assert.equal(context.models.find((i) => i.model === 'RITA').regions[0].supportLevel, '未提供')
+  assert.equal(context.models.find((i) => i.model === 'SICA').supportLevel, '较弱')
+  assert.equal(context.models.find((i) => i.model === 'FSD').supportLevel, '中等')
+  assert.equal(context.models.find((i) => i.model === 'RITA').regions[0].supportLevel, '较强')
   assert.equal(
     context.models.find((i) => i.model === 'RiSE'),
     undefined

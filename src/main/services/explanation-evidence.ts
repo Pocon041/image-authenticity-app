@@ -235,7 +235,7 @@ export function evidenceForAssessment(prompt: string, candidates: NarrationCandi
     const support = object(item.support)
     const decision = object(item.decisionConfidence)
     const raw = typeof decision.value === 'number' ? decision.value : support.value
-    return responseWording(raw) ?? '未提供'
+    return responseWording({ value: raw }) ?? '未提供'
   }
   const models = Array.isArray(parsed.models)
     ? parsed.models.map((value) => {
