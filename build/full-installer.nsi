@@ -10,7 +10,7 @@ InstallDir "$LOCALAPPDATA\通用鉴伪系统\离线安装资源\${VERSION}"
 ShowInstDetails show
 !define MUI_ABORTWARNING
 !define MUI_WELCOMEPAGE_TITLE "通用鉴伪系统 完整版"
-!define MUI_WELCOMEPAGE_TEXT "本安装器会校验并准备全部离线模型资源，然后启动应用安装向导。$\r$\n$\r$\n请将安装器与所有 .bin 数据分卷放在同一文件夹。无需手动解压，也无需另行下载 Python、模型权重或解释服务。"
+!define MUI_WELCOMEPAGE_TEXT "本安装器会准备全部模型资源，然后启动应用安装向导。缺少的数据文件会从本项目 GitHub Release 自动获取。$\r$\n$\r$\n如已下载所有 .bin 数据分卷，请将它们与安装器放在同一文件夹，即可离线安装。无需手动解压或单独配置 Python、模型权重与解释服务。"
 !define MUI_DIRECTORYPAGE_TEXT_TOP "选择保存离线安装资源的空目录。应用与运行数据可另外选择位置。建议目标磁盘有至少 50 GB 可用空间。"
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_DIRECTORY
@@ -35,7 +35,7 @@ Section "准备完整安装资源"
   Pop $R0
   ${If} $R0 != "0"
     SetErrorLevel 1
-    MessageBox MB_OK|MB_ICONSTOP "安装准备未完成，请查看详细信息。数据文件应与安装器位于同一文件夹。" /SD IDOK
+    MessageBox MB_OK|MB_ICONSTOP "安装准备未完成，请查看详细信息。联网下载中断时，可重新运行安装器并选择同一目录继续；离线安装请将全部数据分卷与安装器放在同一文件夹。" /SD IDOK
     Abort
   ${EndIf}
 SectionEnd
