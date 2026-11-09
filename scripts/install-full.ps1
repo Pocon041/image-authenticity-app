@@ -2,6 +2,7 @@ param(
   [Parameter(Mandatory=$true)][string]$SourceDirectory,
   [Parameter(Mandatory=$true)][string]$Destination,
   [Parameter(Mandatory=$true)][string]$ManifestPath,
+  [string]$DownloadBaseUrl,
   [switch]$ExtractOnly
 )
 $ErrorActionPreference = 'Stop'
@@ -82,13 +83,84 @@ try {
       throw '请选择空目录保存离线安装资源，避免覆盖已有文件。'
     }
   }
+  if (-not $DownloadBaseUrl) { $DownloadBaseUrl = "https://github.com/Pocon041/image-authenticity-app/releases/download/v$($manifest.version)" }
+  $downloadUri = [Uri]$DownloadBaseUrl
+  if ($downloadUri.Scheme -ne 'https' -and -not ($downloadUri.Scheme -eq 'http' -and $downloadUri.IsLoopback)) { throw '安装资源下载地址无效。' }
+  [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+  $cache = Join-Path $targetRoot '.downloads'
+  $needsDownload = $false
+  foreach ($part in $manifest.parts) {
+    if ($part.name -ne [IO.Path]::GetFileName($part.name)) { throw '安装分卷名称无效。' }
+    if (-not (Test-Path -LiteralPath (Join-Path $sourceRoot $part.name) -PathType Leaf)) { $needsDownload = $true }
+  }
+  if ($needsDownload) {
+    [IO.Directory]::CreateDirectory($targetRoot) | Out-Null
+    $manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $marker -Encoding UTF8
+    [IO.Directory]::CreateDirectory($cache) | Out-Null
+  }
   $paths = @()
   foreach ($part in $manifest.parts) {
     if ($part.name -ne [IO.Path]::GetFileName($part.name) -or $part.sha256 -notmatch '^[a-f0-9]{64}$' -or $part.bytes -le 0) { throw '安装数据分卷清单无效。' }
     $path = [IO.Path]::GetFullPath((Join-Path $sourceRoot $part.name))
     if (-not $path.StartsWith($sourceRoot + '\', [StringComparison]::OrdinalIgnoreCase)) { throw '数据路径无效。' }
-    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "缺少数据文件 $($part.name)。请将完整安装器与全部数据分卷放在同一文件夹。" }
-    if ((Get-Item -LiteralPath $path).Length -ne $part.bytes) { throw "数据文件大小不正确 $($part.name)。请重新下载该分卷。" }
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+      $path = [IO.Path]::GetFullPath((Join-Path $cache $part.name))
+      if (-not $path.StartsWith([IO.Path]::GetFullPath($cache) + '\', [StringComparison]::OrdinalIgnoreCase)) { throw '下载缓存路径无效。' }
+      if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+        $partial = $path + '.partial'
+        $offset = if (Test-Path -LiteralPath $partial) { (Get-Item -LiteralPath $partial).Length } else { 0L }
+        if ($offset -gt $part.bytes) { $offset = 0L }
+        Write-Output "获取安装数据　$($part.name)"
+        if ($offset -ne $part.bytes) {
+          $request = [Net.HttpWebRequest]::Create($DownloadBaseUrl.TrimEnd('/') + '/' + [Uri]::EscapeDataString($part.name))
+          $request.AllowAutoRedirect = $true
+          $request.Timeout = 60000
+          $request.ReadWriteTimeout = 120000
+          $request.UserAgent = 'SRDP-Offline-Installer'
+          if ($offset -gt 0) { $request.AddRange([long]$offset) }
+          $response = $request.GetResponse()
+          try {
+            if ([int]$response.StatusCode -ne 206) { $offset = 0L }
+            elseif ($response.Headers['Content-Range'] -ne "bytes $offset-$($part.bytes - 1)/$($part.bytes)") { throw '下载服务器返回了无效的续传范围。' }
+            $networkStream = $response.GetResponseStream()
+            $download = [IO.File]::Open($partial, [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::Write, [IO.FileShare]::None)
+            try {
+              $download.SetLength($offset)
+              $download.Position = $offset
+              $buffer = New-Object byte[] (4 * 1024 * 1024)
+              $last = $offset
+              while (($count = $networkStream.Read($buffer, 0, $buffer.Length)) -gt 0) {
+                if ($offset + $count -gt $part.bytes) { throw '下载资源超出清单大小。' }
+                $download.Write($buffer, 0, $count)
+                $offset += $count
+                if ($offset - $last -ge 32 * 1024 * 1024) {
+                  Write-Output "$($part.name)　$([Math]::Round($offset * 100 / $part.bytes))%"
+                  $last = $offset
+                }
+              }
+            } finally { $download.Dispose(); $networkStream.Dispose() }
+          } finally { $response.Dispose() }
+        }
+        if ($offset -ne $part.bytes) { throw '数据下载未完成，可重新运行安装器继续。' }
+        $checkStream = [IO.File]::OpenRead($partial)
+        $check = [Security.Cryptography.SHA256]::Create()
+        try { $downloadHash = [BitConverter]::ToString($check.ComputeHash($checkStream)).Replace('-', '').ToLowerInvariant() }
+        finally { $checkStream.Dispose(); $check.Dispose() }
+        if ($downloadHash -ne $part.sha256) {
+          $invalid = [IO.File]::OpenWrite($partial)
+          try { $invalid.SetLength(0) } finally { $invalid.Dispose() }
+          throw '下载资源校验失败，请重新运行安装器。'
+        }
+        [IO.File]::Move($partial, $path)
+      }
+    }
+    if ((Get-Item -LiteralPath $path).Length -ne $part.bytes) {
+      if ([IO.Path]::GetDirectoryName($path) -eq $cache) {
+        [IO.File]::Delete($path)
+        throw "缓存数据大小不正确 $($part.name)。请重新运行安装器自动获取。"
+      }
+      throw "数据文件大小不正确 $($part.name)。请重新下载该分卷。"
+    }
     $paths += $path
   }
   $parts = New-Object SrdpOffline.PartStream -ArgumentList (,[string[]]$paths)
@@ -100,7 +172,14 @@ try {
       $hashStream = [IO.File]::Open($paths[$index], [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
       try { $hash = [BitConverter]::ToString($algorithm.ComputeHash($hashStream)).Replace('-', '').ToLowerInvariant() }
       finally { $hashStream.Dispose(); $algorithm.Dispose() }
-      if ($hash -ne $part.sha256) { throw "数据文件校验失败 $($part.name)。请重新下载该分卷。" }
+      if ($hash -ne $part.sha256) {
+        if ([IO.Path]::GetDirectoryName($paths[$index]) -eq $cache) {
+          $parts.Dispose()
+          [IO.File]::Delete($paths[$index])
+          throw "缓存数据校验失败 $($part.name)。请重新运行安装器自动获取。"
+        }
+        throw "数据文件校验失败 $($part.name)。请重新下载该分卷。"
+      }
     }
     $archive = New-Object IO.Compression.ZipArchive -ArgumentList $parts,([IO.Compression.ZipArchiveMode]::Read),$true
     try {

@@ -100,6 +100,7 @@ Windows 启动入口为 `start.cmd`；`run.cmd` 负责优先使用 `.tools/` 下
 - `run.cmd run package:dir`：生成 Windows 可直接运行的应用目录。
 - `run.cmd run package:win`：生成 Windows x64 NSIS 安装包和 SHA-256 校验文件，输出到 `dist/v<版本>/`；安装版在“本地运行环境”选择外部模型与报告目录，后端脚本随包提供。
 - 完整安装器由 `scripts/package-distributions.py` 和 `build/full-installer.nsi` 整理，自动校验和读取小于2GiB的离线数据分卷，运行资源及权重保留在Git忽略的dist中。随包解释服务使用11435端口。
+- 完整版EXE可自动从固定版本GitHub Release获取缺失数据，支持断点续传与缓存复用；所有分卷位于EXE旁时可离线安装。自动下载、Range续传/服务器忽略Range、完整partial复用、损坏文件拒绝与重试已通过本地HTTP工程检查。
 - `run.cmd run package:distributions` 整理两种发布包与校验清单；旧 `package:research` 入口保留兼容。2026-11-10的新授权允许将完整安装数据作为Release附件发布，源代码仓库继续排除权重和私有配置。
 - `run.cmd run smoke:packaged`：打包并对 `dist/win-unpacked/SRDP.exe` 执行相同的 Smoke 验证。
 - `run.cmd run format` / `format:check`：统一源码与文档格式。

@@ -16,11 +16,11 @@
 
 适合直接使用检测、定位和本地解释功能的用户。安装资源包含三个 Python 环境、SICA、RITA、RiSE、FSD 的默认检测资源、来源检查依赖，以及 Ollama 和 Qwen3-VL-2B 解释模型。
 
-下载完整安装器与全部六个数据分卷，放在同一文件夹，然后运行安装器。程序会自动校验并准备离线资源、启动应用安装向导。首次打开后选择模型与报告目录，等待自动配置完成即可使用。
+下载并运行完整安装器，选择资源保存位置。安装器会自动获取约10.4GB安装数据，校验后准备资源并启动应用安装向导。首次打开后选择模型与报告目录，等待自动配置完成即可使用。下载中断时，重新运行安装器并选择同一资源目录可继续。
 
-[完整安装器](https://github.com/Pocon041/image-authenticity-app/releases/download/v0.3.0/SRDP-Full-Setup-0.3.0-x64.exe) · [数据01](https://github.com/Pocon041/image-authenticity-app/releases/download/v0.3.0/SRDP-Full-Data-0.3.0-01.bin) · [数据02](https://github.com/Pocon041/image-authenticity-app/releases/download/v0.3.0/SRDP-Full-Data-0.3.0-02.bin) · [数据03](https://github.com/Pocon041/image-authenticity-app/releases/download/v0.3.0/SRDP-Full-Data-0.3.0-03.bin) · [数据04](https://github.com/Pocon041/image-authenticity-app/releases/download/v0.3.0/SRDP-Full-Data-0.3.0-04.bin) · [数据05](https://github.com/Pocon041/image-authenticity-app/releases/download/v0.3.0/SRDP-Full-Data-0.3.0-05.bin) · [数据06](https://github.com/Pocon041/image-authenticity-app/releases/download/v0.3.0/SRDP-Full-Data-0.3.0-06.bin)
+[下载完整安装器](https://github.com/Pocon041/image-authenticity-app/releases/download/v0.3.0/SRDP-Full-Setup-0.3.0-x64.exe)
 
-完整下载约10.4GB。数据分卷由安装器自动读取，用户无需手动解压，也无需另外下载 Python、模型权重或 Ollama。分卷用于满足 GitHub 单附件小于2GiB的限制。安装器与资源文件的目录结构见[安装说明](docs/INSTALLATION.md#完整版)。
+需要在无网络的电脑上安装时，提前下载完整安装器和六个 `.bin` 数据文件，放在同一文件夹后运行安装器。安装器自动读取数据、准备 Python、模型权重和 Ollama。数据分卷用于满足 GitHub 单附件小于2GiB的限制。离线安装步骤见安装说明。 [安装说明](docs/INSTALLATION.md#完整版)
 
 ### 开发者版
 
