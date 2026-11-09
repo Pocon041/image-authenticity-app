@@ -51,6 +51,7 @@
 - 安装版可选择并持久化模型与报告目录，改用该目录读取配置、保存分析和解释。各检测器及来源检查使用resources/backend中的脚本，保留源码入口和现有模型分数定义。切换目录取消旧解释并清空图像状态。
 - 修正首次选择目录后因页面导航拦截而没有刷新状态的问题，改为React状态更新。生产源码15项、packaged15项桌面检查通过，安装包目录中的实际SICA保持水鸭参考分数0.3243587。新增installer-smoke验证陌生cwd、中文外部目录、模板生成与重启恢复。
 - 安装包内容核查未含work、weights、examples、.local.json或AGENT/AGENTS记录。包未签名，推理依赖需单独准备，范围见docs/INSTALLATION.md。NSIS实际安装到D盘后，安装后的SRDP.exe通过首次启动、中文目录选择、重启恢复和真实SICA检查，记录在work/installer-install-result.json及对应installer-smoke目录。界面沿用现有深色主题。
+- 安装版已发布至GitHub Releases v0.2.1，main发布提交9ab472e，czh功能提交71c168c。安装包130561504字节，GitHub资产SHA-256与本地498fd9aa31222b055079c3f5725107791c4411b92097be28fdfd027b879f9495一致。main通用AGENTS.md原blob保留，发布页与校验文件已核对为公开uploaded状态。
 
 ### 支持度修复发布（2026-11-09）
 
