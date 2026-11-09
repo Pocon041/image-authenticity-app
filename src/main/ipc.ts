@@ -9,6 +9,7 @@ import { generateExplanation } from './services/explanation'
 import type { EvidenceBundle, ExplanationReport } from '../shared/protocol'
 import { getRuntimeRoot } from './runtime-paths'
 import { requireRuntimeEnvironment, runtimeEnvironment, selectRuntimeDirectory } from './runtime-environment'
+import { cancelRuntimeSetup, prepareRuntime, selectRuntimeBundle } from './runtime-bootstrap'
 
 export function registerDesktopIPC(
   getWindow: () => BrowserWindow | null,
@@ -72,6 +73,53 @@ export function registerDesktopIPC(
       const error = await shell.openPath(info.directory)
       if (error) throw new AppError('INTERNAL', '无法打开模型与报告目录。')
       return { ok: true, data: null }
+    } catch (error) {
+      return failure(error)
+    }
+  })
+
+  ipcMain.handle(IPC.chooseRuntimeBundle, async event => {
+    try {
+      const window = requireWindow(event)
+      if (session.busy || picking) throw new AppError('BUSY', '请等待当前操作结束。')
+      picking = true
+      try {
+        const selected = await dialog.showOpenDialog(window, {
+          title: '选择完整分发包中的 runtime-bundle 文件夹',
+          properties: ['openDirectory']
+        })
+        if (selected.canceled || !selected.filePaths[0]) return { ok: true, data: null }
+        await selectRuntimeBundle(selected.filePaths[0])
+        return { ok: true, data: await runtimeEnvironment() }
+      } finally { picking = false }
+    } catch (error) { return failure(error) }
+  })
+
+  ipcMain.handle(IPC.prepareRuntime, async event => {
+    try {
+      const window = requireWindow(event)
+      if (session.busy || picking) throw new AppError('BUSY', '请等待当前操作结束。')
+      const info = await runtimeEnvironment()
+      if (!info.directory) throw new AppError('MODEL_NOT_READY', '请先选择模型与报告目录。')
+      picking = true
+      session.clearImage()
+      try {
+        await prepareRuntime(info.directory, progress => {
+          if (!window.isDestroyed()) window.webContents.send(IPC.runtimeSetupProgress, progress)
+        })
+        return { ok: true, data: await runtimeEnvironment() }
+      } finally {
+        picking = false
+      }
+    } catch (error) {
+      return failure(error)
+    }
+  })
+
+  ipcMain.handle(IPC.cancelRuntimeSetup, event => {
+    try {
+      requireWindow(event)
+      return { ok: true, data: cancelRuntimeSetup() }
     } catch (error) {
       return failure(error)
     }

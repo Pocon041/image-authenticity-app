@@ -57,14 +57,18 @@ try {
       methods: [
         'analyze',
         'cancelAnalysis',
+        'cancelRuntimeSetup',
         'chooseImage',
+        'chooseRuntimeBundle',
         'chooseRuntimeDirectory',
         'clearImage',
         'explain',
         'onAnalysisProgress',
         'onExplanationProgress',
+        'onRuntimeSetupProgress',
         'openReportDirectory',
         'openRuntimeDirectory',
+        'prepareRuntime',
         'runtimeEnvironment'
       ]
     }

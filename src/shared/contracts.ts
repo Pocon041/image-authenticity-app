@@ -3,7 +3,11 @@ import type { DecisionConfidence, ModelSupport } from './decision-confidence'
 export const IPC = {
   runtimeEnvironment: 'srdp:runtime:info',
   chooseRuntimeDirectory: 'srdp:runtime:choose-directory',
+  chooseRuntimeBundle: 'srdp:runtime:choose-bundle',
   openRuntimeDirectory: 'srdp:runtime:open-directory',
+  prepareRuntime: 'srdp:runtime:prepare',
+  cancelRuntimeSetup: 'srdp:runtime:cancel-setup',
+  runtimeSetupProgress: 'srdp:runtime:setup-progress',
   chooseImage: 'srdp:image:choose',
   clearImage: 'srdp:image:clear',
   analyze: 'srdp:analysis:run',
@@ -175,12 +179,31 @@ export interface RuntimeEnvironment {
   version: string
   directory: string | null
   configurations: { name: string; configured: boolean }[]
+  setup: RuntimeSetupStatus
+}
+
+export interface RuntimeSetupProgress {
+  stage: 'verifying' | 'extracting' | 'checking' | 'starting' | 'completed' | 'failed' | 'cancelled'
+  label: string
+  completed: number
+  total: number
+}
+
+export interface RuntimeSetupStatus {
+  available: boolean
+  ready: boolean
+  running: boolean
+  progress?: RuntimeSetupProgress
 }
 
 export interface DesktopAPI {
   runtimeEnvironment(): Promise<Response<RuntimeEnvironment>>
   chooseRuntimeDirectory(): Promise<Response<RuntimeEnvironment | null>>
+  chooseRuntimeBundle(): Promise<Response<RuntimeEnvironment | null>>
   openRuntimeDirectory(): Promise<Response<null>>
+  prepareRuntime(): Promise<Response<RuntimeEnvironment>>
+  cancelRuntimeSetup(): Promise<Response<boolean>>
+  onRuntimeSetupProgress(listener: (progress: RuntimeSetupProgress) => void): () => void
   openReportDirectory(taskId: string): Promise<Response<null>>
   chooseImage(): Promise<Response<ImageAsset | null>>
   clearImage(): Promise<Response<null>>

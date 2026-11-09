@@ -1,6 +1,8 @@
 ﻿node_modules/
 .venv/
 .tools/
+.cache/
+.runtime/
 out/
 dist/
 work/
@@ -25,3 +27,5 @@ __pycache__/
 .workbuddy/memory/2026-11-03.md
 .workbuddy/memory/2026-11-04.md
 config/router.local.json
+config/provenance.local.json
+config/managed-runtime.json
