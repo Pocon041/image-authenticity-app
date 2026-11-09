@@ -5,6 +5,8 @@ import { RoutedAnalysisService } from './services/rita'
 import { AnalysisSession } from './services/analysis-session'
 import { releaseConfiguredLocalModel } from './services/explanation'
 import { initializeRuntimeEnvironment } from './runtime-environment'
+import { stopManagedOllama } from './managed-ollama'
+import { cancelRuntimeSetup } from './runtime-bootstrap'
 
 let mainWindow: BrowserWindow | null = null
 const session = new AnalysisSession(new RoutedAnalysisService(), releaseConfiguredLocalModel)
@@ -66,5 +68,7 @@ if (primaryInstance)
     })
   })
 app.on('window-all-closed', () => {
+  cancelRuntimeSetup()
+  stopManagedOllama()
   if (process.platform !== 'darwin') app.quit()
 })

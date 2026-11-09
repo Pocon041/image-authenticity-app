@@ -3,13 +3,22 @@ import {
   IPC,
   type AnalysisProgress,
   type ExplanationProgress,
+  type RuntimeSetupProgress,
   type DesktopAPI
 } from '../shared/contracts'
 
 const desktop: DesktopAPI = {
   runtimeEnvironment: () => ipcRenderer.invoke(IPC.runtimeEnvironment),
   chooseRuntimeDirectory: () => ipcRenderer.invoke(IPC.chooseRuntimeDirectory),
+  chooseRuntimeBundle: () => ipcRenderer.invoke(IPC.chooseRuntimeBundle),
   openRuntimeDirectory: () => ipcRenderer.invoke(IPC.openRuntimeDirectory),
+  prepareRuntime: () => ipcRenderer.invoke(IPC.prepareRuntime),
+  cancelRuntimeSetup: () => ipcRenderer.invoke(IPC.cancelRuntimeSetup),
+  onRuntimeSetupProgress(listener) {
+    const handler = (_event: Electron.IpcRendererEvent, progress: RuntimeSetupProgress) => listener(progress)
+    ipcRenderer.on(IPC.runtimeSetupProgress, handler)
+    return () => ipcRenderer.removeListener(IPC.runtimeSetupProgress, handler)
+  },
   openReportDirectory: (taskId) => ipcRenderer.invoke(IPC.openReportDirectory, taskId),
   chooseImage: () => ipcRenderer.invoke(IPC.chooseImage),
   clearImage: () => ipcRenderer.invoke(IPC.clearImage),

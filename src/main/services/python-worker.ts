@@ -34,7 +34,13 @@ export function runPythonWorker(options: WorkerOptions): Promise<void> {
         cwd: options.cwd,
         windowsHide: true,
         stdio: ['ignore', 'pipe', 'pipe'],
-        env: { ...process.env, PYTHONIOENCODING: 'utf-8' }
+        env: {
+          ...process.env,
+          PYTHONIOENCODING: 'utf-8',
+          HF_HOME: join(options.cwd, '.cache/huggingface'),
+          TORCH_HOME: join(options.cwd, '.cache/torch'),
+          XDG_CACHE_HOME: join(options.cwd, '.cache')
+        }
       }
     )
     child.stdout.setEncoding('utf8')

@@ -17,6 +17,7 @@ const builder = spawn(
     join(root, 'node_modules/electron-builder/cli.js'),
     '--win',
     ...(directoryOnly ? ['--dir'] : ['nsis', '--x64']),
+    `--config.directories.output=${output}`,
     '--publish',
     'never'
   ],

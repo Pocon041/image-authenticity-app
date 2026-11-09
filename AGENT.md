@@ -16,7 +16,7 @@
 
 开发基于本地推理的图像真实性分析桌面 APP。本项目侧重工程集成，不开发视觉取证算法。
 
-当前功能基线为 v0.2.0，v0.2.1 提供 Windows 安装版：
+当前功能基线为 v0.2.0，v0.2.1 提供 Windows 安装版，v0.2.2 增加内部完整资源自动配置：
 
 - 选择本地图片 → 内容类型路由 → FSD AIGC 初步判断 → SICA 整图筛查与 RITA/RiSE 定位 → 简明 JSON 和完整证据包。
 - 默认入口为联合分析；详细模型诊断折叠或留内部文件；HiFi-Net 不进入联合路由，运行入口已移除。
@@ -98,6 +98,8 @@ Windows 启动入口为 `start.cmd`；`run.cmd` 负责优先使用 `.tools/` 下
 - `run.cmd run runtime:ensure -- --repair`：重新校验下载包并修复运行时，优先复用缓存。
 - `run.cmd run package:dir`：生成 Windows 可直接运行的应用目录。
 - `run.cmd run package:win`：生成 Windows x64 NSIS 安装包和 SHA-256 校验文件，输出到 `dist/v<版本>/`；安装版在“本地运行环境”选择外部模型与报告目录，后端脚本随包提供。
+- 内部完整包由 `scripts/build-research-bundle.py` 构建，运行资源及权重保留在Git忽略的dist中。安装版可离线自动配置，随包解释服务使用11435端口，数据与缓存保存到用户选择的目录。
+- `run.cmd run package:research`：在已配置完整研究环境的构建机上生成内部完整分发ZIP。完整包与权重不上传公共GitHub仓库。
 - `run.cmd run smoke:packaged`：打包并对 `dist/win-unpacked/SRDP.exe` 执行相同的 Smoke 验证。
 - `run.cmd run format` / `format:check`：统一源码与文档格式。
 - `run.cmd run examples:prepare`：按类型选择清单准备材料，默认输出 `examples/stage1-materials/`。

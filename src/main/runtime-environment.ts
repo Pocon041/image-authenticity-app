@@ -14,8 +14,10 @@ import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import type { RuntimeEnvironment } from '../shared/contracts'
 import { AppError } from './errors'
 import { configureRuntimePaths } from './runtime-paths'
+import { runtimeSetupStatus } from './runtime-bootstrap'
+import { startManagedOllama, stopManagedOllama } from './managed-ollama'
 
-const modelNames = ['rita', 'sica', 'rise', 'aigc', 'router', 'explanation'] as const
+const modelNames = ['rita', 'sica', 'rise', 'aigc', 'router', 'provenance', 'explanation'] as const
 let selectedDirectory: string | null = null
 
 function settingsPath(): string {
@@ -23,6 +25,7 @@ function settingsPath(): string {
 }
 
 function applyDirectory(directory: string | null): void {
+  if (selectedDirectory !== directory) stopManagedOllama()
   selectedDirectory = directory
   configureRuntimePaths(
     directory ?? undefined,
@@ -50,6 +53,7 @@ export async function initializeRuntimeEnvironment(): Promise<void> {
       if ((await stat(path)).isDirectory()) {
         await access(path, constants.W_OK)
         applyDirectory(path)
+        await startManagedOllama(path).catch(() => {})
         return
       }
     } catch {
@@ -79,7 +83,8 @@ export async function runtimeEnvironment(): Promise<RuntimeEnvironment> {
     packaged: app.isPackaged,
     version: app.getVersion(),
     directory: selectedDirectory,
-    configurations
+    configurations,
+    setup: await runtimeSetupStatus(selectedDirectory)
   }
 }
 
@@ -131,5 +136,6 @@ export async function selectRuntimeDirectory(
   await rename(temporary, settingsPath())
   beforeChange()
   applyDirectory(path)
+  await startManagedOllama(path).catch(() => {})
   return runtimeEnvironment()
 }

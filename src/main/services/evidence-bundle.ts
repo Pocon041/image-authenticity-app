@@ -3,6 +3,7 @@ import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import Ajv from 'ajv'
 import addFormats from 'ajv-formats'
+import summarySchema from '../../../schemas/manipulation-summary.schema.json'
 import sharp from 'sharp'
 import type { ContentType, DetectorResult, WorkflowRouting } from '../../shared/contracts'
 import { sicaDecisionConfidence, fsdDecisionConfidence, sicaClassSupport, fsdClassSupport } from '../../shared/decision-confidence'
@@ -513,9 +514,7 @@ const assets: Artifact[] = [...common.artifacts],
   await writeFile(join(output, 'report.json'), JSON.stringify(report, null, 2))
   signal.throwIfAborted()
   const summary = manipulationSummary(bundle, detectors)
-  const validateSummary = ajv.compile(
-    JSON.parse(await readFile(join(args.root, 'schemas/manipulation-summary.schema.json'), 'utf8'))
-  )
+  const validateSummary = ajv.compile(summarySchema)
   if (!validateSummary(summary))
     throw new AppError(
       'INFERENCE_FAILED',
