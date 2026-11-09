@@ -12,6 +12,7 @@ import { AppError } from '../errors'
 import type { ImportedImage } from '../image-import'
 import type { AnalysisContext, AnalysisService } from './analysis'
 import { runPythonWorker } from './python-worker'
+import { getBackendPath, getRuntimeRoot } from '../runtime-paths'
 
 interface SicaConfig {
   pythonPath: string
@@ -48,9 +49,7 @@ const digest = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex
 
 export class SicaAnalysisService implements AnalysisService {
   async analyze(input: ImportedImage, context: AnalysisContext): Promise<AnalysisReport> {
-    if (app.isPackaged)
-      throw new AppError('MODEL_NOT_READY', 'SICA 暂在源码开发模式接入，发布包环境尚未配置。')
-    const root = app.getAppPath()
+    const root = getRuntimeRoot(app.getAppPath())
     const file = resolve(root, process.env.SRDP_SICA_CONFIG ?? 'config/sica.local.json')
     let config: SicaConfig
     try {
@@ -184,7 +183,7 @@ export class SicaAnalysisService implements AnalysisService {
     )
     await runPythonWorker({
       pythonPath: config.pythonPath,
-      workerPath: join(root, 'backend/sica/worker.py'),
+      workerPath: getBackendPath(root, 'sica/worker.py'),
       requestPath,
       cwd: root,
       timeoutMs: config.timeoutMs,

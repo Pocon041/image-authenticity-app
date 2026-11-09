@@ -4,6 +4,7 @@ import { registerDesktopIPC } from './ipc'
 import { RoutedAnalysisService } from './services/rita'
 import { AnalysisSession } from './services/analysis-session'
 import { releaseConfiguredLocalModel } from './services/explanation'
+import { initializeRuntimeEnvironment } from './runtime-environment'
 
 let mainWindow: BrowserWindow | null = null
 const session = new AnalysisSession(new RoutedAnalysisService(), releaseConfiguredLocalModel)
@@ -55,8 +56,9 @@ app.on('second-instance', () => {
 })
 
 if (primaryInstance)
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
     app.setAppUserModelId('cn.srdp.desktop')
+    await initializeRuntimeEnvironment()
     registerDesktopIPC(() => mainWindow, session)
     createWindow()
     app.on('activate', () => {

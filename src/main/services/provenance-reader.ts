@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
+import { getBackendPath } from '../runtime-paths'
 
 type Json = Record<string, any>
 
@@ -14,7 +15,7 @@ export async function inspectProvenanceSource(args: {
     process.platform === 'win32'
       ? join(args.root, '.venv/Scripts/python.exe')
       : join(args.root, '.venv/bin/python')
-  const worker = join(args.root, 'backend/provenance/read_c2pa.py')
+  const worker = getBackendPath(args.root, 'provenance/read_c2pa.py')
   if (!existsSync(python))
     return {
       status: 'not_run',

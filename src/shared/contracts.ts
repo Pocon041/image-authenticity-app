@@ -1,6 +1,9 @@
 import type { DecisionConfidence, ModelSupport } from './decision-confidence'
 
 export const IPC = {
+  runtimeEnvironment: 'srdp:runtime:info',
+  chooseRuntimeDirectory: 'srdp:runtime:choose-directory',
+  openRuntimeDirectory: 'srdp:runtime:open-directory',
   chooseImage: 'srdp:image:choose',
   clearImage: 'srdp:image:clear',
   analyze: 'srdp:analysis:run',
@@ -167,7 +170,17 @@ export interface AnalysisReport {
 // [第三人任务] 独立 FSD AIGC 检测入口。
 export type AnalysisBackend = 'workflow' | 'mock' | 'rita' | 'sica' | 'rise' | 'aigc'
 
+export interface RuntimeEnvironment {
+  packaged: boolean
+  version: string
+  directory: string | null
+  configurations: { name: string; configured: boolean }[]
+}
+
 export interface DesktopAPI {
+  runtimeEnvironment(): Promise<Response<RuntimeEnvironment>>
+  chooseRuntimeDirectory(): Promise<Response<RuntimeEnvironment | null>>
+  openRuntimeDirectory(): Promise<Response<null>>
   openReportDirectory(taskId: string): Promise<Response<null>>
   chooseImage(): Promise<Response<ImageAsset | null>>
   clearImage(): Promise<Response<null>>

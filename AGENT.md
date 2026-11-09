@@ -97,6 +97,7 @@ Windows 启动入口为 `start.cmd`；`run.cmd` 负责优先使用 `.tools/` 下
 - `run.cmd run runtime:ensure`：检查 Electron 可执行文件、版本与 `path.txt`，缺失时安装；`predev` 和 `prestart` 自动调用。
 - `run.cmd run runtime:ensure -- --repair`：重新校验下载包并修复运行时，优先复用缓存。
 - `run.cmd run package:dir`：生成 Windows 可直接运行的应用目录。
+- `run.cmd run package:win`：生成 Windows x64 NSIS 安装包和 SHA-256 校验文件，输出到 `dist/v<版本>/`；安装版在“本地运行环境”选择外部模型与报告目录，后端脚本随包提供。
 - `run.cmd run smoke:packaged`：打包并对 `dist/win-unpacked/SRDP.exe` 执行相同的 Smoke 验证。
 - `run.cmd run format` / `format:check`：统一源码与文档格式。
 - `run.cmd run examples:prepare`：按类型选择清单准备材料，默认输出 `examples/stage1-materials/`。

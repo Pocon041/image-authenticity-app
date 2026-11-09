@@ -2,6 +2,7 @@ import { Check, FlaskConical, Info, X } from 'lucide-react'
 import { AnalysisPanel } from './components/AnalysisPanel'
 import { ImagePanel } from './components/ImagePanel'
 import { WorkspaceLayout } from './components/WorkspaceLayout'
+import { RuntimeSettings } from './components/RuntimeSettings'
 import { useAnalysisWorkspace } from './hooks/useAnalysisWorkspace'
 
 export function App() {
@@ -100,6 +101,7 @@ export function App() {
           {workspace.notice}
         </div>
       )}
+      <RuntimeSettings busy={workspace.busy} onDirectoryChanged={workspace.clearImage} />
       <div className={`analysis-grid ${workflow ? 'workflow-grid' : ''}`}>
         <ImagePanel workspace={workspace} />
         <AnalysisPanel workspace={workspace} />

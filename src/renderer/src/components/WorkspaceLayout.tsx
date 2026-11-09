@@ -1,5 +1,6 @@
 import type { PropsWithChildren } from 'react'
 import { LockKeyhole, ShieldCheck } from 'lucide-react'
+import { version } from '../../../../package.json'
 
 export function WorkspaceLayout({ children }: PropsWithChildren) {
   return (
@@ -9,7 +10,7 @@ export function WorkspaceLayout({ children }: PropsWithChildren) {
           <strong>图像真实性分析</strong>
           <span className="local-badge">
             <LockKeyhole size={13} />
-            本地处理 · v0.2.0
+            本地处理 · v{version}
           </span>
         </header>
         <div className="workspace">

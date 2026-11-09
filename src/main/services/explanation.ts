@@ -44,6 +44,7 @@ import { USER_EXPLANATION_SYSTEM, type UserExplanation } from './user-explanatio
 import { provenanceForVlm, provenanceNarrationFacts } from './provenance-input'
 import { releaseLocalModel } from './local-model'
 import { AppError } from '../errors'
+import { getRuntimeRoot } from '../runtime-paths'
 import { sourceConclusion } from './source-conclusion'
 import { assessLocalizationReliability, buildEvidenceLinks } from './evidence-links'
 
@@ -133,7 +134,7 @@ async function runExplanation(
   options?: ExplanationOptions
 ): Promise<ExplanationReport> {
   const startTime = performance.now()
-  const taskDirectory = join(process.cwd(), 'work/analysis-runs', taskId)
+  const taskDirectory = join(getRuntimeRoot(), 'work/analysis-runs', taskId)
 
   // 配置：显式参数 > 环境变量 > local（或 SRDP_EXPLANATION_CONFIG 指定的文件）> example > 内置默认。
   // 每次调用读一次，不缓存：改 JSON 后下一次分析立即生效，不用重启应用。
@@ -419,7 +420,7 @@ async function loadExplanationConfig(
   explicitModel?: string,
   explicitHost?: string
 ): Promise<ExplanationConfig> {
-  const root = process.cwd()
+  const root = getRuntimeRoot()
   // SRDP_EXPLANATION_CONFIG 的语义与 SRDP_RITA_CONFIG 一致：替换 local 文件路径，不新增配置层。
   const localPath = process.env.SRDP_EXPLANATION_CONFIG
     ? resolve(root, process.env.SRDP_EXPLANATION_CONFIG)
