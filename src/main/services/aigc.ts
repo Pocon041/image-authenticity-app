@@ -10,6 +10,7 @@ import { AppError } from '../errors'
 import type { ImportedImage } from '../image-import'
 import type { AnalysisContext, AnalysisService } from './analysis'
 import { runPythonWorker } from './python-worker'
+import { getBackendPath, getRuntimeRoot } from '../runtime-paths'
 
 interface Config {
   pythonPath: string
@@ -24,8 +25,7 @@ const sha256 = (value: Buffer) => createHash('sha256').update(value).digest('hex
 
 export class AigcAnalysisService implements AnalysisService {
   async analyze(input: ImportedImage, context: AnalysisContext): Promise<AnalysisReport> {
-    if (app.isPackaged) throw new AppError('MODEL_NOT_READY', 'FSD 尚未配置发布包运行环境。')
-    const root = app.getAppPath()
+    const root = getRuntimeRoot(app.getAppPath())
     let config: Config
     try {
       config = JSON.parse(
@@ -137,7 +137,7 @@ export class AigcAnalysisService implements AnalysisService {
     })
     await runPythonWorker({
       pythonPath,
-      workerPath: join(root, 'backend/aigc/worker.py'),
+      workerPath: getBackendPath(root, 'aigc/worker.py'),
       requestPath,
       cwd: root,
       timeoutMs,

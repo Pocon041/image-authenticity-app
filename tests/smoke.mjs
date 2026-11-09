@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdir, writeFile, open } from 'node:fs/promises'
+import { mkdir, readFile, writeFile, open } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { _electron as electron } from 'playwright'
@@ -23,8 +23,9 @@ if (process.argv.includes('--dev')) {
 }
 
 const packaged = process.argv.includes('--packaged')
+const { version } = JSON.parse(await readFile(join(project, 'package.json'), 'utf8'))
 const desktop = await electron.launch({
-  ...(packaged ? { executablePath: join(project, 'dist', 'win-unpacked', 'SRDP.exe') } : {}),
+  ...(packaged ? { executablePath: join(project, 'dist', `v${version}`, 'win-unpacked', 'SRDP.exe') } : {}),
   args: [
     ...(packaged ? ['--smoke-test'] : [project, '--smoke-test']),
     ...(process.argv.includes('--software-rendering') ? ['--disable-gpu'] : [])
@@ -35,6 +36,8 @@ const desktop = await electron.launch({
 
 try {
   const page = await desktop.firstWindow()
+  if (packaged)
+    await desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].showInactive())
   page.setDefaultTimeout(12_000)
   page.on('pageerror', (error) => runtimeErrors.push(error.message))
   page.on('request', (request) => {
@@ -55,11 +58,14 @@ try {
         'analyze',
         'cancelAnalysis',
         'chooseImage',
+        'chooseRuntimeDirectory',
         'clearImage',
         'explain',
         'onAnalysisProgress',
         'onExplanationProgress',
-        'openReportDirectory'
+        'openReportDirectory',
+        'openRuntimeDirectory',
+        'runtimeEnvironment'
       ]
     }
   )

@@ -7,6 +7,8 @@ import { importImage } from './image-import'
 import type { AnalysisSession } from './services/analysis-session'
 import { generateExplanation } from './services/explanation'
 import type { EvidenceBundle, ExplanationReport } from '../shared/protocol'
+import { getRuntimeRoot } from './runtime-paths'
+import { requireRuntimeEnvironment, runtimeEnvironment, selectRuntimeDirectory } from './runtime-environment'
 
 export function registerDesktopIPC(
   getWindow: () => BrowserWindow | null,
@@ -31,6 +33,49 @@ export function registerDesktopIPC(
       throw new AppError('INVALID_REQUEST', '请求参数无效。')
     }
   }
+
+  ipcMain.handle(IPC.runtimeEnvironment, async event => {
+    try {
+      requireWindow(event)
+      return { ok: true, data: await runtimeEnvironment() }
+    } catch (error) {
+      return failure(error)
+    }
+  })
+
+  ipcMain.handle(IPC.chooseRuntimeDirectory, async event => {
+    try {
+      const window = requireWindow(event)
+      if (session.busy || picking) throw new AppError('BUSY', '请等待当前操作结束。')
+      picking = true
+      try {
+        const chosen = await dialog.showOpenDialog(window, {
+          title: '选择模型与报告目录，可选择已配置好的项目目录',
+          properties: ['openDirectory', 'createDirectory']
+        })
+        if (chosen.canceled || !chosen.filePaths[0]) return { ok: true, data: null }
+        const data = await selectRuntimeDirectory(chosen.filePaths[0], () => session.clearImage())
+        return { ok: true, data }
+      } finally {
+        picking = false
+      }
+    } catch (error) {
+      return failure(error)
+    }
+  })
+
+  ipcMain.handle(IPC.openRuntimeDirectory, async event => {
+    try {
+      requireWindow(event)
+      const info = await runtimeEnvironment()
+      if (!info.directory) throw new AppError('MODEL_NOT_READY', '请先选择模型与报告目录。')
+      const error = await shell.openPath(info.directory)
+      if (error) throw new AppError('INTERNAL', '无法打开模型与报告目录。')
+      return { ok: true, data: null }
+    } catch (error) {
+      return failure(error)
+    }
+  })
 
   ipcMain.handle(IPC.chooseImage, async (event): Promise<Response<ImageAsset | null>> => {
     try {
@@ -103,6 +148,7 @@ export function registerDesktopIPC(
           workflowOptions = value as unknown as WorkflowOptions
         }
         if (picking) throw new AppError('BUSY', '请等待图片导入结束。')
+        if (backend !== 'mock') requireRuntimeEnvironment()
         const report = await session.analyze(
           imageId,
           taskId,
@@ -136,7 +182,7 @@ export function registerDesktopIPC(
         validateId(taskId)
         const report = session.reportForTask(taskId)
         const directory = dirname(report.workflow!.bundlePath)
-        if (resolve(directory) !== resolve(app.getAppPath(), 'work/analysis-runs', taskId))
+        if (resolve(directory) !== resolve(getRuntimeRoot(app.getAppPath()), 'work/analysis-runs', taskId))
           throw new AppError('INVALID_REQUEST', '报告目录无效。')
         const error = await shell.openPath(directory)
         if (error) throw new AppError('INTERNAL', '无法打开报告文件夹，请查看报告保存路径。')
@@ -153,6 +199,7 @@ export function registerDesktopIPC(
         const window = requireWindow(event)
         validateId(taskId)
 
+        if (picking) throw new AppError('BUSY', '请等待目录或图片选择结束。')
         const explanation = await session.explain(taskId, async (report, signal) => {
           const bundle = report.workflow!.bundle as unknown as EvidenceBundle
           const result = await generateExplanation(bundle, taskId, undefined, undefined, {
@@ -168,7 +215,7 @@ export function registerDesktopIPC(
             }
           })
           signal.throwIfAborted()
-          const directory = resolve(app.getAppPath(), 'work/analysis-runs', taskId, 'reports')
+          const directory = resolve(getRuntimeRoot(app.getAppPath()), 'work/analysis-runs', taskId, 'reports')
           await mkdir(directory, { recursive: true })
           await writeFile(resolve(directory, 'explanation.json'), JSON.stringify(result, null, 2))
           return result

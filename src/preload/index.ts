@@ -7,6 +7,9 @@ import {
 } from '../shared/contracts'
 
 const desktop: DesktopAPI = {
+  runtimeEnvironment: () => ipcRenderer.invoke(IPC.runtimeEnvironment),
+  chooseRuntimeDirectory: () => ipcRenderer.invoke(IPC.chooseRuntimeDirectory),
+  openRuntimeDirectory: () => ipcRenderer.invoke(IPC.openRuntimeDirectory),
   openReportDirectory: (taskId) => ipcRenderer.invoke(IPC.openReportDirectory, taskId),
   chooseImage: () => ipcRenderer.invoke(IPC.chooseImage),
   clearImage: () => ipcRenderer.invoke(IPC.clearImage),

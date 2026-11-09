@@ -5,6 +5,7 @@ import { AppError } from '../errors'
 import type { AnalysisContext } from './analysis'
 import { runPythonWorker } from './python-worker'
 import type { Artifact, ImageInfo } from '../../shared/protocol'
+import { getBackendPath } from '../runtime-paths'
 
 interface RouterConfig {
   pythonPath: string
@@ -40,16 +41,6 @@ export async function routeContentType(args: {
   context: AnalysisContext
 }): Promise<WorkflowRouting> {
   const { root, output, taskId, artifacts, image, context } = args
-  // Lazy electron import keeps workflow.ts bundleable for the synthetic unit tests.
-  let packaged = false
-  try {
-    const { app } = await import('electron')
-    packaged = app.isPackaged
-  } catch {
-    /* running outside Electron (unit tests) */
-  }
-  if (packaged)
-    throw new AppError('MODEL_NOT_READY', '内容路由暂在源码开发模式接入，发布包环境尚未配置。')
   const file = resolve(root, process.env.SRDP_ROUTER_CONFIG ?? 'config/router.local.json')
   let config: RouterConfig
   try {
@@ -121,7 +112,7 @@ export async function routeContentType(args: {
   context.signal.throwIfAborted()
   await runPythonWorker({
     pythonPath: config.pythonPath,
-    workerPath: join(root, 'backend/router/worker.py'),
+    workerPath: getBackendPath(root, 'router/worker.py'),
     requestPath,
     cwd: root,
     timeoutMs: config.timeoutMs,

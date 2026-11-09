@@ -17,6 +17,7 @@ import { SicaAnalysisService } from './sica'
 // [第三人任务] FSD 独立适配器。
 import { AigcAnalysisService } from './aigc'
 import { runPythonWorker } from './python-worker'
+import { getBackendPath, getRuntimeRoot } from '../runtime-paths'
 
 interface RitaConfig {
   pythonPath: string
@@ -118,12 +119,7 @@ export class RoutedAnalysisService implements AnalysisService {
 
   async analyze(input: ImportedImage, context: AnalysisContext): Promise<AnalysisReport> {
     if (context.backend === 'workflow') {
-      if (app.isPackaged)
-        throw new AppError(
-          'MODEL_NOT_READY',
-          '联合分析暂在源码开发模式运行，发布包模型环境尚未配置。'
-        )
-      return new WorkflowAnalysisService(app.getAppPath(), {
+      return new WorkflowAnalysisService(getRuntimeRoot(app.getAppPath()), {
         aigc: this.aigc,
         sica: this.sica,
         rise: this.rise,
@@ -134,9 +130,7 @@ export class RoutedAnalysisService implements AnalysisService {
     if (context.backend === 'rise') return this.rise.analyze(input, context)
     if (context.backend === 'aigc') return this.aigc.analyze(input, context)
     if (context.backend !== 'rita') return this.mock.analyze(input, context)
-    if (app.isPackaged)
-      throw new AppError('MODEL_NOT_READY', 'RITA 当前在源码开发模式接入，发布包环境尚未配置。')
-    const root = app.getAppPath()
+    const root = getRuntimeRoot(app.getAppPath())
     const config = await configFor(root)
     context.signal.throwIfAborted()
     const output = join(root, 'work/rita-runs', context.taskId)
@@ -280,7 +274,7 @@ export class RoutedAnalysisService implements AnalysisService {
   ): Promise<void> {
     return runPythonWorker({
       pythonPath: config.pythonPath,
-      workerPath: join(root, 'backend/rita/worker.py'),
+      workerPath: getBackendPath(root, 'rita/worker.py'),
       requestPath: request,
       cwd: root,
       timeoutMs: config.timeoutMs,

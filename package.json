@@ -1,6 +1,6 @@
 {
   "name": "image-authenticity-app",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "SRDP 本地图像真实性分析桌面工作台",
   "main": "./out/main/index.js",
@@ -53,8 +53,10 @@
     "smoke:dev": "npm run build && node tests/smoke.mjs --dev",
     "smoke:startup": "node tests/startup.mjs",
     "smoke:packaged": "npm run package:dir && node tests/smoke.mjs --packaged",
+    "smoke:installer": "node tests/installer-smoke.mjs",
     "runtime:ensure": "node scripts/ensure-electron.mjs",
-    "package:dir": "npm run build && npm run runtime:ensure && electron-builder --win --dir"
+    "package:dir": "npm run build && npm run runtime:ensure && node scripts/package-windows.mjs --dir",
+    "package:win": "npm run build && npm run runtime:ensure && node scripts/package-windows.mjs"
   },
   "dependencies": {
     "ajv": "^8.20.0",
@@ -82,18 +84,36 @@
     "appId": "cn.srdp.desktop",
     "productName": "SRDP",
     "directories": {
-      "output": "dist"
+      "output": "dist/v0.2.1"
     },
     "files": [
       "out/**/*",
       "package.json"
     ],
     "asar": true,
+    "asarUnpack": ["node_modules/sharp/**/*", "node_modules/@img/**/*"],
+    "extraResources": [
+      { "from": "backend", "to": "backend", "filter": ["**/*.py", "**/*.json", "**/*.txt", "!**/__pycache__/**", "!**/test_*.py", "!**/evaluate.py"] },
+      { "from": "config", "to": "config-templates", "filter": ["*.example.json"] },
+      { "from": "docs/INSTALLATION.md", "to": "INSTALLATION.md" }
+    ],
     "electronDist": "node_modules/electron/dist",
     "npmRebuild": false,
     "win": {
-      "target": "dir",
+      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "artifactName": "SRDP-Setup-${version}-${arch}.${ext}",
       "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "SRDP 图像真实性分析",
+      "runAfterFinish": false,
+      "deleteAppDataOnUninstall": false,
+      "installerLanguages": ["zh_CN", "en_US"]
     }
   }
 }
