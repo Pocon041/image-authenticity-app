@@ -1,5 +1,5 @@
 import type { PropsWithChildren, ReactNode } from 'react'
-import { ScanLine } from 'lucide-react'
+import appIcon from '../../../../build/icon.svg?url'
 
 export function WorkspaceLayout({
   children,
@@ -11,7 +11,7 @@ export function WorkspaceLayout({
       <header className="desktop-titlebar">
         <div className="brand-lockup">
           <span className="brand-mark" aria-hidden="true">
-            <ScanLine size={18} strokeWidth={1.7} />
+              <img src={appIcon} width={20} height={20} alt="" draggable={false} />
           </span>
           <div className="brand-copy">
             <h1>通用鉴伪系统</h1>
