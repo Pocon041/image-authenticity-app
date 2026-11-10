@@ -13,6 +13,7 @@ export function useAnalysisWorkspace() {
   const [backend, setBackend] = useState<AnalysisBackend>('workflow')
   const [contentType, setContentType] = useState<ContentType | 'auto'>('auto')
   const [report, setReport] = useState<AnalysisReport | null>(null)
+  const [viewingHistory, setViewingHistory] = useState(false)
   const [imageView, setImageView] = useState<{ taskId: string; view: string } | null>(null)
   const [progress, setProgress] = useState<AnalysisProgress | null>(null)
   const [lastProgress, setLastProgress] = useState<AnalysisProgress | null>(null)
@@ -57,6 +58,7 @@ export function useAnalysisWorkspace() {
       const result = await read()
       if (!result.ok) setError(result.error)
       else if (result.data) {
+        setViewingHistory(false)
         setImage(result.data)
         setReport(null)
         setImageView(null)
@@ -77,6 +79,37 @@ export function useAnalysisWorkspace() {
     acquireImage(() => window.desktop.importDroppedImage(files))
   const pasteImage = () => acquireImage(() => window.desktop.pasteImage())
 
+  async function openHistory(taskId: string): Promise<boolean> {
+    if (locked.current) return false
+    locked.current = true
+    setStatus('picking')
+    try {
+      const result = await window.desktop.openHistory(taskId)
+      if (!result.ok) {
+        setError(result.error)
+        return false
+      }
+      setImage(result.data.image)
+      setReport(result.data.report)
+      setBackend(result.data.report.backend ?? 'workflow')
+      setContentType(result.data.report.workflow?.contentType ?? 'auto')
+      setImageView(null)
+      setProgress(null)
+      setLastProgress(null)
+      progressTrace.current = null
+      setError('')
+      setNotice('')
+      setViewingHistory(true)
+      return true
+    } catch {
+      setError('无法打开历史记录，请重试。')
+      return false
+    } finally {
+      locked.current = false
+      setStatus('idle')
+    }
+  }
+
   async function analyze(supplement = false) {
     if (!image || locked.current) return
     locked.current = true
@@ -84,6 +117,7 @@ export function useAnalysisWorkspace() {
     currentTask.current = taskId
     setError('')
     setNotice('')
+    setViewingHistory(false)
     if (!supplement) {
       setReport(null)
       setImageView(null)
@@ -112,7 +146,10 @@ export function useAnalysisWorkspace() {
               : `${backend === 'workflow' ? '联合' : backend === 'rise' ? 'RiSE' : backend === 'sica' ? 'SICA' : 'RITA'} 分析已取消，可以重新开始。${supplement ? '上一份证据仍保留。' : ''}`
           )
         else setError(result.error)
-      } else if (result.data.imageId === image.id) setReport(result.data)
+      } else if (result.data.imageId === image.id) {
+        setReport(result.data)
+        if (result.data.historyWarning) setNotice(result.data.historyWarning)
+      }
     } catch {
       setError('分析失败，请重试。')
     } finally {
@@ -148,6 +185,7 @@ export function useAnalysisWorkspace() {
       const result = await window.desktop.clearImage()
       if (!result.ok) setError(result.error)
       else {
+        setViewingHistory(false)
         setImage(null)
         setReport(null)
         setImageView(null)
@@ -169,6 +207,7 @@ export function useAnalysisWorkspace() {
     contentType,
     selectContentType(next: ContentType | 'auto') {
       if (locked.current) return
+      setViewingHistory(false)
       setContentType(next)
       setReport(null)
       setImageView(null)
@@ -180,6 +219,7 @@ export function useAnalysisWorkspace() {
     },
     selectBackend(next: AnalysisBackend) {
       if (locked.current) return
+      setViewingHistory(false)
       setBackend(next)
       setReport(null)
       setImageView(null)
@@ -191,6 +231,7 @@ export function useAnalysisWorkspace() {
     },
     image,
     report,
+    viewingHistory,
     imageView,
     selectImageView(view: string) {
       if (!report || report.imageId !== image?.id || status !== 'idle') return
@@ -206,6 +247,7 @@ export function useAnalysisWorkspace() {
     chooseImage,
     importDroppedImage,
     pasteImage,
+    openHistory,
     analyze: () => analyze(false),
     supplement: () => analyze(true),
     cancel,

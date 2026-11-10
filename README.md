@@ -2,7 +2,7 @@
 
 基于本地推理的 Windows 图像鉴伪桌面应用。系统连接来源检查、视觉检测、局部定位和自然语言说明，支持从结论回到原图核查证据。
 
-**v0.3.0 · Windows x64 · Electron / React / TypeScript / Python**
+**v0.4.0 · Windows x64 · Electron / React / TypeScript / Python**
 
 [下载最新版](https://github.com/Pocon041/image-authenticity-app/releases/latest) · [安装说明](docs/INSTALLATION.md) · [开发配置](docs/DEVELOPMENT.md) · [报告协议](docs/REPORT_PROTOCOL_V1.md)
 
@@ -18,7 +18,7 @@
 
 下载并运行完整安装器，选择资源保存位置。安装器会自动获取约10.4GB安装数据，校验后准备资源并启动应用安装向导。首次打开后选择模型与报告目录，等待自动配置完成即可使用。下载中断时，重新运行安装器并选择同一资源目录可继续。
 
-[下载完整安装器](https://github.com/Pocon041/image-authenticity-app/releases/download/v0.3.0/SRDP-Full-Setup-0.3.0-x64.exe)
+[下载完整安装器](https://github.com/Pocon041/image-authenticity-app/releases/download/v0.4.0/SRDP-Full-Setup-0.4.0-x64.exe)
 
 需要在无网络的电脑上安装时，提前下载完整安装器和六个 `.bin` 数据文件，放在同一文件夹后运行安装器。安装器自动读取数据、准备 Python、模型权重和 Ollama。数据分卷用于满足 GitHub 单附件小于2GiB的限制。离线安装步骤见安装说明。 [安装说明](docs/INSTALLATION.md#完整版)
 
@@ -28,9 +28,9 @@
 
 运行安装器后，可在“设置 → 开发与单模型调试”中选择“模拟流程”体验框架。接入真实模型时，按开发文档自行准备 Python 环境、上游模型源码、权重和解释服务，再选择对应的运行目录。
 
-[开发者版安装器](https://github.com/Pocon041/image-authenticity-app/releases/download/v0.3.0/SRDP-Developer-Setup-0.3.0-x64.exe) · [模型配置与接入](docs/DEVELOPMENT.md)
+[开发者版安装器](https://github.com/Pocon041/image-authenticity-app/releases/download/v0.4.0/SRDP-Developer-Setup-0.4.0-x64.exe) · [模型配置与接入](docs/DEVELOPMENT.md)
 
-发布页同时提供 [SHA-256 校验清单](https://github.com/Pocon041/image-authenticity-app/releases/download/v0.3.0/SHA256SUMS.txt)。当前安装器未配置代码签名证书，Windows可能显示未知发布者。
+发布页同时提供 [SHA-256 校验清单](https://github.com/Pocon041/image-authenticity-app/releases/download/v0.4.0/SHA256SUMS.txt)。当前安装器未配置代码签名证书，Windows可能显示未知发布者。
 
 ## 可以做什么
 
@@ -39,6 +39,8 @@
 - **证据解释**。组织来源、整图反馈、局部区域及证据关系，结合原图与裁剪生成自然语言说明。
 - **图像核查**。支持拖拽、粘贴、原图与定位切换、滚轮缩放、拖动平移、放大预览，以及可调节的图像／报告分栏。
 - **结果留存**。显示实际分析进度，支持取消、重试和部分失败处理，保存简明报告、完整证据包及模型原始输出。
+- **历史回看**。按日期浏览记录，搜索图像名称，回看原图、定位和已保存的自然语言说明。新记录保留原图副本。
+- **整套主题**。支持浅色、深色、跟随系统和自定义主题色，窗口、导航、工作区、报告及弹窗统一配色。
 
 ## 使用流程
 
@@ -46,6 +48,8 @@
 2. 使用“自动识别”，或手动选择普通照片、文档等类型，点击“开始分析”。
 3. 查看来源检查、检测和定位进度，阅读综合判断与分析说明。
 4. 在说明区切换原图和定位图，缩放查看细节；展开“检测详情与报告”核查原始记录。
+
+左侧“历史”或 `Ctrl+H` 打开检测记录。“设置 → 外观”调整整套主题，选择会保存在本机。历史按当前模型与报告目录管理，兼容已有联合分析报告。早期缺少文件名的记录使用图像短标识显示。
 
 当前支持 PNG、JPG、JPEG 和 WebP，每次处理一张图片，最大20MB、6000万像素。RiSE 默认最多处理128个图块。默认检测路径按序使用GPU，单项失败会保留已完成结果。SICA未报警时仍继续定位，FSD阴性与传统编辑线索分别记录。
 

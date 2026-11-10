@@ -1,6 +1,7 @@
 import type { DecisionConfidence, ModelSupport } from './decision-confidence'
 
 export const IPC = {
+  setWindowTheme: 'srdp:window:theme',
   runtimeEnvironment: 'srdp:runtime:info',
   chooseRuntimeDirectory: 'srdp:runtime:choose-directory',
   chooseRuntimeBundle: 'srdp:runtime:choose-bundle',
@@ -16,6 +17,8 @@ export const IPC = {
   cancelAnalysis: 'srdp:analysis:cancel',
   progress: 'srdp:analysis:progress',
   openReportDirectory: 'srdp:analysis:open-directory',
+  listHistory: 'srdp:history:list',
+  openHistory: 'srdp:history:open',
   explain: 'srdp:analysis:explain', // 第四人新增
   cancelExplain: 'srdp:analysis:cancel-explain', // 第四人新增
   explanationProgress: 'srdp:analysis:explanation-progress' // 第四人新增
@@ -136,6 +139,7 @@ export interface AnalysisReport {
   summary: string
   sections: { title: string; description: string }[]
   disclaimer: string
+  historyWarning?: string
   workflow?: WorkflowResult
   localization?: {
     confidence?: ModelSupport | null
@@ -173,6 +177,29 @@ export interface AnalysisReport {
   explanation?: import('./protocol').ExplanationReport
 }
 
+export interface HistoryEntry {
+  id: string
+  name: string
+  createdAt: string
+  backend: AnalysisBackend
+  mode: 'mock' | 'local'
+  status: 'completed' | 'partial' | 'failed'
+  width: number
+  height: number
+  thumbnailDataUrl: string
+}
+
+export interface HistoryPage {
+  entries: HistoryEntry[]
+  total: number
+  skipped: number
+}
+
+export interface HistorySelection {
+  image: ImageAsset
+  report: AnalysisReport
+}
+
 // [第三人任务] 独立 FSD AIGC 检测入口。
 export type AnalysisBackend = 'workflow' | 'mock' | 'rita' | 'sica' | 'rise' | 'aigc'
 
@@ -199,6 +226,9 @@ export interface RuntimeSetupStatus {
 }
 
 export interface DesktopAPI {
+  setWindowTheme(theme: WindowTheme): Promise<Response<null>>
+  listHistory(query: string, offset: number): Promise<Response<HistoryPage>>
+  openHistory(taskId: string): Promise<Response<HistorySelection>>
   runtimeEnvironment(): Promise<Response<RuntimeEnvironment>>
   chooseRuntimeDirectory(): Promise<Response<RuntimeEnvironment | null>>
   chooseRuntimeBundle(): Promise<Response<RuntimeEnvironment | null>>
@@ -221,4 +251,10 @@ export interface DesktopAPI {
   explain(taskId: string): Promise<Response<import('./protocol').ExplanationReport>>
   onExplanationProgress(listener: (progress: ExplanationProgress) => void): () => void
   onAnalysisProgress(listener: (progress: AnalysisProgress) => void): () => void
+}
+
+export interface WindowTheme {
+  mode: 'light' | 'dark' | 'system'
+  background: string
+  foreground: string
 }

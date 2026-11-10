@@ -1,8 +1,16 @@
 import { useState, type RefObject } from 'react'
-import { Cpu, Settings2, X } from 'lucide-react'
+import { Cpu, Palette, Settings2, X } from 'lucide-react'
 import type { AnalysisBackend } from '../../../shared/contracts'
 import type { AnalysisWorkspace } from '../hooks/useAnalysisWorkspace'
 import { RuntimeSettings } from './RuntimeSettings'
+import { AppearanceSettings } from './AppearanceSettings'
+import { version } from '../../../../package.json'
+
+const tabs = [
+  { value: 'runtime', label: '运行环境', icon: Settings2 },
+  { value: 'appearance', label: '外观', icon: Palette },
+  { value: 'advanced', label: '开发与单模型调试', icon: Cpu }
+] as const
 
 const modes: { value: AnalysisBackend; label: string }[] = [
   { value: 'workflow', label: '联合分析' },
@@ -20,7 +28,7 @@ export function SettingsDialog({
   dialogRef: RefObject<HTMLDialogElement | null>
   workspace: AnalysisWorkspace
 }) {
-  const [tab, setTab] = useState<'runtime' | 'advanced'>('runtime')
+  const [tab, setTab] = useState<(typeof tabs)[number]['value']>('runtime')
   function openRuntimeSettings() {
     setTab('runtime')
     if (!dialogRef.current?.open) dialogRef.current?.showModal()
@@ -47,40 +55,33 @@ export function SettingsDialog({
           onKeyDown={(event) => {
             if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
             event.preventDefault()
-            const next =
+            const current = tabs.findIndex((item) => item.value === tab)
+            const nextIndex =
               event.key === 'Home'
-                ? 'runtime'
+                ? 0
                 : event.key === 'End'
-                  ? 'advanced'
-                  : tab === 'runtime'
-                    ? 'advanced'
-                    : 'runtime'
+                  ? tabs.length - 1
+                  : (current + (event.key === 'ArrowDown' ? 1 : -1) + tabs.length) % tabs.length
+            const next = tabs[nextIndex].value
             setTab(next)
             document.getElementById(`settings-${next}-tab`)?.focus()
           }}
         >
-          <button
-            id="settings-runtime-tab"
-            role="tab"
-            aria-selected={tab === 'runtime'}
-            aria-controls="settings-runtime-panel"
-            tabIndex={tab === 'runtime' ? 0 : -1}
-            onClick={() => setTab('runtime')}
-          >
-            <Settings2 size={16} />
-            运行环境
-          </button>
-          <button
-            id="settings-advanced-tab"
-            role="tab"
-            aria-selected={tab === 'advanced'}
-            aria-controls="settings-advanced-panel"
-            tabIndex={tab === 'advanced' ? 0 : -1}
-            onClick={() => setTab('advanced')}
-          >
-            <Cpu size={16} />
-            开发与单模型调试
-          </button>
+          {tabs.map(({ value, label, icon: Icon }) => (
+            <button
+              key={value}
+              id={`settings-${value}-tab`}
+              role="tab"
+              aria-selected={tab === value}
+              aria-controls={`settings-${value}-panel`}
+              tabIndex={tab === value ? 0 : -1}
+              onClick={() => setTab(value)}
+            >
+              <Icon size={16} />
+              {label}
+            </button>
+          ))}
+          <span className="settings-version">v{version}</span>
         </nav>
         <div
           id="settings-runtime-panel"
@@ -94,6 +95,15 @@ export function SettingsDialog({
             onDirectoryChanged={workspace.clearImage}
             onSetupRequired={openRuntimeSettings}
           />
+        </div>
+        <div
+          id="settings-appearance-panel"
+          className="settings-content"
+          role="tabpanel"
+          aria-labelledby="settings-appearance-tab"
+          hidden={tab !== 'appearance'}
+        >
+          <AppearanceSettings />
         </div>
         <div
           id="settings-advanced-panel"

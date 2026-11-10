@@ -18,6 +18,8 @@ const bytes = await sharp({
 await writeFile(path, bytes)
 await writeFile(invalid, 'not an image')
 const env = { ...process.env }
+env.SRDP_RUNTIME_ROOT = join(output, 'runtime')
+await mkdir(env.SRDP_RUNTIME_ROOT, { recursive: true })
 delete env.ELECTRON_RUN_AS_NODE
 delete env.ELECTRON_RENDERER_URL
 const desktop = await electron.launch({ args: [root, '--smoke-test', '--disable-gpu'], env })

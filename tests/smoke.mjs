@@ -24,6 +24,10 @@ if (process.argv.includes('--dev')) {
 }
 
 const packaged = process.argv.includes('--packaged')
+if (!packaged) {
+  testEnv.SRDP_RUNTIME_ROOT = join(artifacts, 'runtime')
+  await mkdir(testEnv.SRDP_RUNTIME_ROOT, { recursive: true })
+}
 const { version } = JSON.parse(await readFile(join(project, 'package.json'), 'utf8'))
 const desktop = await electron.launch({
   ...(packaged
@@ -55,6 +59,11 @@ try {
   await page.keyboard.press('Control+,')
   await page.getByRole('dialog', { name: '设置', exact: true }).waitFor()
   await page.getByRole('tab', { name: '运行环境', exact: true }).focus()
+  await page.keyboard.press('ArrowDown')
+  assert.equal(
+    await page.getByRole('tab', { name: '外观', exact: true }).getAttribute('aria-selected'),
+    'true'
+  )
   await page.keyboard.press('ArrowDown')
   assert.equal(
     await page
@@ -90,14 +99,17 @@ try {
         'clearImage',
         'explain',
         'importDroppedImage',
+        'listHistory',
         'onAnalysisProgress',
         'onExplanationProgress',
         'onRuntimeSetupProgress',
+        'openHistory',
         'openReportDirectory',
         'openRuntimeDirectory',
         'pasteImage',
         'prepareRuntime',
-        'runtimeEnvironment'
+        'runtimeEnvironment',
+        'setWindowTheme'
       ]
     }
   )

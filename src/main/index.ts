@@ -25,6 +25,12 @@ function createWindow(): void {
     show: false,
     backgroundColor: '#f3f3f0',
     autoHideMenuBar: true,
+    ...(process.platform === 'win32'
+      ? {
+          titleBarStyle: 'hidden' as const,
+          titleBarOverlay: { color: '#e6ece8', symbolColor: '#29322c', height: 42 }
+        }
+      : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,

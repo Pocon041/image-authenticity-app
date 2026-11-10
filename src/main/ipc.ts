@@ -3,6 +3,7 @@ import {
   clipboard,
   dialog,
   ipcMain,
+  nativeTheme,
   shell,
   type BrowserWindow,
   type IpcMainInvokeEvent
@@ -15,6 +16,7 @@ import { AppError, failure } from './errors'
 import { importImage } from './image-import'
 import type { AnalysisSession } from './services/analysis-session'
 import { generateExplanation } from './services/explanation'
+import { AnalysisHistory } from './services/analysis-history'
 import type { EvidenceBundle, ExplanationReport } from '../shared/protocol'
 import { getRuntimeRoot } from './runtime-paths'
 import {
@@ -29,6 +31,13 @@ export function registerDesktopIPC(
   session: AnalysisSession
 ): void {
   let picking = false
+  let historyStore: { root: string; value: AnalysisHistory } | null = null
+
+  function history(): AnalysisHistory {
+    const root = getRuntimeRoot(app.isPackaged ? app.getPath('userData') : app.getAppPath())
+    if (historyStore?.root !== root) historyStore = { root, value: new AnalysisHistory(root) }
+    return historyStore.value
+  }
 
   function requireWindow(event: IpcMainInvokeEvent): BrowserWindow {
     const window = getWindow()
@@ -47,6 +56,69 @@ export function registerDesktopIPC(
       throw new AppError('INVALID_REQUEST', '请求参数无效。')
     }
   }
+
+  ipcMain.handle(IPC.setWindowTheme, (event, value: unknown) => {
+    try {
+      const window = requireWindow(event)
+      if (!value || typeof value !== 'object')
+        throw new AppError('INVALID_REQUEST', '外观参数无效。')
+      const theme = value as Record<string, unknown>
+      if (
+        !['light', 'dark', 'system'].includes(String(theme.mode)) ||
+        typeof theme.background !== 'string' ||
+        !/^#[\da-f]{6}$/i.test(theme.background) ||
+        typeof theme.foreground !== 'string' ||
+        !/^#[\da-f]{6}$/i.test(theme.foreground)
+      )
+        throw new AppError('INVALID_REQUEST', '外观参数无效。')
+      nativeTheme.themeSource = theme.mode as 'light' | 'dark' | 'system'
+      window.setBackgroundColor(theme.background)
+      if (process.platform === 'win32')
+        window.setTitleBarOverlay({
+          color: theme.background,
+          symbolColor: theme.foreground,
+          height: 42
+        })
+      return { ok: true, data: null }
+    } catch (error) {
+      return failure(error)
+    }
+  })
+
+  ipcMain.handle(IPC.listHistory, async (event, query: unknown, offset: unknown) => {
+    try {
+      requireWindow(event)
+      if (
+        typeof query !== 'string' ||
+        query.length > 200 ||
+        typeof offset !== 'number' ||
+        !Number.isSafeInteger(offset) ||
+        offset < 0
+      )
+        throw new AppError('INVALID_REQUEST', '历史记录查询无效。')
+      return { ok: true, data: await history().list(query, offset) }
+    } catch (error) {
+      return failure(error)
+    }
+  })
+
+  ipcMain.handle(IPC.openHistory, async (event, taskId: unknown) => {
+    try {
+      requireWindow(event)
+      validateId(taskId)
+      if (session.busy || picking) throw new AppError('BUSY', '请等待当前操作结束。')
+      picking = true
+      try {
+        const selected = await history().open(taskId)
+        session.restore(selected.image, selected.report)
+        return { ok: true, data: { image: selected.image.asset, report: selected.report } }
+      } finally {
+        picking = false
+      }
+    } catch (error) {
+      return failure(error)
+    }
+  })
 
   ipcMain.handle(IPC.runtimeEnvironment, async (event) => {
     try {
@@ -280,6 +352,8 @@ export function registerDesktopIPC(
         }
         if (picking) throw new AppError('BUSY', '请等待图片导入结束。')
         if (backend !== 'mock') requireRuntimeEnvironment()
+        const image = session.image
+        const recordStore = history()
         const report = await session.analyze(
           imageId,
           taskId,
@@ -289,6 +363,16 @@ export function registerDesktopIPC(
           backend,
           workflowOptions
         )
+        report.backend ??= backend
+        picking = true
+        try {
+          if (image) await recordStore.save(image, report)
+        } catch (error) {
+          console.warn('[history] could not save analysis', error)
+          report.historyWarning = '检测已完成，但历史记录保存失败。请检查报告目录的空间与写入权限。'
+        } finally {
+          picking = false
+        }
         return { ok: true, data: report }
       } catch (error) {
         return failure(error)
@@ -334,6 +418,7 @@ export function registerDesktopIPC(
         validateId(taskId)
 
         if (picking) throw new AppError('BUSY', '请等待目录或图片选择结束。')
+        const recordStore = history()
         const explanation = await session.explain(taskId, async (report, signal) => {
           const bundle = report.workflow!.bundle as unknown as EvidenceBundle
           const result = await generateExplanation(bundle, taskId, undefined, undefined, {
@@ -357,6 +442,9 @@ export function registerDesktopIPC(
           )
           await mkdir(directory, { recursive: true })
           await writeFile(resolve(directory, 'explanation.json'), JSON.stringify(result, null, 2))
+          await recordStore.saveExplanation(result).catch((error) => {
+            console.warn('[history] explanation snapshot not saved', error)
+          })
           return result
         })
 

@@ -1,4 +1,13 @@
-import { FileImage, ImagePlus, LoaderCircle, Maximize2, ScanLine, X } from 'lucide-react'
+import {
+  ClipboardPaste,
+  FolderOpen,
+  FileImage,
+  ImagePlus,
+  LoaderCircle,
+  Maximize2,
+  ScanLine,
+  X
+} from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import type { AnalysisWorkspace } from '../hooks/useAnalysisWorkspace'
 import { ImageViewport } from './ImageViewport'
@@ -55,14 +64,53 @@ export function ImagePanel({ workspace: w }: { workspace: AnalysisWorkspace }) {
   }[w.backend]
   return (
     <section className="panel image-panel" aria-label="图片工作区" aria-busy={w.running}>
-      <div className="panel-heading">
-        <div>
+      <div className="panel-heading image-heading">
+        <div className="image-heading-label">
           <FileImage size={18} />
           <h2>图像工作区</h2>
         </div>
-        <span aria-live="polite">
-          {w.status === 'picking' ? '导入中…' : w.image ? '1 张图片' : '等待导入'}
+        <span className="image-heading-status" aria-live="polite">
+          {w.status === 'picking' ? (
+            '读取中…'
+          ) : w.viewingHistory && report ? (
+            <time
+              dateTime={report.createdAt}
+              title={new Date(report.createdAt).toLocaleString('zh-CN')}
+            >
+              历史记录 ·{' '}
+              {new Date(report.createdAt).toLocaleString('zh-CN', {
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit'
+              })}
+            </time>
+          ) : w.image ? (
+            '1 张图片'
+          ) : (
+            '等待导入'
+          )}
         </span>
+        <div className="image-import-actions" role="group" aria-label="图片操作">
+          <button
+            className="toolbar-button"
+            disabled={w.busy}
+            onClick={w.chooseImage}
+            title="打开图片 (Ctrl+O)"
+          >
+            <FolderOpen size={15} />
+            {w.image ? '更换图片' : '打开图片'}
+          </button>
+          <button
+            className="icon-button"
+            disabled={w.busy}
+            onClick={w.pasteImage}
+            aria-label="粘贴图片"
+            title="粘贴图片 (Ctrl+V)"
+          >
+            <ClipboardPaste size={16} />
+          </button>
+        </div>
       </div>
       {report && localizations.length > 0 && (
         <div
@@ -212,11 +260,6 @@ export function ImagePanel({ workspace: w }: { workspace: AnalysisWorkspace }) {
           </div>
         )}
         <div className="image-actions">
-          {w.image && (
-            <button className="secondary-button" onClick={w.chooseImage} disabled={w.busy}>
-              更换图片
-            </button>
-          )}
           <button
             data-testid="analyze-button"
             className="primary-button"

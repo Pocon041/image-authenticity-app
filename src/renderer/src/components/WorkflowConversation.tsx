@@ -81,6 +81,14 @@ export function WorkflowConversation({ workspace: w }: { workspace: AnalysisWork
       setActivityOpen(report.explanation.mode !== 'local')
       return
     }
+    if (w.viewingHistory) {
+      setExplanation(null)
+      setExplainState('idle')
+      setExplainError('')
+      setActivityOpen(false)
+      setStream(null)
+      return
+    }
     let active = true
     setExplanation(null)
     setStream(null)
@@ -116,7 +124,7 @@ export function WorkflowConversation({ workspace: w }: { workspace: AnalysisWork
     return () => {
       active = false
     }
-  }, [report?.id, w.running, retry])
+  }, [report, w.running, w.viewingHistory, retry])
 
   async function stopExplanation() {
     if (!report || stopping) return
@@ -253,7 +261,15 @@ export function WorkflowConversation({ workspace: w }: { workspace: AnalysisWork
           <MessageSquareText size={18} />
           <h2>分析结果</h2>
         </div>
-        <span>{explainState === 'done' ? '说明已生成' : started ? '分析进程' : '待开始'}</span>
+        <span>
+          {w.viewingHistory
+            ? '历史记录'
+            : explainState === 'done'
+              ? '说明已生成'
+              : started
+                ? '分析进程'
+                : '待开始'}
+        </span>
       </div>
       <div
         className="conversation-body"
@@ -465,7 +481,10 @@ export function WorkflowConversation({ workspace: w }: { workspace: AnalysisWork
             </button>
           </div>
         )}
-        {(explainState === 'error' || explanation?.mode === 'mock') && (
+        {w.viewingHistory && !report?.explanation && (
+          <p className="history-explanation-note">此记录未保存综合说明。</p>
+        )}
+        {!w.viewingHistory && (explainState === 'error' || explanation?.mode === 'mock') && (
           <div className="conversation-retry">
             <p>{explainError}</p>
             <button className="secondary-button" onClick={() => setRetry((value) => value + 1)}>
@@ -475,6 +494,8 @@ export function WorkflowConversation({ workspace: w }: { workspace: AnalysisWork
         )}
         {report && (
           <details
+            key={report.id}
+            open={w.viewingHistory && !report.explanation ? true : undefined}
             className="conversation-technical report-details"
             data-testid="workflow-technical-details"
           >

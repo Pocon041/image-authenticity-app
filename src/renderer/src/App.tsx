@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { ClipboardPaste, FolderOpen, ImagePlus, Info, Settings2, X } from 'lucide-react'
+import { Clock3, ScanLine, ImagePlus, Info, Settings2, X } from 'lucide-react'
 import { AnalysisPanel } from './components/AnalysisPanel'
 import { ImagePanel } from './components/ImagePanel'
 import { SettingsDialog } from './components/SettingsDialog'
+import { HistoryDialog } from './components/HistoryDialog'
 import { SplitWorkspace } from './components/SplitWorkspace'
 import { WorkspaceLayout } from './components/WorkspaceLayout'
 import { useAnalysisWorkspace } from './hooks/useAnalysisWorkspace'
@@ -19,6 +20,7 @@ const modeLabels = {
 export function App() {
   const workspace = useAnalysisWorkspace()
   const settingsDialog = useRef<HTMLDialogElement>(null)
+  const [historyOpen, setHistoryOpen] = useState(false)
   const workflow = workspace.backend === 'workflow'
   const [dragging, setDragging] = useState(false)
   const dragDepth = useRef(0)
@@ -84,44 +86,52 @@ export function App() {
       } else if (event.key.toLowerCase() === 'v') {
         event.preventDefault()
         void workspace.pasteImage()
+      } else if (event.key.toLowerCase() === 'h' && !workspace.busy) {
+        event.preventDefault()
+        setHistoryOpen(true)
       }
     }
     window.addEventListener('keydown', handleShortcut)
     return () => window.removeEventListener('keydown', handleShortcut)
-  }, [workspace.chooseImage, workspace.pasteImage])
+  }, [workspace.chooseImage, workspace.pasteImage, workspace.busy])
 
   return (
     <WorkspaceLayout
       actions={
         <>
           <button
-            className="toolbar-button open-image-command"
-            disabled={workspace.busy}
-            onClick={workspace.chooseImage}
-            title="打开图片 (Ctrl+O)"
+            className="navigation-button"
+            aria-label="图像分析"
+            aria-pressed={!historyOpen}
+            title="图像分析"
+            onClick={() => setHistoryOpen(false)}
           >
-            <FolderOpen size={16} />
-            打开图片
+            <ScanLine size={21} />
+            <span>分析</span>
           </button>
           <button
-            className="toolbar-button"
+            className="navigation-button"
             disabled={workspace.busy}
-            onClick={workspace.pasteImage}
-            title="粘贴图片 (Ctrl+V)"
+            aria-label="历史记录"
+            aria-pressed={historyOpen}
+            title="历史记录 (Ctrl+H)"
+            onClick={() => setHistoryOpen(true)}
           >
-            <ClipboardPaste size={16} />
-            粘贴图片
-          </button>
-          <button
-            className="toolbar-button"
-            aria-label="设置"
-            title="设置 (Ctrl+,)"
-            onClick={() => settingsDialog.current?.showModal()}
-          >
-            <Settings2 size={16} />
-            设置
+            <Clock3 size={21} />
+            <span>历史</span>
           </button>
         </>
+      }
+      utilities={
+        <button
+          className="navigation-button"
+          aria-label="设置"
+          title="设置 (Ctrl+,)"
+          onClick={() => settingsDialog.current?.showModal()}
+        >
+          <Settings2 size={21} />
+          <span>设置</span>
+        </button>
       }
     >
       {!workflow && (
@@ -157,6 +167,11 @@ export function App() {
         </div>
       )}
       <SettingsDialog dialogRef={settingsDialog} workspace={workspace} />
+      <HistoryDialog
+        open={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        workspace={workspace}
+      />
     </WorkspaceLayout>
   )
 }

@@ -239,8 +239,8 @@ export async function prepareWorkflowInput(
   return { image, artifacts, provenanceReport }
 }
 
-// Only read files within a detector's task directory, including when the OS resolves symlinks.
-async function sourceBytes(directory: string, uri: string): Promise<Buffer> {
+// Only read files within the owning task directory, including when the OS resolves symlinks.
+export async function sourceBytes(directory: string, uri: string): Promise<Buffer> {
   if (isAbsolute(uri) || uri.includes('\\') || uri.split('/').includes('..'))
     throw new AppError('INFERENCE_FAILED', '模型附件路径无效。')
   const root = await realpath(directory),
