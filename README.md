@@ -1,16 +1,46 @@
-# 通用鉴伪系统
+<p align="center">
+  <img src="build/icon.svg" width="88" height="88" alt="通用鉴伪系统图标">
+</p>
+
+<h1 align="center">通用鉴伪系统</h1>
 
 基于本地推理的 Windows 图像鉴伪桌面应用。系统连接来源检查、视觉检测、局部定位和自然语言说明，支持从结论回到原图核查证据。
 
-**v0.4.0 · Windows x64 · Electron / React / TypeScript / Python**
+<p align="center"><strong>v0.4.0 · Windows x64</strong></p>
+
+<p align="center">
+  <a href="https://github.com/Pocon041/image-authenticity-app/releases/download/v0.4.0/SRDP-Full-Setup-0.4.0-x64.exe">完整版安装器</a> ·
+  <a href="https://github.com/Pocon041/image-authenticity-app/releases/download/v0.4.0/SRDP-Developer-Setup-0.4.0-x64.exe">开发者版安装器</a> ·
+  <a href="https://github.com/Pocon041/image-authenticity-app/releases/tag/v0.4.0">发行说明</a>
+</p>
 
 [下载最新版](https://github.com/Pocon041/image-authenticity-app/releases/latest) · [安装说明](docs/INSTALLATION.md) · [开发配置](docs/DEVELOPMENT.md) · [报告协议](docs/REPORT_PROTOCOL_V1.md)
 
-![通用鉴伪系统桌面工作区](docs/images/workspace.png)
+## 界面预览
+
+### 工作区
+
+<p>
+  <a href="docs/images/workspace.png"><img src="docs/images/workspace.png" width="49%" alt="浅色工作区，图像与报告并排展示，左侧为分析和历史导航"></a>
+  <a href="docs/images/workspace-dark.png"><img src="docs/images/workspace-dark.png" width="49%" alt="深色工作区，窗口、导航、画布和报告使用协调的明暗层次"></a>
+</p>
+
+浅色与深色使用同一套工作台。图像和报告之间可拖动分隔线，图片支持缩放、平移与原图对照。点击截图可查看大图。
+
+### 外观与历史
+
+<p>
+  <a href="docs/images/appearance.png"><img src="docs/images/appearance.png" width="49%" alt="外观设置，可选择明暗模式、六种预设与自定义主题色"></a>
+  <a href="docs/images/history.png"><img src="docs/images/history.png" width="49%" alt="历史记录，支持图像缩略图、文件名搜索与按日期浏览"></a>
+</p>
+
+主题覆盖整体背景与文字。设置窗口在栏目切换时保持固定尺寸，较长内容在内部滚动。历史截图使用自生成演示图像，记录来自模拟流程。
 
 ## 下载安装
 
 项目提供两种安装方式。
+
+已准备好完整运行环境的用户，可使用开发者版安装器更新桌面应用，并在设置中选择原有模型与报告目录。
 
 ### 完整版
 
@@ -44,10 +74,14 @@
 
 ## 使用流程
 
-1. 选择、拖入或粘贴一张图片。
-2. 使用“自动识别”，或手动选择普通照片、文档等类型，点击“开始分析”。
-3. 查看来源检查、检测和定位进度，阅读综合判断与分析说明。
-4. 在说明区切换原图和定位图，缩放查看细节；展开“检测详情与报告”核查原始记录。
+```mermaid
+flowchart LR
+  A[导入图像] --> B[来源与视觉检查]
+  B --> C[定位与综合说明]
+  C --> D[对照核查与历史回看]
+```
+
+选择、拖入或粘贴图片后，使用“自动识别”或手动指定类型，点击“开始分析”。结果区提供综合判断、自然语言说明及原图／定位对照，详细证据与原始记录收纳在“检测详情与报告”中。
 
 左侧“历史”或 `Ctrl+H` 打开检测记录。“设置 → 外观”调整整套主题，选择会保存在本机。历史按当前模型与报告目录管理，兼容已有联合分析报告。早期缺少文件名的记录使用图像短标识显示。
 
