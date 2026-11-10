@@ -8,6 +8,9 @@ import {
 } from '../shared/contracts'
 
 const desktop: DesktopAPI = {
+  setWindowTheme: (theme) => ipcRenderer.invoke(IPC.setWindowTheme, theme),
+  listHistory: (query, offset) => ipcRenderer.invoke(IPC.listHistory, query, offset),
+  openHistory: (taskId) => ipcRenderer.invoke(IPC.openHistory, taskId),
   runtimeEnvironment: () => ipcRenderer.invoke(IPC.runtimeEnvironment),
   chooseRuntimeDirectory: () => ipcRenderer.invoke(IPC.chooseRuntimeDirectory),
   chooseRuntimeBundle: () => ipcRenderer.invoke(IPC.chooseRuntimeBundle),

@@ -1,6 +1,6 @@
 {
   "name": "image-authenticity-app",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "description": "通用鉴伪系统",
   "main": "./out/main/index.js",
@@ -26,6 +26,7 @@
     "test:workflow": "node tests/workflow-unit.mjs",
     "test:image-viewport": "node tests/image-viewport.mjs",
     "test:workbench": "node tests/workbench-interaction.mjs",
+    "test:history-theme": "node --import tsx tests/history-theme.mjs",
     "test:lifecycle": "node --import tsx tests/session-lifecycle.mjs && node --import tsx tests/python-worker.mjs",
     "test:protocol": "node tests/protocol-tests.mjs",
     "test:confidence": "node tests/decision-confidence.mjs",

@@ -41,7 +41,7 @@ try {
       await app.evaluate(({ dialog }, path) => {
         dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [path] })
       }, path)
-      await page.getByRole('button', { name: '打开图片', exact: true }).click()
+      await page.getByRole('button', { name: /^(打开图片|更换图片)$/ }).click()
       await page.getByTestId('image-preview').waitFor()
       await page.waitForFunction(
         (name) =>

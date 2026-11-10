@@ -28,6 +28,18 @@ export class AnalysisSession {
     return this.activeTask !== null
   }
 
+  get image(): ImportedImage | null {
+    return this.selectedImage
+  }
+
+  restore(image: ImportedImage, report: AnalysisReport): void {
+    this.assertIdle()
+    if (image.asset.id !== report.imageId)
+      throw new AppError('INVALID_IMAGE', '记录中的图片与报告不一致。')
+    this.selectImage(image)
+    this.previousReport = report
+  }
+
   reportForTask(taskId: string): AnalysisReport {
     if (!this.previousReport?.workflow || this.previousReport.id !== taskId)
       throw new AppError('INVALID_REQUEST', '报告已失效，请重新分析。')

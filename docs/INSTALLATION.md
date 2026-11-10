@@ -1,6 +1,6 @@
 # Windows 安装说明
 
-当前版本为 **v0.3.0**，适用于 Windows 10/11 x64。下载入口位于 [GitHub Releases](https://github.com/Pocon041/image-authenticity-app/releases/tag/v0.3.0)。
+当前版本为 **v0.4.0**，适用于 Windows 10/11 x64。下载入口位于 [GitHub Releases](https://github.com/Pocon041/image-authenticity-app/releases/tag/v0.4.0)。
 
 ## 完整版
 
@@ -8,7 +8,7 @@
 
 ### 自动下载安装
 
-1. 下载并运行 `SRDP-Full-Setup-0.3.0-x64.exe`，选择保存安装资源的空目录。
+1. 下载并运行 `SRDP-Full-Setup-0.4.0-x64.exe`，选择保存安装资源的空目录。
 2. 安装器自动从本项目 GitHub Release 获取约10.4GB数据，校验并准备资源，然后启动应用安装向导。
 3. 完成应用安装。首次打开时，在“设置 → 运行环境”中选择一个新的模型与报告目录，例如 `D:\Forensics-Data`。
 4. 等待自动配置完成，然后导入图片开始分析。
@@ -20,16 +20,16 @@
 在有网络的电脑上从发布页下载下列文件，放在同一个文件夹，再复制到目标电脑。
 
 ```text
-SRDP-Full-Setup-0.3.0-x64.exe
-SRDP-Full-Data-0.3.0-01.bin
-SRDP-Full-Data-0.3.0-02.bin
-SRDP-Full-Data-0.3.0-03.bin
-SRDP-Full-Data-0.3.0-04.bin
-SRDP-Full-Data-0.3.0-05.bin
-SRDP-Full-Data-0.3.0-06.bin
+SRDP-Full-Setup-0.4.0-x64.exe
+SRDP-Full-Data-0.4.0-01.bin
+SRDP-Full-Data-0.4.0-02.bin
+SRDP-Full-Data-0.4.0-03.bin
+SRDP-Full-Data-0.4.0-04.bin
+SRDP-Full-Data-0.4.0-05.bin
+SRDP-Full-Data-0.4.0-06.bin
 ```
 
-1. 双击 `SRDP-Full-Setup-0.3.0-x64.exe`，选择保存离线安装资源的空目录。
+1. 双击 `SRDP-Full-Setup-0.4.0-x64.exe`，选择保存离线安装资源的空目录。
 2. 安装器直接读取旁边的数据分卷，校验并准备资源，然后启动应用安装向导。
 3. 完成应用安装。首次打开时，在“设置 → 运行环境”中选择一个新的模型与报告目录，例如 `D:\Forensics-Data`。
 4. 等待自动配置完成，然后导入图片开始分析。
@@ -40,7 +40,7 @@ SRDP-Full-Data-0.3.0-06.bin
 
 ## 开发者版
 
-下载并运行 `SRDP-Developer-Setup-0.3.0-x64.exe`。
+下载并运行 `SRDP-Developer-Setup-0.4.0-x64.exe`。
 
 该安装器包含 Electron、桌面工作台、本项目后端适配脚本、示例配置与报告协议。真实检测所需的 Python 环境、上游模型源码、权重和解释服务由开发者自行配置。
 
@@ -63,6 +63,10 @@ SRDP-Full-Data-0.3.0-06.bin
 ## 数据与升级
 
 应用程序、离线安装资源、模型与报告可以分别保存。模型与报告目录须位于应用安装目录之外。
+
+升级后选择原有模型与报告目录，即可继续使用已有环境和查看联合分析记录。新历史记录位于该目录的 `work/desktop-history/`，保存原图副本、报告与缩略图，综合说明完成后独立保存。旧版联合报告从 `work/analysis-runs/` 读取。
+
+在左侧“历史”或通过 `Ctrl+H` 回看记录，在“设置 → 外观”选择浅色、深色、跟随系统和主题色。外观偏好保存在当前用户的应用配置中。
 
 分析记录保存在所选运行目录下的 `work/analysis-runs/<taskId>/`，包含 `analysis.json`、`bundle.json`、模型报告、掩码、响应图、区域裁剪和解释记录。升级与卸载应用会保留独立的数据目录。
 
@@ -92,6 +96,6 @@ SRDP-Full-Data-0.3.0-06.bin
 .\run.cmd run package:distributions
 ```
 
-完整版构建需要已有的 `dist/research-runtime-v1/runtime-bundle`。环境或权重变化时，先使用 `scripts/build-research-bundle.py` 重新收集并验证资源。两种发布产物和校验清单位于 `dist/v0.3.0/release/`。
+完整版构建需要已有的 `dist/research-runtime-v1/runtime-bundle`。环境或权重变化时，先使用 `scripts/build-research-bundle.py` 重新收集并验证资源。两种发布产物和校验清单位于 `dist/v0.4.0/release/`。
 
 安装器会直接跨分卷读取数据，无需先合并为另一个大型文件。旧的 `package:research` 构建入口继续保留供兼容使用。
