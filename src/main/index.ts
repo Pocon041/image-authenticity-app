@@ -11,13 +11,15 @@ import { cancelRuntimeSetup } from './runtime-bootstrap'
 let mainWindow: BrowserWindow | null = null
 const session = new AnalysisSession(new RoutedAnalysisService(), releaseConfiguredLocalModel)
 const smokeMode = process.argv.includes('--smoke-test')
+const appModelId = app.isPackaged ? 'cn.srdp.desktop' : 'cn.srdp.desktop.source'
 
 function createWindow(): void {
+  const iconPath = app.isPackaged
+    ? join(process.resourcesPath, 'icon.ico')
+    : join(app.getAppPath(), 'build/icon.ico')
   mainWindow = new BrowserWindow({
     title: '通用鉴伪系统',
-    icon: app.isPackaged
-      ? join(process.resourcesPath, 'icon.ico')
-      : join(app.getAppPath(), 'build/icon.ico'),
+    icon: iconPath,
     width: 1400,
     height: 920,
     minWidth: 1060,
@@ -39,6 +41,18 @@ function createWindow(): void {
       backgroundThrottling: !smokeMode
     }
   })
+  if (process.platform === 'win32') {
+    const relaunchCommand = app.isPackaged
+      ? `"${process.execPath}"`
+      : `"${process.env.ComSpec ?? 'cmd.exe'}" /d /c ""${join(app.getAppPath(), 'start.cmd')}""`
+    mainWindow.setAppDetails({
+      appId: appModelId,
+      appIconPath: iconPath,
+      appIconIndex: 0,
+      relaunchCommand,
+      relaunchDisplayName: '通用鉴伪系统'
+    })
+  }
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   mainWindow.webContents.on('will-navigate', (event) => event.preventDefault())
   mainWindow.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) =>
@@ -68,7 +82,7 @@ app.on('second-instance', () => {
 
 if (primaryInstance)
   app.whenReady().then(async () => {
-    app.setAppUserModelId('cn.srdp.desktop')
+    app.setAppUserModelId(appModelId)
     await initializeRuntimeEnvironment()
     registerDesktopIPC(() => mainWindow, session)
     createWindow()

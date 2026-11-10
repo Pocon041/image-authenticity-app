@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
 import { chromium } from 'playwright'
 import { createRequire } from 'node:module'
+import sharp from 'sharp'
 
 if (process.platform !== 'win32')
   throw new Error('This test validates the Windows start.cmd entry.')
@@ -21,18 +22,28 @@ await new Promise((resolve) => portServer.close(resolve))
 
 const env = {
   ...process.env,
-  REMOTE_DEBUGGING_PORT: String(port),
-  ELECTRON_CLI_ARGS: '["--smoke-test"]'
+  ELECTRON_CLI_ARGS: '[]'
 }
 delete env.ELECTRON_RUN_AS_NODE
 delete env.ELECTRON_RENDERER_URL
 delete env.ELECTRON_EXEC_PATH
-const child = spawn('cmd.exe', ['/d', '/c', 'start.cmd'], {
-  cwd: project,
-  env,
-  stdio: ['ignore', 'pipe', 'pipe'],
-  windowsHide: true
-})
+const child = spawn(
+  'cmd.exe',
+  [
+    '/d',
+    '/c',
+    'start.cmd',
+    '--',
+    `--remote-debugging-port=${port}`,
+    `--user-data-dir=${join(artifacts, 'profile')}`
+  ],
+  {
+    cwd: project,
+    env,
+    stdio: ['ignore', 'pipe', 'pipe'],
+    windowsHide: true
+  }
+)
 let logs = ''
 child.stdout.on('data', (data) => {
   logs += data.toString()
@@ -62,14 +73,21 @@ try {
   await page.getByRole('heading', { name: '通用鉴伪系统' }).waitFor({ timeout: 15_000 })
   assert.equal(await page.getByTestId('analyze-button').isDisabled(), true)
   assert.equal(await page.evaluate(() => typeof window.desktop.chooseImage), 'function')
+  assert.equal(new URL(page.url()).protocol, 'file:')
+  const screenshot = await page.screenshot({ path: join(artifacts, 'source-window.png') })
+  const pixels = await sharp(screenshot).stats()
+  assert.ok(
+    pixels.channels.some((channel) => channel.stdev > 5),
+    'The normal window must contain a rendered interface'
+  )
   assert.ok(logs.includes(`Electron ${electronVersion} is ready`))
   const result = {
     passed: true,
     entry: 'start.cmd',
     checks: [
-      'npm predev prepares Electron',
-      'electron-vite launches the desktop process',
-      'React workspace and preload bridge are ready'
+      'npm prestart prepares Electron',
+      'source is built and loaded through the local file entry',
+      'normal window renders visible UI and exposes the preload bridge'
     ]
   }
   await writeFile(join(artifacts, 'result.json'), JSON.stringify(result, null, 2))
