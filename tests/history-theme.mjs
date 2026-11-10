@@ -316,6 +316,8 @@ async function launch() {
     env
   })
   const page = await desktop.firstWindow()
+  if (executablePath)
+    await desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].showInactive())
   page.setDefaultTimeout(15000)
   page.on('pageerror', (error) => errors.push(error.message))
   await page.getByRole('heading', { name: '通用鉴伪系统' }).waitFor()
