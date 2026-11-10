@@ -1,7 +1,17 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
-  <rect x="8" y="8" width="240" height="240" rx="54" fill="#354b40"/>
-  <g fill="none" stroke="#fafbf7" stroke-width="13" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M91 64H77a13 13 0 0 0-13 13v14M165 64h14a13 13 0 0 1 13 13v14M64 165v14a13 13 0 0 0 13 13h14M192 165v14a13 13 0 0 1-13 13h-14"/>
-    <path d="M95 128h66" stroke-width="10"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="surface" x1="120" y1="64" x2="880" y2="960" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#456c5c"/>
+      <stop offset="1" stop-color="#29483d"/>
+    </linearGradient>
+  </defs>
+  <rect x="32" y="32" width="960" height="960" rx="216" fill="url(#surface)"/>
+  <rect x="34" y="34" width="956" height="956" rx="214" fill="none" stroke="#ffffff" stroke-opacity=".12" stroke-width="4"/>
+  <path d="M404 252h-80c-40 0-72 32-72 72v376c0 40 32 72 72 72h376c40 0 72-32 72-72V584" fill="none" stroke="#f4f7ef" stroke-width="52" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="372" cy="396" r="34" fill="#f4f7ef"/>
+  <path d="m328 636 112-132 88 92 64-68 96 108" fill="none" stroke="#f4f7ef" stroke-width="44" stroke-linecap="round" stroke-linejoin="round"/>
+  <g fill="none" stroke="#c2decb" stroke-width="44" stroke-linecap="round">
+    <circle cx="650" cy="320" r="90"/>
+    <path d="m716 386 78 78"/>
   </g>
 </svg>
